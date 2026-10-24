@@ -7,16 +7,20 @@ Minecraft Litematic 无头渲染服务。当前处于 Phase 1：Rust parser + CL
 - [新版设计](.docs/qqbot-litematic-rust-renderer-engineering-design.md)
 - [旧版设计（历史方案）](.docs/minecraft-render-service-engineering-design.md)
 - [Phase 1 计划](tasks/plan.md)
-- [任务清单](tasks/todo.md)
+- [Phase 1 任务清单](tasks/todo.md)
+- [Phase 2 计划](tasks/phase-2-plan.md)
+- [Phase 2 任务清单](tasks/phase-2-todo.md)
 - [Litematic 格式笔记](docs/litematic-format.md)
+- [Color-block 网格说明](docs/mesh-geometry.md)
 
 ## 当前范围
 
 - 解析 `.litematic` v1-v7
 - 规范 Scene IR、材料统计、诊断和哈希
-- `renderd inspect` / `validate` / `stats` CLI
-- 默认色块 catalog；资源包由部署者自行提供
-- 暂不包含 Go QQBot 服务、CPU 渲染器和资源包加载
+- 默认色块 catalog、全方块 mesh、OBJ/PLY 导出
+- `renderd inspect` / `validate` / `stats` / `mesh` CLI
+- 资源包由部署者自行提供
+- 暂不包含 Go QQBot 服务、CPU 光栅化和资源包加载
 
 ## CLI
 
@@ -24,6 +28,8 @@ Minecraft Litematic 无头渲染服务。当前处于 Phase 1：Rust parser + CL
 cargo run -p renderd-cli -- inspect path\to\model.litematic --json
 cargo run -p renderd-cli -- validate path\to\model.litematic
 cargo run -p renderd-cli -- stats path\to\model.litematic --json
+cargo run -p renderd-cli -- mesh path\to\model.litematic --obj out.obj
+cargo run -p renderd-cli -- mesh path\to\model.litematic --ply out.ply
 ```
 
 `inspect --json` 输出稳定 manifest，包含 bounds、region、材料统计、诊断、
