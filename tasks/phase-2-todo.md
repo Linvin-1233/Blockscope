@@ -204,10 +204,10 @@ button, plate, torch, ladder, rail, and cross-plant geometry.
 
 **Acceptance criteria:**
 
-- [ ] Water/lava source and flowing heights are approximated.
-- [ ] Chest/sign/banner/skull/lectern/beacon/conduit boxes are supported.
-- [ ] Block-entity text/icons are optional and documented.
-- [ ] Resource-pack catalog remains a separate future module.
+- [x] Water/lava source and flowing heights are approximated.
+- [x] Chest/sign/banner/skull/lectern/beacon/conduit boxes are supported.
+- [x] Block-entity text/icons are optional and documented.
+- [x] Resource-pack catalog remains a separate future module.
 
 **Dependencies:** P2-9  
 **Estimated scope:** Large

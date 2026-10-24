@@ -142,9 +142,18 @@ canonical key:
 | rail | none | 16x1x16 plate |
 | cactus | none | 14x16x14 box |
 | cross plants | none | four quads (two crossed planes, double-sided) |
+| water / lava | `level=0..15` | height `16-level`; level 0 is a full cube |
+| chest / trapped / ender | none | 14x14x14 box |
+| barrel / shulker box | none | 14x16x14 box |
+| sign / banner | `facing` ignored | 2x16x16 panel |
+| skull / head | none | 8x8x8 box |
+| lectern | none | base plus top box |
+| beacon | none | full cube, translucent layer |
+| conduit | none | 8x8x8 box |
 
 These are deliberately approximate. They preserve the silhouette and material
-color; they do not try to reproduce every vanilla micro-detail.
+color; they do not try to reproduce every vanilla micro-detail. Block-entity
+text, item contents, banner patterns, and skull skins are not rendered yet.
 
 ## Voxel Mesher
 
@@ -169,13 +178,10 @@ A boundary face is culled when the neighbor is:
 The second rule removes the touching sides of adjacent slabs, stairs, fences,
 panes, glass, and water. Different partial states keep their interface faces.
 
-## Phase 2C Deferred
+## Resource Packs Deferred
 
-- Fluids with height/flow behavior. Water and lava currently use the full-cube
-  fallback.
-- Static block-entity boxes and text/icons. Chests, signs, banners, skulls,
-  lecterns, beacons, and conduits currently use full cubes.
-- Resource-pack model/texture loading.
-
-The `BlockCatalog` trait and `Mesh` contract are designed so those additions do
-not change the CLI or scene format.
+- Resource-pack model/texture loading is not implemented.
+- The `BlockCatalog` trait and `Mesh` contract are designed so a future
+  resource-pack catalog can replace the color catalog without changing the CLI
+  or scene format.
+- Block-entity text/icons and dynamic item contents remain future work.
