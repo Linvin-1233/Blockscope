@@ -1,0 +1,192 @@
+mod support;
+
+use litematic_mesh::{ColorBlockCatalog, MeshErrorCode, MeshLimits, build_mesh};
+use support::{region as make_region, scene as make_scene};
+
+fn build(scene: &litematic_scene::Scene, limits: &MeshLimits) -> litematic_mesh::Mesh {
+    let catalog = ColorBlockCatalog::default();
+    build_mesh(scene, &catalog, limits).unwrap()
+}
+
+fn cross(left: [f32; 3], right: [f32; 3]) -> [f32; 3] {
+    [
+        left[1] * right[2] - left[2] * right[1],
+        left[2] * right[0] - left[0] * right[2],
+        left[0] * right[1] - left[1] * right[0],
+    ]
+}
+
+fn dot(left: [f32; 3], right: [f32; 3]) -> f32 {
+    left[0] * right[0] + left[1] * right[1] + left[2] * right[2]
+}
+
+#[test]
+fn single_cube_emits_six_quads() {
+    let region = make_region(
+        "main",
+        [0, 0, 0],
+        [1, 1, 1],
+        &["minecraft:air", "minecraft:stone"],
+        &[1],
+    );
+    let mesh = build(&make_scene(vec![region]), &MeshLimits::default());
+
+    assert_eq!(mesh.statistics.quads, 6);
+    assert_eq!(mesh.statistics.pages, 1);
+    assert_eq!(mesh.statistics.blocks_visited, 1);
+    assert_eq!(mesh.statistics.blocks_rendered, 1);
+    assert_eq!(mesh.statistics.opaque_quads, 6);
+    assert_eq!(mesh.pages.len(), 1);
+    assert_eq!(mesh.pages[0].origin, [0, 0, 0]);
+    assert_eq!(mesh.pages[0].quads.len(), 6);
+
+    for quad in &mesh.pages[0].quads {
+        let p0 = quad.vertices[0].position;
+        let p1 = quad.vertices[1].position;
+        let p2 = quad.vertices[2].position;
+        let u = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
+        let v = [p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]];
+        assert!(
+            dot(cross(u, v), quad.vertices[0].normal) > 0.0,
+            "quad winding should match its normal"
+        );
+    }
+}
+
+#[test]
+fn adjacent_opaque_cubes_cull_shared_faces() {
+    let region = make_region(
+        "main",
+        [0, 0, 0],
+        [2, 1, 1],
+        &["minecraft:air", "minecraft:stone"],
+        &[1, 1],
+    );
+    let mesh = build(&make_scene(vec![region]), &MeshLimits::default());
+
+    assert_eq!(mesh.statistics.quads, 10);
+    assert_eq!(mesh.statistics.blocks_rendered, 2);
+}
+
+#[test]
+fn stone_and_glass_keep_the_visible_interface() {
+    let region = make_region(
+        "main",
+        [0, 0, 0],
+        [2, 1, 1],
+        &["minecraft:air", "minecraft:stone", "minecraft:glass"],
+        &[1, 2],
+    );
+    let mesh = build(&make_scene(vec![region]), &MeshLimits::default());
+
+    assert_eq!(mesh.statistics.quads, 11);
+    assert_eq!(mesh.statistics.opaque_quads, 6);
+    assert_eq!(mesh.statistics.translucent_quads, 5);
+}
+
+#[test]
+fn adjacent_glass_culls_shared_faces() {
+    let region = make_region(
+        "main",
+        [0, 0, 0],
+        [2, 1, 1],
+        &["minecraft:air", "minecraft:glass"],
+        &[1, 1],
+    );
+    let mesh = build(&make_scene(vec![region]), &MeshLimits::default());
+
+    assert_eq!(mesh.statistics.quads, 10);
+    assert_eq!(mesh.statistics.translucent_quads, 10);
+}
+
+#[test]
+fn page_boundary_blocks_go_to_separate_pages() {
+    let region = make_region(
+        "main",
+        [15, 0, 0],
+        [2, 1, 1],
+        &["minecraft:air", "minecraft:stone"],
+        &[1, 1],
+    );
+    let mesh = build(&make_scene(vec![region]), &MeshLimits::default());
+
+    assert_eq!(mesh.statistics.quads, 10);
+    assert_eq!(mesh.pages.len(), 2);
+    let origins: Vec<_> = mesh.pages.iter().map(|page| page.origin).collect();
+    assert_eq!(origins, vec![[0, 0, 0], [16, 0, 0]]);
+
+    for page in &mesh.pages {
+        for quad in &page.quads {
+            for vertex in &quad.vertices {
+                for axis in 0..3 {
+                    assert!(vertex.position[axis] >= 0.0);
+                    assert!(vertex.position[axis] <= 16.0);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn unknown_blocks_are_counted_and_visible() {
+    let region = make_region(
+        "main",
+        [0, 0, 0],
+        [1, 1, 1],
+        &["minecraft:air", "modded:unknown"],
+        &[1],
+    );
+    let mesh = build(&make_scene(vec![region]), &MeshLimits::default());
+
+    assert_eq!(mesh.statistics.quads, 6);
+    assert_eq!(mesh.statistics.unknown_blocks, 1);
+    assert_eq!(mesh.pages[0].quads[0].vertices[0].color, [255, 0, 255, 255]);
+}
+
+#[test]
+fn all_air_scene_produces_an_empty_mesh() {
+    let region = make_region("main", [0, 0, 0], [2, 1, 1], &["minecraft:air"], &[0, 0]);
+    let mesh = build(&make_scene(vec![region]), &MeshLimits::default());
+
+    assert_eq!(mesh.statistics.quads, 0);
+    assert_eq!(mesh.statistics.pages, 0);
+    assert_eq!(mesh.statistics.blocks_visited, 2);
+    assert_eq!(mesh.statistics.blocks_rendered, 0);
+    assert!(mesh.pages.is_empty());
+}
+
+#[test]
+fn mesh_limits_are_enforced() {
+    let region = make_region(
+        "main",
+        [0, 0, 0],
+        [1, 1, 1],
+        &["minecraft:air", "minecraft:stone"],
+        &[1],
+    );
+    let scene = make_scene(vec![region]);
+    let limits = MeshLimits {
+        max_pages: 10,
+        max_quads: 5,
+        max_vertices: 100,
+    };
+
+    let error = build_mesh(&scene, &ColorBlockCatalog::default(), &limits).unwrap_err();
+    assert_eq!(error.code, MeshErrorCode::MeshLimitExceeded);
+}
+
+#[test]
+fn mesh_is_deterministic() {
+    let region = make_region(
+        "main",
+        [0, 0, 0],
+        [3, 2, 2],
+        &["minecraft:air", "minecraft:stone", "minecraft:glass"],
+        &[1, 1, 0, 0, 2, 1, 0, 0, 1, 0, 0, 0],
+    );
+    let scene = make_scene(vec![region]);
+    let first = build(&scene, &MeshLimits::default());
+    let second = build(&scene, &MeshLimits::default());
+
+    assert_eq!(first, second);
+}

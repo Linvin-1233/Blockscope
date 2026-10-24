@@ -4,6 +4,7 @@ members = [
   "crates/nbt",
   "crates/scene",
   "crates/litematic",
+  "crates/mesh",
   "crates/cli",
 ]
 

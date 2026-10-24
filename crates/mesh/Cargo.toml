@@ -1,0 +1,9 @@
+[package]
+name = "litematic-mesh"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+litematic-scene = { path = "../scene" }
+serde.workspace = true
+serde_json.workspace = true
