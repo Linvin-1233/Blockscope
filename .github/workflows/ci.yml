@@ -20,3 +20,16 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t renderd:ci .
+      - name: capacity inside a 1 CPU / 1 GiB container
+        run: docker run --rm --cpus=1 --memory=1g renderd:ci capacity --json
+      - name: protocol smoke test
+        run: |
+          printf '%s\n' '{"type":"shutdown"}' |
+            docker run --rm -i --cpus=1 --memory=1g renderd:ci serve
+

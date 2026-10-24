@@ -130,6 +130,21 @@ Two jobs in one worker with the real fixture, 1024x1024 at supersample 2:
 No material reload between jobs. `renderd capacity --json` on this host reports
 12 cores, 4 suggested workers, 3 threads, and a 2048 supersample-2 default tier.
 
+### Linux container verification
+
+WSL2 Ubuntu 24.04, release build, inside a systemd scope with
+`MemoryMax=1G` and `CPUQuota=100%`:
+
+```json
+{"platform":"linux","cores":1,"cpuQuotaMilli":1000,
+ "memoryLimitBytes":1073741824,"memoryAvailableBytes":1073233920,
+ "suggestedWorkers":1,"suggestedThreads":1,
+ "defaultWidth":1024,"defaultHeight":1024,"defaultSupersample":1}
+```
+
+The cgroup v2 limit and CPU quota are picked up without configuration, and the
+pool collapses to one worker on one thread as intended.
+
 ## Risks and Mitigations
 
 | Risk | Impact | Mitigation |

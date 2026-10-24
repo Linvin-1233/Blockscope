@@ -17,6 +17,8 @@ Minecraft Litematic 无头渲染服务。Phase 3C 已完成：Rust 解析、色�
 - [Color-block 网格说明](docs/mesh-geometry.md)
 - [CPU 渲染说明](docs/rendering.md)
 - [资源包材质说明](docs/textures.md)
+- [部署说明](docs/deployment.md)
+- [引擎协议](docs/engine-protocol.md)
 - [Phase 3C 材质 spec](tasks/phase-3c-textures-spec.md)
 - [Phase 3C 材质计划](tasks/phase-3c-textures-plan.md)
 - [Phase 3C 材质任务](tasks/phase-3c-textures-todo.md)

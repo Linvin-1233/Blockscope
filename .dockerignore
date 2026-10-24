@@ -1,0 +1,8 @@
+target
+renders
+fixtures/private
+.git
+.github
+.idea
+.agents
+*.log
