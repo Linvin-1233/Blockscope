@@ -159,6 +159,33 @@ fn render_writes_png() {
 }
 
 #[test]
+fn render_multi_view_writes_two_files() {
+    let file = write_fixture(&basic_fixture());
+    let path = file.path().to_str().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let output_path = dir.path().join("render.png");
+
+    let output = run(&[
+        "render",
+        path,
+        "--output",
+        output_path.to_str().unwrap(),
+        "--views",
+        "45,225",
+        "--width",
+        "64",
+        "--height",
+        "64",
+        "--supersample",
+        "1",
+    ]);
+
+    assert!(output.status.success());
+    assert!(dir.path().join("render-45.png").exists());
+    assert!(dir.path().join("render-225.png").exists());
+}
+
+#[test]
 fn render_json_parses() {
     let file = write_fixture(&basic_fixture());
     let path = file.path().to_str().unwrap();
@@ -181,6 +208,8 @@ fn render_json_parses() {
     let stats: RenderStatistics = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(stats.width, 64);
     assert_eq!(stats.height, 64);
+    assert_eq!(stats.supersample, 2);
+    assert_eq!(stats.internal_width, 128);
     assert!(stats.triangles > 0);
 }
 
@@ -214,6 +243,47 @@ fn render_rejects_invalid_options() {
         "--lighting",
         "unknown",
     ]);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("INVALID_RENDER_OPTIONS")
+    );
+}
+
+#[test]
+fn bench_json_parses() {
+    let file = write_fixture(&basic_fixture());
+    let path = file.path().to_str().unwrap();
+
+    let output = run(&[
+        "bench",
+        path,
+        "--width",
+        "64",
+        "--height",
+        "64",
+        "--supersample",
+        "1",
+        "--iterations",
+        "1",
+        "--json",
+    ]);
+
+    assert!(output.status.success());
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["iterations"], 1);
+    assert!(report["renderMs"]["median"].as_f64().unwrap() >= 0.0);
+    assert!(report["renderStatistics"]["triangles"].as_u64().unwrap() > 0);
+    assert!(report["pngBytes"].as_u64().unwrap() > 0);
+}
+
+#[test]
+fn bench_rejects_zero_iterations() {
+    let file = write_fixture(&basic_fixture());
+    let path = file.path().to_str().unwrap();
+
+    let output = run(&["bench", path, "--iterations", "0"]);
     assert_eq!(output.status.code(), Some(2));
     assert!(
         String::from_utf8(output.stderr)

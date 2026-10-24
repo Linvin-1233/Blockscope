@@ -15,6 +15,7 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::time::Instant;
 
 /// Litematic parser and render service.
 #[derive(Debug, Parser)]
@@ -41,6 +42,8 @@ enum Command {
     Mesh(MeshArgs),
     /// Render a color-block mesh to PNG.
     Render(RenderArgs),
+    /// Measure parse, mesh, render, and PNG timings.
+    Bench(BenchArgs),
 }
 
 #[derive(Debug, Args)]
@@ -105,7 +108,45 @@ struct RenderArgs {
     /// flat-v1 or simple-ao-v1.
     #[arg(long, default_value = "simple-ao-v1")]
     lighting: String,
+    /// Supersampling factor: 1, 2, 3, or 4.
+    #[arg(long, default_value_t = 2)]
+    supersample: u32,
+    /// Rasterizer worker threads; 0 selects available parallelism.
+    #[arg(long, default_value_t = 0)]
+    threads: u32,
+    /// Comma-separated yaw angles, for example 45,225.
+    #[arg(long)]
+    views: Option<String>,
     /// Print render statistics as JSON.
+    #[arg(long)]
+    json: bool,
+}
+
+#[derive(Debug, Args)]
+struct BenchArgs {
+    file: PathBuf,
+    /// Output width in pixels.
+    #[arg(long, default_value_t = 1024)]
+    width: u32,
+    /// Output height in pixels.
+    #[arg(long, default_value_t = 1024)]
+    height: u32,
+    /// Camera elevation in degrees.
+    #[arg(long, default_value_t = 30.0)]
+    elevation: f32,
+    /// Supersampling factor: 1, 2, 3, or 4.
+    #[arg(long, default_value_t = 2)]
+    supersample: u32,
+    /// Rasterizer worker threads; 0 selects available parallelism.
+    #[arg(long, default_value_t = 0)]
+    threads: u32,
+    /// Number of render iterations.
+    #[arg(long, default_value_t = 3)]
+    iterations: u32,
+    /// flat-v1 or simple-ao-v1.
+    #[arg(long, default_value = "simple-ao-v1")]
+    lighting: String,
+    /// Print the report as JSON.
     #[arg(long)]
     json: bool,
 }
@@ -129,6 +170,7 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Command::Stats(args) => stats(args),
         Command::Mesh(args) => mesh(args),
         Command::Render(args) => render(args),
+        Command::Bench(args) => bench(args),
     }
 }
 
@@ -240,7 +282,9 @@ fn mesh(args: MeshArgs) -> Result<(), CliError> {
 }
 
 fn render(args: RenderArgs) -> Result<(), CliError> {
+    let started = Instant::now();
     let (_, scene) = load_scene(&args.file)?;
+    let parse_ms = started.elapsed().as_secs_f64() * 1000.0;
 
     let background = if args.background == "transparent" {
         Background::Transparent
@@ -257,42 +301,330 @@ fn render(args: RenderArgs) -> Result<(), CliError> {
         ))
     })?;
 
-    let options = RenderOptions {
-        width: args.width,
-        height: args.height,
-        yaw: args.yaw,
-        elevation: args.elevation,
-        background,
-        lighting,
-        ..Default::default()
-    };
+    let views = parse_views(&args)?;
+    let view_count = views.len();
 
+    let mesh_started = Instant::now();
     let catalog = ColorBlockCatalog::default();
     let mesh = build_mesh(&scene, &catalog, &MeshLimits::default()).map_err(CliError::from)?;
-    let output = render_mesh(&scene, &mesh, &options).map_err(CliError::from)?;
+    let mesh_ms = mesh_started.elapsed().as_secs_f64() * 1000.0;
 
-    let file = File::create(&args.output).map_err(|error| {
-        CliError::input(format!("IO_ERROR: {}: {error}", args.output.display()))
-    })?;
-    let mut writer = BufWriter::new(file);
-    write_png(&output, &mut writer).map_err(CliError::from)?;
-    writer.flush().map_err(|error| {
-        CliError::input(format!("IO_ERROR: {}: {error}", args.output.display()))
-    })?;
+    let mut results = Vec::with_capacity(view_count);
+    for yaw in views {
+        let options = RenderOptions {
+            width: args.width,
+            height: args.height,
+            yaw,
+            elevation: args.elevation,
+            background,
+            lighting,
+            supersample: args.supersample,
+            threads: args.threads,
+            ..Default::default()
+        };
+
+        let render_started = Instant::now();
+        let output = render_mesh(&scene, &mesh, &options).map_err(CliError::from)?;
+        let render_ms = render_started.elapsed().as_secs_f64() * 1000.0;
+
+        let output_path = if view_count == 1 {
+            args.output.clone()
+        } else {
+            output_path_for_yaw(&args.output, yaw)
+        };
+        let png_started = Instant::now();
+        let file = File::create(&output_path).map_err(|error| {
+            CliError::input(format!("IO_ERROR: {}: {error}", output_path.display()))
+        })?;
+        let mut writer = BufWriter::new(file);
+        write_png(&output, &mut writer).map_err(CliError::from)?;
+        writer.flush().map_err(|error| {
+            CliError::input(format!("IO_ERROR: {}: {error}", output_path.display()))
+        })?;
+        let png_ms = png_started.elapsed().as_secs_f64() * 1000.0;
+
+        results.push((output_path, output, options, render_ms, png_ms));
+    }
+
+    let total_ms = started.elapsed().as_secs_f64() * 1000.0;
 
     if args.json {
-        let json = serde_json::to_string_pretty(&output.statistics).map_err(CliError::internal)?;
-        println!("{json}");
+        if results.len() == 1 {
+            let statistics = &results[0].1.statistics;
+            let json = serde_json::to_string_pretty(statistics).map_err(CliError::internal)?;
+            println!("{json}");
+        } else {
+            let entries: Vec<_> = results
+                .iter()
+                .map(|(path, output, _, _, _)| {
+                    serde_json::json!({
+                        "output": path.display().to_string(),
+                        "statistics": output.statistics,
+                    })
+                })
+                .collect();
+            let json = serde_json::to_string_pretty(&entries).map_err(CliError::internal)?;
+            println!("{json}");
+        }
     } else {
-        println!("output: {}", args.output.display());
-        println!("size: {}x{}", output.width, output.height);
-        println!("yaw: {}, elevation: {}", options.yaw, options.elevation);
-        println!("lighting: {}", options.lighting.as_str());
-        println!("background: {}", options.background.as_str());
-        print_render_stats(&output.statistics);
+        for (path, output, options, render_ms, png_ms) in &results {
+            println!("output: {}", path.display());
+            println!("size: {}x{}", output.width, output.height);
+            println!("yaw: {}, elevation: {}", options.yaw, options.elevation);
+            println!("lighting: {}", options.lighting.as_str());
+            println!("background: {}", options.background.as_str());
+            println!(
+                "supersample: {} (internal {}x{})",
+                output.statistics.supersample,
+                output.statistics.internal_width,
+                output.statistics.internal_height
+            );
+            print_render_stats(&output.statistics);
+            println!("render: {render_ms:.1} ms, png: {png_ms:.1} ms");
+        }
+        println!("timings: parse {parse_ms:.1} ms, mesh {mesh_ms:.1} ms, total {total_ms:.1} ms");
     }
 
     Ok(())
+}
+
+fn parse_views(args: &RenderArgs) -> Result<Vec<f32>, CliError> {
+    let Some(value) = &args.views else {
+        return Ok(vec![args.yaw]);
+    };
+
+    let views: Vec<f32> = value
+        .split(',')
+        .map(|part| {
+            part.trim().parse::<f32>().map_err(|_| {
+                CliError::input(format!(
+                    "INVALID_RENDER_OPTIONS: invalid view angle '{}'",
+                    part.trim()
+                ))
+            })
+        })
+        .collect::<Result<_, _>>()?;
+
+    if views.is_empty() {
+        return Err(CliError::input(
+            "INVALID_RENDER_OPTIONS: views must not be empty",
+        ));
+    }
+    if views.iter().any(|view| !view.is_finite()) {
+        return Err(CliError::input(
+            "INVALID_RENDER_OPTIONS: view angles must be finite",
+        ));
+    }
+
+    Ok(views)
+}
+
+fn output_path_for_yaw(path: &Path, yaw: f32) -> PathBuf {
+    let stem = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("render");
+    let extension = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or("png");
+    path.with_file_name(format!("{stem}-{yaw}.{extension}"))
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TimingSummary {
+    min: f64,
+    median: f64,
+    mean: f64,
+    max: f64,
+}
+
+fn summarize(samples: &[f64]) -> TimingSummary {
+    let mut sorted = samples.to_vec();
+    sorted.sort_by(f64::total_cmp);
+
+    let min = sorted.first().copied().unwrap_or(0.0);
+    let max = sorted.last().copied().unwrap_or(0.0);
+    let mean = sorted.iter().sum::<f64>() / sorted.len().max(1) as f64;
+    let median = if sorted.is_empty() {
+        0.0
+    } else if sorted.len() % 2 == 1 {
+        sorted[sorted.len() / 2]
+    } else {
+        (sorted[sorted.len() / 2 - 1] + sorted[sorted.len() / 2]) * 0.5
+    };
+
+    TimingSummary {
+        min,
+        median,
+        mean,
+        max,
+    }
+}
+
+fn timing_json(summary: &TimingSummary) -> serde_json::Value {
+    serde_json::json!({
+        "min": summary.min,
+        "median": summary.median,
+        "mean": summary.mean,
+        "max": summary.max,
+    })
+}
+
+fn print_timing(name: &str, summary: &TimingSummary) {
+    println!(
+        "{name}: min {:.2} ms, median {:.2} ms, mean {:.2} ms, max {:.2} ms",
+        summary.min, summary.median, summary.mean, summary.max
+    );
+}
+
+fn bench(args: BenchArgs) -> Result<(), CliError> {
+    if args.iterations == 0 {
+        return Err(CliError::input(
+            "INVALID_RENDER_OPTIONS: iterations must be positive",
+        ));
+    }
+
+    let lighting = LightingProfile::parse(&args.lighting).ok_or_else(|| {
+        CliError::input(format!(
+            "INVALID_RENDER_OPTIONS: unknown lighting profile '{}'",
+            args.lighting
+        ))
+    })?;
+
+    let parse_started = Instant::now();
+    let (_, scene) = load_scene(&args.file)?;
+    let parse_ms = parse_started.elapsed().as_secs_f64() * 1000.0;
+
+    let mesh_started = Instant::now();
+    let catalog = ColorBlockCatalog::default();
+    let mesh = build_mesh(&scene, &catalog, &MeshLimits::default()).map_err(CliError::from)?;
+    let mesh_ms = mesh_started.elapsed().as_secs_f64() * 1000.0;
+
+    let options = RenderOptions {
+        width: args.width,
+        height: args.height,
+        yaw: 45.0,
+        elevation: args.elevation,
+        background: Background::Transparent,
+        lighting,
+        supersample: args.supersample,
+        threads: args.threads,
+        ..Default::default()
+    };
+    options.validate().map_err(CliError::from)?;
+
+    let mut render_samples = Vec::with_capacity(args.iterations as usize);
+    let mut png_samples = Vec::with_capacity(args.iterations as usize);
+    let mut png_bytes = 0u64;
+    let mut last_output = None;
+
+    for _ in 0..args.iterations {
+        let render_started = Instant::now();
+        let output = render_mesh(&scene, &mesh, &options).map_err(CliError::from)?;
+        render_samples.push(render_started.elapsed().as_secs_f64() * 1000.0);
+
+        let png_started = Instant::now();
+        let mut bytes = Vec::new();
+        write_png(&output, &mut bytes).map_err(CliError::from)?;
+        png_samples.push(png_started.elapsed().as_secs_f64() * 1000.0);
+
+        png_bytes = bytes.len() as u64;
+        last_output = Some(output);
+    }
+
+    let output = last_output.expect("iterations is positive");
+    let totals: Vec<f64> = render_samples
+        .iter()
+        .zip(&png_samples)
+        .map(|(render, png)| render + png)
+        .collect();
+    let render = summarize(&render_samples);
+    let png = summarize(&png_samples);
+    let total = summarize(&totals);
+    let peak_rss = peak_rss_bytes();
+
+    if args.json {
+        let report = serde_json::json!({
+            "file": args.file.display().to_string(),
+            "iterations": args.iterations,
+            "width": options.width,
+            "height": options.height,
+            "supersample": options.supersample,
+            "threads": options.threads,
+            "parseMs": parse_ms,
+            "meshMs": mesh_ms,
+            "renderMs": timing_json(&render),
+            "pngMs": timing_json(&png),
+            "totalMs": timing_json(&total),
+            "mesh": mesh.statistics,
+            "renderStatistics": output.statistics,
+            "pngBytes": png_bytes,
+            "rgbaBytes": output.rgba.len() as u64,
+            "peakRssBytes": peak_rss,
+        });
+        let json = serde_json::to_string_pretty(&report).map_err(CliError::internal)?;
+        println!("{json}");
+    } else {
+        println!("file: {}", args.file.display());
+        println!(
+            "size: {}x{} (supersample {})",
+            options.width, options.height, options.supersample
+        );
+        println!(
+            "threads: {}",
+            if options.threads == 0 {
+                "auto".to_string()
+            } else {
+                options.threads.to_string()
+            }
+        );
+        println!("parse: {parse_ms:.2} ms");
+        println!("mesh: {mesh_ms:.2} ms");
+        print_timing("render", &render);
+        print_timing("png", &png);
+        print_timing("total", &total);
+        println!(
+            "mesh: {} pages, {} quads, {} vertices",
+            mesh.statistics.pages, mesh.statistics.quads, mesh.statistics.vertices
+        );
+        println!(
+            "buffers: {} rgba bytes, {} png bytes",
+            output.rgba.len(),
+            png_bytes
+        );
+        if let Some(peak_rss) = peak_rss {
+            println!("peak rss: {} bytes", peak_rss);
+        }
+    }
+
+    Ok(())
+}
+
+/// Peak resident set size. Linux exposes it through `/proc`; other platforms
+/// report nothing rather than guessing.
+fn peak_rss_bytes() -> Option<u64> {
+    #[cfg(target_os = "linux")]
+    {
+        let status = fs::read_to_string("/proc/self/status").ok()?;
+        for line in status.lines() {
+            let Some(value) = line.strip_prefix("VmHWM:") else {
+                continue;
+            };
+            let kilobytes = value
+                .trim()
+                .trim_end_matches("kB")
+                .trim()
+                .parse::<u64>()
+                .ok()?;
+            return Some(kilobytes * 1024);
+        }
+        None
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        None
+    }
 }
 
 fn print_render_stats(statistics: &RenderStatistics) {
