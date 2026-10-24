@@ -1,5 +1,5 @@
 use litematic_material::{AssetSource, MaterialKind, MaterialSet, TextureFilter};
-use litematic_mesh::{BlockCatalog, NO_TEXTURE};
+use litematic_mesh::{BlockCatalog, FaceDirection, NO_TEXTURE};
 use litematic_scene::BlockStateKey;
 use std::fs::{self, File};
 use std::io::BufWriter;
@@ -166,6 +166,158 @@ fn material_set() -> (tempfile::TempDir, MaterialSet) {
     source.add_dir(dir.path()).unwrap();
     let materials = MaterialSet::open(source).unwrap();
     (dir, materials)
+}
+
+fn chest_material_set() -> (tempfile::TempDir, MaterialSet) {
+    let dir = tempfile::tempdir().unwrap();
+    write_pack(dir.path());
+    let chest = dir.path().join("assets/minecraft/textures/entity/chest");
+    write_solid_texture(&chest.join("normal_left.png"), [180, 110, 40, 255]);
+    write_solid_texture(&chest.join("normal_right.png"), [180, 110, 40, 255]);
+    let mut source = AssetSource::new();
+    source.add_dir(dir.path()).unwrap();
+    let materials = MaterialSet::open(source).unwrap();
+    (dir, materials)
+}
+
+fn chest_state(kind: &str) -> BlockStateKey {
+    let mut state = BlockStateKey::simple("minecraft:chest");
+    state
+        .properties
+        .insert("facing".to_string(), "south".to_string());
+    state
+        .properties
+        .insert("type".to_string(), kind.to_string());
+    state
+        .properties
+        .insert("waterlogged".to_string(), "false".to_string());
+    state
+}
+
+fn lid_quad(model: &litematic_mesh::BlockModel, face: FaceDirection) -> &litematic_mesh::ModelQuad {
+    model
+        .quads
+        .iter()
+        .find(|quad| {
+            quad.face == face
+                && quad.vertices.iter().all(|vertex| vertex[1] >= 9.0)
+                && quad.vertices.iter().any(|vertex| vertex[1] >= 14.0)
+        })
+        .unwrap()
+}
+
+fn uv_at_x(quad: &litematic_mesh::ModelQuad, x: f32) -> [f32; 2] {
+    quad.vertices
+        .iter()
+        .zip(quad.uv.iter())
+        .find(|(vertex, _)| (vertex[0] - x).abs() < 1e-4)
+        .map(|(_, uv)| *uv)
+        .unwrap()
+}
+
+fn uv_at_z(quad: &litematic_mesh::ModelQuad, z: f32) -> [f32; 2] {
+    quad.vertices
+        .iter()
+        .zip(quad.uv.iter())
+        .find(|(vertex, _)| (vertex[2] - z).abs() < 1e-4)
+        .map(|(_, uv)| *uv)
+        .unwrap()
+}
+
+#[test]
+fn double_chest_front_texture_keeps_outer_border() {
+    let (_dir, materials) = chest_material_set();
+
+    // Left is the east block and right is the west block. Their textures are
+    // mirrored, so vanilla maps u=58 to the west edge and u=43 to the east
+    // edge of both front faces, keeping the dark border on the outside.
+    for (kind, west_x, east_x) in [("left", 0.0, 15.0), ("right", 1.0, 16.0)] {
+        let resolved = materials.resolve(&chest_state(kind));
+        let front = lid_quad(&resolved.model, FaceDirection::South);
+
+        let west = uv_at_x(front, west_x);
+        let east = uv_at_x(front, east_x);
+
+        assert!(
+            (west[0] - 58.0 / 64.0).abs() < 1e-4,
+            "{kind} chest west edge has unexpected u={}",
+            west[0]
+        );
+        assert!(
+            (east[0] - 43.0 / 64.0).abs() < 1e-4,
+            "{kind} chest east edge has unexpected u={}",
+            east[0]
+        );
+    }
+}
+
+#[test]
+fn double_chest_lid_top_texture_keeps_outer_border() {
+    let (_dir, materials) = chest_material_set();
+
+    for (kind, from_x, to_x) in [("left", 0.0, 15.0), ("right", 1.0, 16.0)] {
+        let resolved = materials.resolve(&chest_state(kind));
+        let top = lid_quad(&resolved.model, FaceDirection::Up);
+
+        let west = uv_at_x(top, from_x);
+        let east = uv_at_x(top, to_x);
+        let north = uv_at_z(top, 1.0);
+        let south = uv_at_z(top, 15.0);
+
+        assert!(
+            (west[0] - 29.0 / 64.0).abs() < 1e-4,
+            "{kind} chest top west edge has unexpected u={}",
+            west[0]
+        );
+        assert!(
+            (east[0] - 44.0 / 64.0).abs() < 1e-4,
+            "{kind} chest top east edge has unexpected u={}",
+            east[0]
+        );
+        assert!(
+            (north[1] - 14.0 / 64.0).abs() < 1e-4,
+            "{kind} chest top north edge has unexpected v={}",
+            north[1]
+        );
+        assert!(
+            (south[1] - 0.0).abs() < 1e-4,
+            "{kind} chest top south edge has unexpected v={}",
+            south[1]
+        );
+    }
+}
+
+#[test]
+fn double_chest_renders_center_lock() {
+    let (_dir, materials) = chest_material_set();
+
+    for (kind, expected_x) in [("left", 0.0), ("right", 15.0)] {
+        let resolved = materials.resolve(&chest_state(kind));
+        let lock = resolved
+            .model
+            .quads
+            .iter()
+            .find(|quad| {
+                quad.vertices
+                    .iter()
+                    .all(|vertex| (7.0..=11.0).contains(&vertex[1]) && vertex[2] >= 15.0)
+            })
+            .unwrap();
+
+        let min_x = lock
+            .vertices
+            .iter()
+            .map(|vertex| vertex[0])
+            .fold(f32::INFINITY, f32::min);
+        let max_x = lock
+            .vertices
+            .iter()
+            .map(|vertex| vertex[0])
+            .fold(f32::NEG_INFINITY, f32::max);
+
+        assert!((min_x - expected_x).abs() < 1e-4);
+        assert!((max_x - expected_x - 1.0).abs() < 1e-4);
+    }
 }
 
 #[test]

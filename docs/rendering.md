@@ -23,6 +23,9 @@ Scene + Mesh
 
 - Orthographic projection.
 - Default preset: `isometric_preview_v1`, yaw 45°, elevation 30°.
+- Yaw follows the reference Litematic viewer: yaw 0 looks from +Z (south),
+  yaw 45 looks from the south-west, and yaw 225 looks from the north-east.
+  The default view therefore shows the south and west faces of the structure.
 - The camera looks at the center of the scene bounds.
 - The scene is fitted with padding; default padding is 16 px.
 - World positions are `MeshPage.origin + page-local vertex`.
@@ -32,7 +35,7 @@ Scene + Mesh
 The camera basis:
 
 ```text
-forward = normalize([cos(elev)*sin(yaw), -sin(elev), cos(elev)*cos(yaw)])
+forward = normalize([cos(elev)*sin(yaw), -sin(elev), -cos(elev)*cos(yaw)])
 right   = normalize(cross(forward, world_up))
 up      = cross(right, forward)
 ```

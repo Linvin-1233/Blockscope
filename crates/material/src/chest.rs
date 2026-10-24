@@ -78,6 +78,14 @@ pub fn build_chest_model(
             [0.0, 0.0],
             texture,
         );
+        let lock_x = if kind == "left" { 0.0 } else { 15.0 };
+        add_box(
+            &mut quads,
+            [lock_x, 7.0, 15.0],
+            [lock_x + 1.0, 11.0, 16.0],
+            [0.0, 0.0],
+            texture,
+        );
     }
 
     for quad in &mut quads {

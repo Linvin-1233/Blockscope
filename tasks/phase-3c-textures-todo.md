@@ -193,3 +193,53 @@ licensing.
 
 **Dependencies:** M7  
 **Estimated scope:** Small
+
+## Follow-up: Camera yaw orientation (2026-10-24)
+
+**Description:** Align the default view with the reference Litematic viewer and
+remove the apparent piston/observer direction flip.
+
+- [x] Yaw now uses the reference viewer convention: 0 looks from the south,
+      45 from the south-west, and 225 from the north-east.
+- [x] `Camera` unit tests pin the default orientation and screen-right axis.
+- [x] Golden PNGs regenerated for the new orientation.
+- [x] `docs/rendering.md` documents the convention and camera basis.
+
+**Verification:**
+
+- [x] Default render matches the reference viewer's rotation 45 layout.
+- [x] `cargo test --workspace` passes.
+- [x] `cargo clippy --workspace --all-targets -- -D warnings` passes.
+
+## Follow-up: Double chest UV orientation (2026-10-24)
+
+**Description:** Fix large chest halves showing their outer border at the
+middle seam. The entity box unwrap now follows `ModelPart.Cube` UV
+orientation.
+
+- [x] Front, back, side, and lid-top UVs match vanilla entity model unwrap.
+- [x] Left/right halves keep their outer borders and meet at the middle.
+- [x] Regression tests assert the front and lid-top UV corners.
+- [x] `textured-materials.png` golden regenerated.
+
+**Verification:**
+
+- [x] `cargo test -p litematic-material`
+- [x] `cargo test -p litematic-render --test golden_textures`
+- [x] `powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/check.ps1`
+
+## Follow-up: Chest lock and piston face UVs (2026-10-24)
+
+**Description:** Restore the large chest center lock and fix rotated face UVs
+used by piston models.
+
+- [x] Double chest halves include the inner lock slivers from `ChestModel`.
+- [x] JSON face rotation permutes UV corners instead of rotating coordinates.
+- [x] Regression tests cover the center lock and 90/270 degree face rotations.
+- [x] Piston bases, rods, and heads sample the correct texture strips.
+
+**Verification:**
+
+- [x] `cargo test -p litematic-material`
+- [x] `cargo test -p litematic-render --test golden_textures`
+- [x] `powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/check.ps1`

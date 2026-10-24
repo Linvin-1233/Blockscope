@@ -1,0 +1,123 @@
+# Implementation Plan: Phase 4 - Shared Materials and Multi-Process Engine
+
+**Status:** Planned; baseline pending commit.
+**Baseline:** Phase 3C plus the in-flight chest/piston work (verified with
+`scripts/check.ps1`, exit 0).
+**Related:** `tasks/phase-4-engine-todo.md`
+
+## Goal
+
+Make the material pipeline safe to share across concurrent work, then expose the
+renderer as a long-lived, multi-process engine:
+
+1. Replace the `RefCell`-based material caches with a read-only snapshot that any
+   thread can share without locking the hot path.
+2. Run N engine processes behind a supervisor, each with its own material state,
+   so a crash is isolated and independent jobs can run in parallel.
+
+## Why a snapshot instead of swapping `RefCell` for `RwLock`
+
+`build_mesh` calls `BlockCatalog::resolve` once per block and, through face
+culling and ambient occlusion, up to 18 times per quad. The current 41k-block
+fixture produces 313k quads, so resolution runs in the millions of calls per
+mesh. A lock per call would add tens to hundreds of milliseconds and could
+regress mesh building by an order of magnitude.
+
+A `RefCell` to `RwLock` swap makes the type `Sync` but keeps the hot path inside
+a lock. The plan therefore separates construction from use:
+
+```text
+MaterialSet (single-threaded, may keep RefCell)
+  -> resolve every state used by the scene
+  -> MaterialSnapshot (immutable, Send + Sync)
+       - HashMap<BlockStateKey, Arc<ResolvedBlock>>
+       - TextureSet
+       - diagnostics and per-state info
+  -> shared as Arc<MaterialSnapshot>
+  -> build_mesh reads it with zero locking
+```
+
+Locking the builder remains an option only if incremental warmup across requests
+is needed later.
+
+## Architecture Decisions
+
+- **Snapshot over lock swap.** The render and mesh hot paths stay lock-free;
+  `RefCell` remains acceptable inside the single-threaded builder.
+- **`BlockCatalog` stays the mesh interface.** `MaterialSnapshot` implements the
+  existing trait, so `litematic-mesh` needs no API change.
+- **Textures are owned by the snapshot.** `render_mesh_with_textures` keeps
+  taking `&TextureSet`, sourced from the snapshot, so rendering stays read-only.
+- **Process pool size is bounded by cores.** One job already uses every core by
+  default, so `processes x threads <= physical cores`; two workers with six
+  threads each is the reference configuration.
+- **Sticky routing by `inputHash`.** Processes do not share caches, so routing
+  the same input to the same worker preserves mesh and snapshot hits.
+- **Results travel by path, not by pipe.** Encoded images land in a shared temp
+  directory; the protocol returns paths plus statistics.
+
+## Baseline Reference
+
+Measured before the chest/piston changes on the 41k-block fixture, release build:
+
+| Case | Total | Render | Mesh | Material load | PNG |
+|---|---|---|---|---|---|
+| 1024x1024, ss2 | ~380 ms | 204 ms | 146 ms | ~185 ms | 5 ms |
+| 2048x2048, ss2 | ~1.49 s | 1100 ms | 157 ms | ~185 ms | 23 ms |
+| 4096x4096, ss1 | ~1.51 s | 1053 ms | 157 ms | ~185 ms | 83 ms |
+
+`crates/render/src/camera.rs` and `options.rs` changed in the chest/piston work,
+so these numbers must be re-measured before they are used as a regression gate.
+
+## Slices
+
+### Slice 1: Material snapshot
+
+- New `MaterialSnapshot` type in `litematic-material`.
+- `MaterialSet::snapshot(states)` pre-resolves a set of block states.
+- Snapshot implements `BlockCatalog`; resolution is a hash lookup.
+- Snapshot owns the `TextureSet` and diagnostics.
+
+### Slice 2: Pipeline integration
+
+- CLI warms up materials and builds a snapshot per scene.
+- `render` and `materials` use the snapshot instead of the live set.
+- No change to public mesh or render signatures.
+
+### Slice 3: Concurrency proof
+
+- Shared `Arc<MaterialSnapshot>` across 1, 4, and available-parallelism threads.
+- Same mesh statistics, same render statistics, byte-identical PNG.
+
+### Slice 4: Engine worker
+
+- Long-lived `renderd serve` mode with warm materials.
+- One job at a time per process; rasterizer threads configurable.
+- Request/response protocol documented before implementation.
+
+### Slice 5: Supervisor and pool
+
+- Process pool with bounded size and health checks.
+- Sticky routing by `inputHash`.
+- Timeout, kill, restart, and zombie reaping.
+- Shared temp directory for outputs.
+
+## Risks and Mitigations
+
+| Risk | Impact | Mitigation |
+|---|---|---|
+| Uncommitted chest/piston work mixed with refactor | High | Commit the verified baseline before task M1 |
+| Lock inside the resolve hot path | High | Snapshot; perf check in M5 is a hard gate |
+| Golden PNG drift | High | Byte-compare `fixtures/golden/render/` after every task |
+| Oversubscribed threads across processes | Medium | Enforce `processes x threads <= cores` in config validation |
+| Memory growth per process | Medium | Bounded LRU, explicit `max_cached_meshes`, measure RSS |
+| Windows/Linux process differences | Medium | Long-lived pool, no spawn-per-job; confirm deploy target |
+| Worker crash loses a job | Medium | Supervisor retries once, then reports a failure |
+
+## Open Questions
+
+- Which platform does the engine deploy on, Linux or Windows?
+- What is the target concurrent render count?
+- Is multi-process for crash isolation, throughput, or both?
+- Is incremental warmup across requests required, or is a per-scene snapshot
+  enough?

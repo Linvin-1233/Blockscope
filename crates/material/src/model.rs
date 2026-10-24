@@ -217,7 +217,10 @@ fn face_uv_for_json(face: FaceDirection, vertices: &[[f32; 3]; 4], json: &Face) 
     };
 
     if let Some(rotation) = json.rotation {
-        rotate_uvs(&mut uv, rotation);
+        // JSON face rotation permutes the four texture corners instead of
+        // rotating their coordinates, so non-square UV rects stay valid.
+        let shift = (rotation.rem_euclid(360) / 90) as usize;
+        uv.rotate_left(shift);
     }
     uv
 }
@@ -267,9 +270,10 @@ fn face_axes(face: FaceDirection, vertex: [f32; 3]) -> (f32, f32) {
     }
 }
 
-/// Build the six faces of a box using Minecraft's standard box unwrap.
-/// `texture_origin` and `texture_size` are in texture pixels (16 for block
-/// models, 64 for chest entity textures).
+/// Build the six faces of a box using Minecraft's entity model unwrap.
+/// `texture_origin` and `texture_size` are in texture pixels (64 for chest
+/// entity textures). The UV orientation follows `ModelPart.Cube` so that
+/// double-chest halves keep their outer borders on the outside.
 pub(crate) fn box_quads(
     from: [f32; 3],
     to: [f32; 3],
@@ -283,37 +287,10 @@ pub(crate) fn box_quads(
     let [u, v] = texture_origin;
     let d = depth;
 
-    let faces = [
-        (FaceDirection::East, [u, v + d, u + d, v + d + height]),
-        (
-            FaceDirection::North,
-            [u + d, v + d, u + d + width, v + d + height],
-        ),
-        (
-            FaceDirection::West,
-            [u + d + width, v + d, u + d + width + d, v + d + height],
-        ),
-        (
-            FaceDirection::South,
-            [
-                u + d + width + d,
-                v + d,
-                u + d + width + d + width,
-                v + d + height,
-            ],
-        ),
-        // Entity textures place the visible lid top in the second square.
-        (
-            FaceDirection::Up,
-            [u + d + width, v, u + d + width + width, v + d],
-        ),
-        (FaceDirection::Down, [u + d, v, u + d + width, v + d]),
-    ];
-
     let mut quads = Vec::with_capacity(6);
-    for (face, rect) in faces {
+    for face in FaceDirection::ALL {
         let vertices = face_vertices(face, from, to);
-        let uv = map_uv_rect(face, &vertices, rect, texture_size);
+        let uv = entity_face_uv(face, u, v, width, height, d, texture_size);
         let Some(normal) = geometric_normal(vertices) else {
             continue;
         };
@@ -330,6 +307,65 @@ pub(crate) fn box_quads(
         });
     }
     quads
+}
+
+/// UV corners for `face_vertices` in `ModelPart.Cube` order.
+fn entity_face_uv(
+    face: FaceDirection,
+    u: f32,
+    v: f32,
+    width: f32,
+    height: f32,
+    depth: f32,
+    divisor: f32,
+) -> [[f32; 2]; 4] {
+    let down = [
+        [u + depth, v],
+        [u + depth, v + depth],
+        [u + depth + width, v + depth],
+        [u + depth + width, v],
+    ];
+    let up = [
+        [u + depth + width, v + depth],
+        [u + depth + width, v],
+        [u + depth + width + width, v],
+        [u + depth + width + width, v + depth],
+    ];
+    let north = [
+        [u + depth, v + depth],
+        [u + depth, v + depth + height],
+        [u + depth + width, v + depth + height],
+        [u + depth + width, v + depth],
+    ];
+    let south = [
+        [u + depth + width + depth, v + depth],
+        [u + depth + width + depth, v + depth + height],
+        [u + depth + width + depth + width, v + depth + height],
+        [u + depth + width + depth + width, v + depth],
+    ];
+    let west = [
+        [u, v + depth],
+        [u, v + depth + height],
+        [u + depth, v + depth + height],
+        [u + depth, v + depth],
+    ];
+    let east = [
+        [u + depth + width, v + depth],
+        [u + depth + width, v + depth + height],
+        [u + depth + width + depth, v + depth + height],
+        [u + depth + width + depth, v + depth],
+    ];
+
+    let corners = match face {
+        FaceDirection::Down => down,
+        FaceDirection::Up => up,
+        FaceDirection::North => north,
+        FaceDirection::South => south,
+        FaceDirection::West => west,
+        FaceDirection::East => east,
+    };
+
+    corners.map(|[corner_u, corner_v]| [corner_u / divisor, corner_v / divisor])
 }
 
 fn rotate_uvs(uv: &mut [[f32; 2]; 4], degrees: i32) {
@@ -509,4 +545,34 @@ fn resolve_texture_inner(
 fn normalize_texture_name(path: &str) -> String {
     let path = path.strip_prefix("minecraft:").unwrap_or(path);
     path.trim_start_matches("textures/").to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::json::Face;
+
+    fn rotated_face(rotation: i32) -> Face {
+        Face {
+            uv: Some([0.0, 0.0, 16.0, 4.0]),
+            texture: "#all".to_string(),
+            cullface: None,
+            rotation: Some(rotation),
+            tintindex: None,
+        }
+    }
+
+    #[test]
+    fn json_face_rotation_permutes_uv_corners() {
+        let vertices = face_vertices(FaceDirection::Down, [6.0, 6.0, 4.0], [10.0, 10.0, 20.0]);
+
+        assert_eq!(
+            face_uv_for_json(FaceDirection::Down, &vertices, &rotated_face(90)),
+            [[0.0, 0.25], [1.0, 0.25], [1.0, 0.0], [0.0, 0.0]]
+        );
+        assert_eq!(
+            face_uv_for_json(FaceDirection::Down, &vertices, &rotated_face(270)),
+            [[1.0, 0.0], [0.0, 0.0], [0.0, 0.25], [1.0, 0.25]]
+        );
+    }
 }

@@ -61,6 +61,8 @@ impl Background {
 pub struct RenderOptions {
     pub width: u32,
     pub height: u32,
+    /// Horizontal view rotation in degrees. 0 looks from +Z (south); 45 looks
+    /// from the south-west. Matches the reference Litematic viewer.
     pub yaw: f32,
     pub elevation: f32,
     pub background: Background,

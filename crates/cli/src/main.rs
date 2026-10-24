@@ -115,7 +115,8 @@ struct RenderArgs {
     /// Output height in pixels.
     #[arg(long, default_value_t = 1024)]
     height: u32,
-    /// Horizontal rotation in degrees.
+    /// Horizontal rotation in degrees; 0 looks from the south, 45 from the
+    /// south-west.
     #[arg(long, default_value_t = 45.0)]
     yaw: f32,
     /// Camera elevation in degrees.
