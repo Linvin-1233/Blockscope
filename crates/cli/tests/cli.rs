@@ -485,3 +485,27 @@ fn missing_file_exits_with_input_error() {
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(stderr.contains("IO_ERROR"));
 }
+
+#[test]
+fn force_limits_prints_a_warning() {
+    let fixture = write_fixture(&basic_fixture());
+    let path = fixture.path().to_str().unwrap();
+
+    let forced = run(&["mesh", path, "--json", "--force-limits"]);
+    assert!(forced.status.success());
+    let stderr = String::from_utf8(forced.stderr).unwrap();
+    assert!(
+        stderr.contains("WARNING: resource limits are disabled"),
+        "{stderr}"
+    );
+    let stats: MeshStatistics = serde_json::from_slice(&forced.stdout).unwrap();
+    assert!(stats.quads > 0);
+
+    let default = run(&["mesh", path, "--json"]);
+    assert!(default.status.success());
+    assert!(
+        default.stderr.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&default.stderr)
+    );
+}

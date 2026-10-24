@@ -144,6 +144,11 @@ shadows, or biome tinting. It is stable and deterministic.
 Validation rejects zero dimensions, elevation beyond ±89.9°, non-finite values,
 padding that leaves no drawable area, and outputs above the pixel limit.
 
+Parser, mesh, and render caps can be disabled per invocation with
+`--force-limits`. The CLI prints `WARNING: resource limits are disabled` to
+stderr and otherwise proceeds, which is intended for offline renders of
+oversized schematics on a machine with enough memory.
+
 ## CLI
 
 ```powershell

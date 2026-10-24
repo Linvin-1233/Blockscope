@@ -55,7 +55,12 @@ cargo run -p renderd-cli -- render path\to\model.litematic --output out.png `
 cargo run -p renderd-cli --release -- materials path\to\model.litematic `
   --client-jar "D:\hmcl\.minecraft\versions\26.2-Fabric\26.2-Fabric.jar" --json
 cargo run -p renderd-cli --release -- bench path\to\model.litematic --iterations 5
+cargo run -p renderd-cli -- mesh path\to\huge.litematic --force-limits --json
 ```
+
+`--force-limits` disables the parser, mesh, and render caps for one invocation
+and prints a warning to stderr. It does not allocate anything up front, but a
+large model can exhaust memory.
 
 `inspect --json` 输出稳定 manifest，包含 bounds、region、材料统计、诊断、
 `inputHash` 和 `sceneHash`。

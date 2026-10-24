@@ -36,6 +36,8 @@ pub struct SuperviseArgs {
     /// Per-worker memory ceiling in MiB; 0 derives it from capacity.
     #[arg(long, default_value_t = 0)]
     memory: u64,
+    #[command(flatten)]
+    limits: crate::LimitArgs,
 }
 
 struct Job {
@@ -60,6 +62,7 @@ struct Spec {
     assets: Vec<OsString>,
     timeout: Option<Duration>,
     memory_limit: Option<u64>,
+    force_limits: bool,
 }
 
 enum Event {
@@ -82,6 +85,7 @@ enum Event {
 }
 
 pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
+    crate::warn_forced(args.limits.force_limits);
     let capacity = Capacity::detect();
     let workers = if args.workers == 0 {
         capacity.suggested_workers
@@ -114,6 +118,7 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
         assets: args.assets.cli_args(),
         timeout,
         memory_limit,
+        force_limits: args.limits.force_limits,
     };
 
     if workers.saturating_mul(threads) > capacity.cores {
@@ -468,6 +473,9 @@ fn spawn_worker(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit());
+    if spec.force_limits {
+        command.arg("--force-limits");
+    }
 
     let mut child = command
         .spawn()

@@ -59,6 +59,13 @@ enum Command {
     Supervise(supervise::SuperviseArgs),
 }
 
+#[derive(Debug, Args, Clone, Copy, Default)]
+pub(crate) struct LimitArgs {
+    /// Disable parser, mesh, and render size limits. Can exhaust memory.
+    #[arg(long)]
+    force_limits: bool,
+}
+
 #[derive(Debug, Args)]
 struct InspectArgs {
     file: PathBuf,
@@ -68,11 +75,15 @@ struct InspectArgs {
     /// Print compact JSON; implies --json.
     #[arg(long)]
     compact: bool,
+    #[command(flatten)]
+    limits: LimitArgs,
 }
 
 #[derive(Debug, Args)]
 struct ValidateArgs {
     file: PathBuf,
+    #[command(flatten)]
+    limits: LimitArgs,
 }
 
 #[derive(Debug, Args)]
@@ -81,6 +92,8 @@ struct StatsArgs {
     /// Print statistics as JSON.
     #[arg(long)]
     json: bool,
+    #[command(flatten)]
+    limits: LimitArgs,
 }
 
 #[derive(Debug, Args)]
@@ -95,6 +108,8 @@ struct MeshArgs {
     /// Write the mesh as PLY with vertex colors.
     #[arg(long)]
     ply: Option<PathBuf>,
+    #[command(flatten)]
+    limits: LimitArgs,
 }
 
 #[derive(Debug, Args, Clone, Default)]
@@ -172,6 +187,8 @@ struct RenderArgs {
     json: bool,
     #[command(flatten)]
     assets: AssetArgs,
+    #[command(flatten)]
+    limits: LimitArgs,
 }
 
 #[derive(Debug, Args)]
@@ -203,6 +220,8 @@ struct BenchArgs {
     json: bool,
     #[command(flatten)]
     assets: AssetArgs,
+    #[command(flatten)]
+    limits: LimitArgs,
 }
 
 #[derive(Debug, Args)]
@@ -213,6 +232,8 @@ struct MaterialsArgs {
     json: bool,
     #[command(flatten)]
     assets: AssetArgs,
+    #[command(flatten)]
+    limits: LimitArgs,
 }
 
 fn main() -> ExitCode {
@@ -288,7 +309,8 @@ fn format_megabytes(bytes: u64) -> String {
 }
 
 fn inspect(args: InspectArgs) -> Result<(), CliError> {
-    let (input, scene) = load_scene(&args.file)?;
+    warn_forced(args.limits.force_limits);
+    let (input, scene) = load_scene(&args.file, args.limits.force_limits)?;
     let manifest = Manifest::from_scene(&scene, sha256(&input), env!("CARGO_PKG_VERSION"));
 
     if args.json || args.compact {
@@ -307,7 +329,8 @@ fn inspect(args: InspectArgs) -> Result<(), CliError> {
 }
 
 fn validate(args: ValidateArgs) -> Result<(), CliError> {
-    let (_, scene) = load_scene(&args.file)?;
+    warn_forced(args.limits.force_limits);
+    let (_, scene) = load_scene(&args.file, args.limits.force_limits)?;
 
     println!("OK: {}", args.file.display());
     println!(
@@ -337,7 +360,8 @@ fn validate(args: ValidateArgs) -> Result<(), CliError> {
 }
 
 fn stats(args: StatsArgs) -> Result<(), CliError> {
-    let (input, scene) = load_scene(&args.file)?;
+    warn_forced(args.limits.force_limits);
+    let (input, scene) = load_scene(&args.file, args.limits.force_limits)?;
 
     if args.json {
         let manifest = Manifest::from_scene(&scene, sha256(&input), env!("CARGO_PKG_VERSION"));
@@ -371,9 +395,11 @@ fn stats(args: StatsArgs) -> Result<(), CliError> {
 }
 
 fn mesh(args: MeshArgs) -> Result<(), CliError> {
-    let (_, scene) = load_scene(&args.file)?;
+    warn_forced(args.limits.force_limits);
+    let (_, scene) = load_scene(&args.file, args.limits.force_limits)?;
     let catalog = ColorBlockCatalog::new().map_err(CliError::internal)?;
-    let mesh = build_mesh(&scene, &catalog, &MeshLimits::default()).map_err(CliError::from)?;
+    let mesh = build_mesh(&scene, &catalog, &mesh_limits(args.limits.force_limits))
+        .map_err(CliError::from)?;
 
     if let Some(path) = &args.obj {
         write_export(path, |writer| write_obj(&mesh, writer))?;
@@ -396,7 +422,8 @@ fn mesh(args: MeshArgs) -> Result<(), CliError> {
 
 fn render(args: RenderArgs) -> Result<(), CliError> {
     let started = Instant::now();
-    let (_, scene) = load_scene(&args.file)?;
+    warn_forced(args.limits.force_limits);
+    let (_, scene) = load_scene(&args.file, args.limits.force_limits)?;
     let parse_ms = started.elapsed().as_secs_f64() * 1000.0;
 
     let background = parse_background(&args.background)?;
@@ -415,12 +442,16 @@ fn render(args: RenderArgs) -> Result<(), CliError> {
 
     let mesh_started = Instant::now();
     let snapshot = materials.map(|materials| material_snapshot(&scene, &materials));
-    let mesh = build_scene_mesh(&scene, snapshot.as_ref())?;
+    let mesh = build_scene_mesh(
+        &scene,
+        snapshot.as_ref(),
+        &mesh_limits(args.limits.force_limits),
+    )?;
     let mesh_ms = mesh_started.elapsed().as_secs_f64() * 1000.0;
 
     let mut results = Vec::with_capacity(view_count);
     for yaw in views {
-        let options = RenderOptions {
+        let mut options = RenderOptions {
             width: args.width,
             height: args.height,
             yaw,
@@ -432,6 +463,7 @@ fn render(args: RenderArgs) -> Result<(), CliError> {
             texture_filter,
             ..Default::default()
         };
+        apply_render_limits(args.limits.force_limits, &mut options);
 
         let render_started = Instant::now();
         let output = match &snapshot {
@@ -515,15 +547,69 @@ fn render(args: RenderArgs) -> Result<(), CliError> {
     Ok(())
 }
 
-fn build_scene_mesh(scene: &Scene, snapshot: Option<&MaterialSnapshot>) -> Result<Mesh, CliError> {
+fn build_scene_mesh(
+    scene: &Scene,
+    snapshot: Option<&MaterialSnapshot>,
+    limits: &MeshLimits,
+) -> Result<Mesh, CliError> {
     match snapshot {
-        Some(snapshot) => {
-            build_mesh(scene, snapshot, &MeshLimits::default()).map_err(CliError::from)
-        }
+        Some(snapshot) => build_mesh(scene, snapshot, limits).map_err(CliError::from),
         None => {
             let catalog = ColorBlockCatalog::new().map_err(CliError::internal)?;
-            build_mesh(scene, &catalog, &MeshLimits::default()).map_err(CliError::from)
+            build_mesh(scene, &catalog, limits).map_err(CliError::from)
         }
+    }
+}
+
+/// Limits used for parsing and meshing. `--force-limits` removes the caps but
+/// leaves a warning so an operator can see the risk in the logs.
+fn decode_limits(force: bool) -> DecodeLimits {
+    if force {
+        DecodeLimits {
+            max_input_bytes: 1 << 40,
+            max_decompressed_bytes: 1 << 40,
+            max_total_bytes: 1 << 40,
+            ..DecodeLimits::default()
+        }
+    } else {
+        DecodeLimits::default()
+    }
+}
+
+fn scene_limits(force: bool) -> LitematicLimits {
+    if force {
+        LitematicLimits {
+            max_volume_per_region: 1_000_000_000_000,
+            max_total_volume: 1_000_000_000_000,
+            ..LitematicLimits::default()
+        }
+    } else {
+        LitematicLimits::default()
+    }
+}
+
+fn mesh_limits(force: bool) -> MeshLimits {
+    if force {
+        MeshLimits {
+            max_pages: usize::MAX,
+            max_quads: usize::MAX,
+            max_vertices: usize::MAX,
+        }
+    } else {
+        MeshLimits::default()
+    }
+}
+
+fn apply_render_limits(force: bool, options: &mut RenderOptions) {
+    if force {
+        options.max_pixels = u64::MAX;
+        options.max_supersampled_pixels = u64::MAX;
+    }
+}
+
+fn warn_forced(force: bool) {
+    if force {
+        eprintln!("WARNING: resource limits are disabled; a large input can exhaust memory");
     }
 }
 
@@ -581,7 +667,8 @@ fn parse_background(value: &str) -> Result<Background, CliError> {
 }
 
 fn materials(args: MaterialsArgs) -> Result<(), CliError> {
-    let (_, scene) = load_scene(&args.file)?;
+    warn_forced(args.limits.force_limits);
+    let (_, scene) = load_scene(&args.file, args.limits.force_limits)?;
     let materials = load_materials(&args.assets)?.ok_or_else(|| {
         CliError::input("ASSET_SOURCE_REQUIRED: provide --client-jar or --assets")
     })?;
@@ -712,6 +799,7 @@ fn bench(args: BenchArgs) -> Result<(), CliError> {
             "INVALID_RENDER_OPTIONS: iterations must be positive",
         ));
     }
+    warn_forced(args.limits.force_limits);
 
     let lighting = LightingProfile::parse(&args.lighting).ok_or_else(|| {
         CliError::input(format!(
@@ -724,15 +812,19 @@ fn bench(args: BenchArgs) -> Result<(), CliError> {
     let materials = load_materials(&args.assets)?;
 
     let parse_started = Instant::now();
-    let (_, scene) = load_scene(&args.file)?;
+    let (_, scene) = load_scene(&args.file, args.limits.force_limits)?;
     let parse_ms = parse_started.elapsed().as_secs_f64() * 1000.0;
 
     let mesh_started = Instant::now();
     let snapshot = materials.map(|materials| material_snapshot(&scene, &materials));
-    let mesh = build_scene_mesh(&scene, snapshot.as_ref())?;
+    let mesh = build_scene_mesh(
+        &scene,
+        snapshot.as_ref(),
+        &mesh_limits(args.limits.force_limits),
+    )?;
     let mesh_ms = mesh_started.elapsed().as_secs_f64() * 1000.0;
 
-    let options = RenderOptions {
+    let mut options = RenderOptions {
         width: args.width,
         height: args.height,
         yaw: 45.0,
@@ -744,6 +836,7 @@ fn bench(args: BenchArgs) -> Result<(), CliError> {
         texture_filter,
         ..Default::default()
     };
+    apply_render_limits(args.limits.force_limits, &mut options);
     options.validate().map_err(CliError::from)?;
 
     let mut render_samples = Vec::with_capacity(args.iterations as usize);
@@ -917,14 +1010,14 @@ fn print_mesh_stats(statistics: &MeshStatistics) {
     );
 }
 
-fn load_scene(path: &Path) -> Result<(Vec<u8>, Scene), CliError> {
+fn load_scene(path: &Path, force_limits: bool) -> Result<(Vec<u8>, Scene), CliError> {
     let input = fs::read(path)
         .map_err(|error| CliError::input(format!("IO_ERROR: {}: {error}", path.display())))?;
 
     let file = LitematicFile::parse_bytes(
         &input,
-        &DecodeLimits::default(),
-        &LitematicLimits::default(),
+        &decode_limits(force_limits),
+        &scene_limits(force_limits),
     )
     .map_err(CliError::from)?;
 
@@ -1011,5 +1104,22 @@ impl From<RenderError> for CliError {
 impl From<litematic_material::MaterialError> for CliError {
     fn from(error: litematic_material::MaterialError) -> Self {
         Self::input(error.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn forced_limits_raise_every_cap() {
+        assert!(mesh_limits(true).max_quads > mesh_limits(false).max_quads);
+        assert!(decode_limits(true).max_input_bytes > decode_limits(false).max_input_bytes);
+        assert!(scene_limits(true).max_total_volume > scene_limits(false).max_total_volume);
+
+        let mut options = RenderOptions::default();
+        apply_render_limits(true, &mut options);
+        assert_eq!(options.max_pixels, u64::MAX);
+        assert_eq!(options.max_supersampled_pixels, u64::MAX);
     }
 }

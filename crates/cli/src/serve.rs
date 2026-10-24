@@ -4,7 +4,7 @@ use crate::{
     parse_texture_filter,
 };
 use clap::Args;
-use litematic_core::{DecodeLimits, LitematicFile, LitematicLimits};
+use litematic_core::LitematicFile;
 use litematic_material::{MaterialSet, MaterialSnapshot};
 use litematic_mesh::Mesh;
 use litematic_render::{
@@ -35,6 +35,8 @@ pub struct ServeArgs {
     /// Parsed scenes and meshes to keep for repeated inputs.
     #[arg(long, default_value_t = 1)]
     cache: u32,
+    #[command(flatten)]
+    limits: crate::LimitArgs,
 }
 
 #[derive(Clone)]
@@ -89,9 +91,11 @@ struct InputRef {
 
 pub fn run(args: ServeArgs) -> Result<(), CliError> {
     let capacity = Capacity::detect();
+    crate::warn_forced(args.limits.force_limits);
     let materials = load_materials(&args.assets)?;
     let mut cache: Vec<CachedScene> = Vec::new();
     let cache_limit = args.cache as usize;
+    let force_limits = args.limits.force_limits;
 
     let stdout = std::io::stdout();
     let mut out = BufWriter::new(stdout.lock());
@@ -115,6 +119,7 @@ pub fn run(args: ServeArgs) -> Result<(), CliError> {
                     *request,
                     materials.as_ref(),
                     args.threads,
+                    force_limits,
                     &mut cache,
                     cache_limit,
                 );
@@ -157,11 +162,19 @@ fn handle(
     request: RenderRequest,
     materials: Option<&MaterialSet>,
     default_threads: u32,
+    force_limits: bool,
     cache: &mut Vec<CachedScene>,
     cache_limit: usize,
 ) -> Value {
     let id = request.id.clone();
-    match process(&request, materials, default_threads, cache, cache_limit) {
+    match process(
+        &request,
+        materials,
+        default_threads,
+        force_limits,
+        cache,
+        cache_limit,
+    ) {
         Ok(result) => result,
         Err(error) => {
             let code = error_code(&error.message);
@@ -183,6 +196,7 @@ fn process(
     request: &RenderRequest,
     materials: Option<&MaterialSet>,
     default_threads: u32,
+    force_limits: bool,
     cache: &mut Vec<CachedScene>,
     cache_limit: usize,
 ) -> Result<Value, CliError> {
@@ -240,8 +254,8 @@ fn process(
             let parse_started = Instant::now();
             let file = LitematicFile::parse_bytes(
                 &input,
-                &DecodeLimits::default(),
-                &LitematicLimits::default(),
+                &crate::decode_limits(force_limits),
+                &crate::scene_limits(force_limits),
             )
             .map_err(CliError::from)?;
             let scene = Arc::new(file.into_scene().map_err(CliError::from)?);
@@ -250,7 +264,11 @@ fn process(
             let mesh_started = Instant::now();
             let snapshot =
                 materials.map(|materials| Arc::new(material_snapshot(&scene, materials)));
-            let mesh = Arc::new(build_scene_mesh(&scene, snapshot.as_deref())?);
+            let mesh = Arc::new(build_scene_mesh(
+                &scene,
+                snapshot.as_deref(),
+                &crate::mesh_limits(force_limits),
+            )?);
             let mesh_ms = mesh_started.elapsed().as_secs_f64() * 1000.0;
 
             let entry = CachedScene {
@@ -306,7 +324,7 @@ fn process(
     let mut last_statistics = None;
 
     for yaw in views {
-        let options = RenderOptions {
+        let mut options = RenderOptions {
             width: request.width.unwrap_or(DEFAULT_SIZE),
             height: request.height.unwrap_or(DEFAULT_SIZE),
             yaw,
@@ -318,6 +336,7 @@ fn process(
             texture_filter,
             ..Default::default()
         };
+        crate::apply_render_limits(force_limits, &mut options);
 
         let render_started = Instant::now();
         let output = match &snapshot {

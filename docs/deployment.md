@@ -47,6 +47,8 @@ thread; raising `--workers` there only splits one core and doubles memory.
   the job is retried once.
 - `--queue <jobs>`: queued jobs before `BUSY`; defaults to `workers * 2`.
 - `--cache <entries>`: parsed scenes cached per worker; defaults to 1.
+- `--force-limits`: disables parser, mesh, and render caps for every worker.
+  A warning is printed once at supervisor startup and once per worker.
 
 The container image never ships Minecraft assets. Mount the jar or an extracted
 `assets/` directory at runtime.

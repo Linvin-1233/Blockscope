@@ -257,3 +257,9 @@ prompts, no reading from a TTY.
 - Non-PNG formats.
 - In-process job queues or multi-job batching.
 - Windows peak RSS accounting.
+
+## Overrides
+
+`serve` and `supervise` accept `--force-limits`, which raises the parser, mesh,
+and render caps for that process. It prints a warning on stderr and is meant for
+offline work on oversized schematics, not for the default service profile.
