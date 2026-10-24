@@ -1,6 +1,6 @@
 # Implementation Plan: Phase 4 - Shared Materials and Multi-Process Engine
 
-**Status:** M1-M5 and P1-P2 implemented; engine slices P3-P5 pending.
+**Status:** M1-M5 and P1-P3 implemented; P4-P5 pending.
 **Baseline:** Phase 3C plus the in-flight chest/piston work (verified with
 `scripts/check.ps1`, exit 0).
 **Related:** `tasks/phase-4-engine-todo.md`
@@ -144,6 +144,15 @@ WSL2 Ubuntu 24.04, release build, inside a systemd scope with
 
 The cgroup v2 limit and CPU quota are picked up without configuration, and the
 pool collapses to one worker on one thread as intended.
+
+### Supervisor
+
+Two workers, three threads each, real fixture, 1024x1024 at supersample 2:
+
+| Run | Wall | Per job | Cache |
+|---|---|---|---|
+| Two concurrent jobs | 1.15 s | 652 ms each | miss |
+| Sequential repeat | - | skips parse and mesh | hit (`cacheHit: true`) |
 
 ## Risks and Mitigations
 

@@ -101,6 +101,45 @@ fn serve_renders_two_jobs_and_shuts_down() {
 }
 
 #[test]
+fn serve_reuses_cached_scene_and_mesh() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = fixture(dir.path());
+    let out_dir = dir.path().join("out");
+
+    let (mut child, mut stdin, mut lines) = start();
+    let _hello = read_json(&mut lines);
+
+    let request = |id: &str| {
+        json!({
+            "type": "render",
+            "id": id,
+            "input": { "path": input.display().to_string() },
+            "views": [45],
+            "width": 64,
+            "height": 64,
+            "supersample": 1,
+            "outputDir": out_dir.display().to_string(),
+        })
+    };
+
+    send(&mut stdin, &request("cache-1"));
+    let first = read_json(&mut lines);
+    assert_eq!(first["ok"], true, "{first}");
+    assert_eq!(first["cacheHit"], false);
+
+    send(&mut stdin, &request("cache-2"));
+    let second = read_json(&mut lines);
+    assert_eq!(second["ok"], true, "{second}");
+    assert_eq!(second["cacheHit"], true);
+    assert_eq!(second["timings"]["meshMs"], 0.0);
+    assert_eq!(second["timings"]["parseMs"], 0.0);
+
+    send(&mut stdin, &json!({ "type": "shutdown" }));
+    assert_eq!(read_json(&mut lines)["type"], "bye");
+    assert!(child.wait().unwrap().success());
+}
+
+#[test]
 fn serve_reports_bad_requests_without_exiting() {
     let (mut child, mut stdin, mut lines) = start();
     let _hello = read_json(&mut lines);

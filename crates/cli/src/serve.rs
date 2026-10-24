@@ -1,19 +1,22 @@
 use crate::capacity::Capacity;
 use crate::{
-    AssetArgs, CliError, build_scene_mesh, load_materials, load_scene, material_snapshot,
-    parse_background, parse_texture_filter,
+    AssetArgs, CliError, build_scene_mesh, load_materials, material_snapshot, parse_background,
+    parse_texture_filter,
 };
 use clap::Args;
-use litematic_material::MaterialSet;
+use litematic_core::{DecodeLimits, LitematicFile, LitematicLimits};
+use litematic_material::{MaterialSet, MaterialSnapshot};
+use litematic_mesh::Mesh;
 use litematic_render::{
     LightingProfile, RenderOptions, render_mesh, render_mesh_with_textures, write_png,
 };
-use litematic_scene::sha256;
+use litematic_scene::{Scene, sha256};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::fs::{self, File};
 use std::io::{BufRead, BufWriter, Write};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Instant;
 
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -29,6 +32,17 @@ pub struct ServeArgs {
     /// Rasterizer threads for requests that omit `threads`.
     #[arg(long, default_value_t = 0)]
     threads: u32,
+    /// Parsed scenes and meshes to keep for repeated inputs.
+    #[arg(long, default_value_t = 1)]
+    cache: u32,
+}
+
+#[derive(Clone)]
+struct CachedScene {
+    hash: String,
+    scene: Arc<Scene>,
+    mesh: Arc<Mesh>,
+    snapshot: Option<Arc<MaterialSnapshot>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -76,6 +90,8 @@ struct InputRef {
 pub fn run(args: ServeArgs) -> Result<(), CliError> {
     let capacity = Capacity::detect();
     let materials = load_materials(&args.assets)?;
+    let mut cache: Vec<CachedScene> = Vec::new();
+    let cache_limit = args.cache as usize;
 
     let stdout = std::io::stdout();
     let mut out = BufWriter::new(stdout.lock());
@@ -95,7 +111,13 @@ pub fn run(args: ServeArgs) -> Result<(), CliError> {
                 return Ok(());
             }
             Ok(Message::Render(request)) => {
-                let response = handle(*request, materials.as_ref(), args.threads);
+                let response = handle(
+                    *request,
+                    materials.as_ref(),
+                    args.threads,
+                    &mut cache,
+                    cache_limit,
+                );
                 write_line(&mut out, &response)?;
             }
             Err(error) => {
@@ -131,9 +153,15 @@ fn hello(capacity: &Capacity) -> Value {
     })
 }
 
-fn handle(request: RenderRequest, materials: Option<&MaterialSet>, default_threads: u32) -> Value {
+fn handle(
+    request: RenderRequest,
+    materials: Option<&MaterialSet>,
+    default_threads: u32,
+    cache: &mut Vec<CachedScene>,
+    cache_limit: usize,
+) -> Value {
     let id = request.id.clone();
-    match process(&request, materials, default_threads) {
+    match process(&request, materials, default_threads, cache, cache_limit) {
         Ok(result) => result,
         Err(error) => {
             let code = error_code(&error.message);
@@ -155,6 +183,8 @@ fn process(
     request: &RenderRequest,
     materials: Option<&MaterialSet>,
     default_threads: u32,
+    cache: &mut Vec<CachedScene>,
+    cache_limit: usize,
 ) -> Result<Value, CliError> {
     let started = Instant::now();
     validate_id(&request.id)?;
@@ -177,23 +207,66 @@ fn process(
         ));
     }
 
-    let parse_started = Instant::now();
-    let (input, scene) = load_scene(&request.input.path)?;
-    let parse_ms = parse_started.elapsed().as_secs_f64() * 1000.0;
+    let input = fs::read(&request.input.path).map_err(|error| {
+        CliError::input(format!(
+            "IO_ERROR: {}: {error}",
+            request.input.path.display()
+        ))
+    })?;
+    let input_hash = sha256(&input).to_hex();
 
-    if let Some(expected) = &request.input.hash {
-        let actual = sha256(&input).to_hex();
-        if !actual.eq_ignore_ascii_case(expected) {
-            return Err(CliError::input(format!(
-                "INPUT_HASH_MISMATCH: expected {expected}, got {actual}"
-            )));
-        }
+    if let Some(expected) = &request.input.hash
+        && !input_hash.eq_ignore_ascii_case(expected)
+    {
+        return Err(CliError::input(format!(
+            "INPUT_HASH_MISMATCH: expected {expected}, got {input_hash}"
+        )));
     }
 
-    let mesh_started = Instant::now();
-    let snapshot = materials.map(|materials| material_snapshot(&scene, materials));
-    let mesh = build_scene_mesh(&scene, snapshot.as_ref())?;
-    let mesh_ms = mesh_started.elapsed().as_secs_f64() * 1000.0;
+    let cached = cache
+        .iter()
+        .position(|entry| entry.hash == input_hash)
+        .map(|index| cache.remove(index));
+
+    let (scene, mesh, snapshot, parse_ms, mesh_ms, cache_hit) = match cached {
+        Some(entry) => {
+            let scene = Arc::clone(&entry.scene);
+            let mesh = Arc::clone(&entry.mesh);
+            let snapshot = entry.snapshot.clone();
+            cache.insert(0, entry);
+            (scene, mesh, snapshot, 0.0, 0.0, true)
+        }
+        None => {
+            let parse_started = Instant::now();
+            let file = LitematicFile::parse_bytes(
+                &input,
+                &DecodeLimits::default(),
+                &LitematicLimits::default(),
+            )
+            .map_err(CliError::from)?;
+            let scene = Arc::new(file.into_scene().map_err(CliError::from)?);
+            let parse_ms = parse_started.elapsed().as_secs_f64() * 1000.0;
+
+            let mesh_started = Instant::now();
+            let snapshot =
+                materials.map(|materials| Arc::new(material_snapshot(&scene, materials)));
+            let mesh = Arc::new(build_scene_mesh(&scene, snapshot.as_deref())?);
+            let mesh_ms = mesh_started.elapsed().as_secs_f64() * 1000.0;
+
+            let entry = CachedScene {
+                hash: input_hash.clone(),
+                scene: Arc::clone(&scene),
+                mesh: Arc::clone(&mesh),
+                snapshot: snapshot.clone(),
+            };
+            if cache_limit > 0 {
+                cache.insert(0, entry);
+                cache.truncate(cache_limit);
+            }
+
+            (scene, mesh, snapshot, parse_ms, mesh_ms, false)
+        }
+    };
 
     let views = if request.views.is_empty() {
         vec![DEFAULT_YAW]
@@ -293,8 +366,9 @@ fn process(
         "type": "result",
         "id": request.id,
         "ok": true,
-        "inputHash": sha256(&input).to_hex(),
+        "inputHash": input_hash,
         "sceneHash": scene.scene_hash().to_hex(),
+        "cacheHit": cache_hit,
         "outputs": outputs,
         "timings": {
             "parseMs": parse_ms,

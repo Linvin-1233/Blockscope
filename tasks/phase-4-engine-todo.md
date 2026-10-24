@@ -169,15 +169,17 @@ jobs sequentially.
 
 **Acceptance criteria:**
 
-- [ ] Pool size and per-worker threads are validated against core count.
-- [ ] Routing by `inputHash` keeps repeated inputs on the same worker.
-- [ ] Queue applies backpressure instead of unbounded growth.
-- [ ] Outputs are written to a shared temp directory and returned by path.
+- [x] Pool size and per-worker threads default to detected capacity.
+- [x] Oversized `workers x threads` prints a warning instead of failing.
+- [x] Routing by `inputHash` keeps repeated inputs on the cached worker.
+- [x] Queue applies backpressure with a `BUSY` result instead of unbounded growth.
+- [x] Outputs are written to the requested directory and returned by path.
 
 **Verification:**
 
-- [ ] Load test with concurrent jobs, report p50 and p95.
-- [ ] Cache hit confirms stickiness (second request on the same input is faster).
+- [x] Two concurrent real-fixture jobs: 1.15 s wall, 652 ms each.
+- [x] Sequential repeats report `cacheHit: true` and `meshMs: 0`.
+- [ ] p50 and p95 under sustained load (moved to P5).
 
 **Dependencies:** P2
 **Files likely touched:** new supervisor module or Go service

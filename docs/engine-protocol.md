@@ -142,6 +142,8 @@ rasterizer mid-tile.
 - `outputs` preserves `views` order, one entry per view.
 - Output files are `{id}.png` for a single view and `{id}-{yaw}.png` for
   multiple views. The engine never overwrites a result from another job.
+- `cacheHit` is `true` when the worker reused a parsed scene and mesh for the
+  same `inputHash`; `parseMs` and `meshMs` are then `0`.
 - `timings` are wall-clock aggregates for the whole job.
 - `statistics` is advisory; consumers must not depend on fields beyond
   `triangles`.
@@ -164,6 +166,8 @@ rasterizer mid-tile.
 | `ASSET_ERROR` | no | Pack or jar cannot be read |
 | `INPUT_HASH_MISMATCH` | no | `input.hash` does not match the file |
 | `MESH_LIMIT_EXCEEDED` | no | Mesh limits exceeded |
+| `BUSY` | yes | Supervisor queue is full |
+| `SHUTDOWN` | yes | Supervisor is draining and stopped accepting work |
 | `PNG_ENCODE_FAILED` | maybe | Encoder failure; retry once |
 | `IO_ERROR` | maybe | Output path unwritable or disk full |
 | `INTERNAL_ERROR` | maybe | Bug; retry once, then report |
@@ -171,6 +175,30 @@ rasterizer mid-tile.
 
 `retryable` is advisory. A retried job must be idempotent: outputs are written
 to a fresh directory or overwritten in place, and no state survives a job.
+
+## Supervisor
+
+`renderd supervise` speaks the same protocol on its own stdio and owns a pool of
+`renderd serve` children:
+
+```json
+{"type":"hello","protocolVersion":1,"engineVersion":"0.1.0","platform":"linux",
+ "cores":4,"memoryLimitBytes":8589934592,"workers":2,"threadsPerWorker":2,
+ "queueLimit":4,"cacheEntries":1,
+ "defaultTier":{"width":2048,"height":2048,"supersample":2}}
+```
+
+- Pool size and threads default to `renderd capacity`; `--workers`, `--threads`,
+  `--queue`, and `--cache` override them.
+- Jobs are queued and dispatched to idle workers. The queue is bounded; a full
+  queue returns `BUSY`.
+- Repeated inputs are routed to the worker that already cached them, so a
+  second render of the same file skips parsing and meshing.
+- A worker that exits mid-job produces `INTERNAL_ERROR` and is restarted.
+- Results may arrive out of order because workers run in parallel; match them by
+  `id`.
+- v1 has no per-job timeout inside the supervisor. A stalled worker keeps its
+  slot until the supervisor is stopped; adding a deadline and kill is task P4.
 
 ## Cross-platform rules
 

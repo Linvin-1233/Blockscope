@@ -26,6 +26,19 @@ docker run --rm -i \
   renderd:local serve --client-jar /assets/client.jar
 ```
 
+Run a supervisor with a pool instead of a single worker:
+
+```bash
+docker run --rm -i \
+  --cpus=2 --memory=2g \
+  -v "$PWD/assets/client.jar:/assets/client.jar:ro" \
+  -v "$PWD/jobs:/data" \
+  renderd:local supervise --workers 1 --threads 2 --client-jar /assets/client.jar
+```
+
+On a 1 CPU / 1 GiB container the capacity suggestion is one worker and one
+thread; raising `--workers` there only splits one core and doubles memory.
+
 The container image never ships Minecraft assets. Mount the jar or an extracted
 `assets/` directory at runtime.
 

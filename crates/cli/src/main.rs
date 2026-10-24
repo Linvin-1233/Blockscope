@@ -20,6 +20,7 @@ use std::time::Instant;
 
 mod capacity;
 mod serve;
+mod supervise;
 
 /// Litematic parser and render service.
 #[derive(Debug, Parser)]
@@ -54,6 +55,8 @@ enum Command {
     Capacity(CapacityArgs),
     /// Run as a long-lived worker speaking newline-delimited JSON on stdio.
     Serve(serve::ServeArgs),
+    /// Spawn and route jobs across a pool of worker processes.
+    Supervise(supervise::SuperviseArgs),
 }
 
 #[derive(Debug, Args)]
@@ -108,6 +111,26 @@ struct AssetArgs {
     /// Texture filter: nearest or linear.
     #[arg(long, default_value = "nearest")]
     texture_filter: String,
+}
+
+impl AssetArgs {
+    /// Rebuild the asset flags for a child worker process.
+    fn cli_args(&self) -> Vec<std::ffi::OsString> {
+        let mut args = Vec::new();
+        for (flag, value) in [
+            ("--client-jar", &self.client_jar),
+            ("--assets", &self.assets),
+            ("--resource-pack", &self.resource_pack),
+        ] {
+            if let Some(path) = value {
+                args.push(flag.into());
+                args.push(path.as_os_str().to_os_string());
+            }
+        }
+        args.push("--texture-filter".into());
+        args.push(self.texture_filter.clone().into());
+        args
+    }
 }
 
 #[derive(Debug, Args)]
@@ -215,6 +238,7 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Command::Materials(args) => materials(args),
         Command::Capacity(args) => capacity(args),
         Command::Serve(args) => serve::run(args),
+        Command::Supervise(args) => supervise::run(args),
     }
 }
 
