@@ -1,8 +1,13 @@
 use clap::{Args, Parser, Subcommand};
 use litematic_core::{DecodeLimits, LitematicError, LitematicFile, LitematicLimits};
+use litematic_mesh::{
+    ColorBlockCatalog, MeshError, MeshLimits, MeshStatistics, build_mesh, write_obj, write_ply,
+};
 use litematic_scene::{Manifest, Scene, sha256};
 use std::fmt;
 use std::fs;
+use std::fs::File;
+use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -27,6 +32,8 @@ enum Command {
     Validate(ValidateArgs),
     /// Print material statistics.
     Stats(StatsArgs),
+    /// Build a color-block mesh and optionally export it.
+    Mesh(MeshArgs),
 }
 
 #[derive(Debug, Args)]
@@ -53,6 +60,20 @@ struct StatsArgs {
     json: bool,
 }
 
+#[derive(Debug, Args)]
+struct MeshArgs {
+    file: PathBuf,
+    /// Print mesh statistics as JSON.
+    #[arg(long)]
+    json: bool,
+    /// Write the mesh as OBJ.
+    #[arg(long)]
+    obj: Option<PathBuf>,
+    /// Write the mesh as PLY with vertex colors.
+    #[arg(long)]
+    ply: Option<PathBuf>,
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
 
@@ -70,6 +91,7 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Command::Inspect(args) => inspect(args),
         Command::Validate(args) => validate(args),
         Command::Stats(args) => stats(args),
+        Command::Mesh(args) => mesh(args),
     }
 }
 
@@ -156,6 +178,58 @@ fn stats(args: StatsArgs) -> Result<(), CliError> {
     Ok(())
 }
 
+fn mesh(args: MeshArgs) -> Result<(), CliError> {
+    let (_, scene) = load_scene(&args.file)?;
+    let catalog = ColorBlockCatalog::new().map_err(CliError::internal)?;
+    let mesh = build_mesh(&scene, &catalog, &MeshLimits::default()).map_err(CliError::from)?;
+
+    if let Some(path) = &args.obj {
+        write_export(path, |writer| write_obj(&mesh, writer))?;
+        println!("wrote OBJ: {}", path.display());
+    }
+    if let Some(path) = &args.ply {
+        write_export(path, |writer| write_ply(&mesh, writer))?;
+        println!("wrote PLY: {}", path.display());
+    }
+
+    if args.json {
+        let json = serde_json::to_string_pretty(&mesh.statistics).map_err(CliError::internal)?;
+        println!("{json}");
+    } else {
+        print_mesh_stats(&mesh.statistics);
+    }
+
+    Ok(())
+}
+
+fn write_export<F>(path: &Path, write: F) -> Result<(), CliError>
+where
+    F: FnOnce(&mut BufWriter<File>) -> std::io::Result<()>,
+{
+    let file = File::create(path)
+        .map_err(|error| CliError::input(format!("IO_ERROR: {}: {error}", path.display())))?;
+    let mut writer = BufWriter::new(file);
+    write(&mut writer)
+        .map_err(|error| CliError::input(format!("IO_ERROR: {}: {error}", path.display())))?;
+    writer
+        .flush()
+        .map_err(|error| CliError::input(format!("IO_ERROR: {}: {error}", path.display())))?;
+    Ok(())
+}
+
+fn print_mesh_stats(statistics: &MeshStatistics) {
+    println!("pages: {}", statistics.pages);
+    println!("quads: {}", statistics.quads);
+    println!("vertices: {}", statistics.vertices);
+    println!("blocks visited: {}", statistics.blocks_visited);
+    println!("blocks rendered: {}", statistics.blocks_rendered);
+    println!("unknown blocks: {}", statistics.unknown_blocks);
+    println!(
+        "layers: opaque {} cutout {} translucent {}",
+        statistics.opaque_quads, statistics.cutout_quads, statistics.translucent_quads
+    );
+}
+
 fn load_scene(path: &Path) -> Result<(Vec<u8>, Scene), CliError> {
     let input = fs::read(path)
         .map_err(|error| CliError::input(format!("IO_ERROR: {}: {error}", path.display())))?;
@@ -231,6 +305,12 @@ impl fmt::Display for CliError {
 
 impl From<LitematicError> for CliError {
     fn from(error: LitematicError) -> Self {
+        Self::input(error.to_string())
+    }
+}
+
+impl From<MeshError> for CliError {
+    fn from(error: MeshError) -> Self {
         Self::input(error.to_string())
     }
 }
