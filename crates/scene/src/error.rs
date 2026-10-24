@@ -1,0 +1,42 @@
+use std::fmt;
+
+/// Stable scene construction errors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SceneErrorCode {
+    EmptyScene,
+    BoundsOverflow,
+    StatisticsOverflow,
+}
+
+impl SceneErrorCode {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::EmptyScene => "EMPTY_SCENE",
+            Self::BoundsOverflow => "BOUNDS_OVERFLOW",
+            Self::StatisticsOverflow => "STATISTICS_OVERFLOW",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SceneError {
+    pub code: SceneErrorCode,
+    pub message: String,
+}
+
+impl SceneError {
+    pub fn new(code: SceneErrorCode, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+        }
+    }
+}
+
+impl fmt::Display for SceneError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: {}", self.code.as_str(), self.message)
+    }
+}
+
+impl std::error::Error for SceneError {}

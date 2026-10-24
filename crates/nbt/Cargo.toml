@@ -1,0 +1,11 @@
+[package]
+name = "litematic-nbt"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+flate2.workspace = true
+
+[dev-dependencies]
+flate2.workspace = true
+proptest.workspace = true
