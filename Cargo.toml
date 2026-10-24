@@ -3,6 +3,7 @@ resolver = "3"
 members = [
   "crates/nbt",
   "crates/scene",
+  "crates/litematic",
 ]
 
 [workspace.package]
