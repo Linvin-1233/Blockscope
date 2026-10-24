@@ -1,9 +1,10 @@
 # Implementation Plan: Phase 3 — CPU PNG Renderer
 
-**Status:** Phase 3A implemented; performance/golden corpus deferred.  
+**Status:** Phase 3A and 3B implemented; Phase 3C deferred.  
 **Scope:** Render the Phase 2 mesh to a deterministic RGBA PNG with an
 orthographic camera, CPU tile rasterizer, two lighting profiles, transparent or
-solid backgrounds, and a `renderd render` CLI.
+solid backgrounds, supersampling, multi-view output, and a `renderd render` /
+`renderd bench` CLI.
 
 ## Overview
 
@@ -24,8 +25,9 @@ No GPU, Minecraft client, textures, or resource packs are required.
 - Orthographic camera, default `isometric_preview_v1` profile.
 - Default view: yaw 45°, elevation 30°, 1024x1024, transparent background.
 - Lighting profiles: `flat-v1` and `simple-ao-v1`.
-- One view per render in Phase 3A; multi-view output is additive later.
-- PNG output only; GIF and multi-view composition are out of scope.
+- Multi-view output writes one PNG per yaw; contact-sheet composition is Phase 3C.
+- PNG output only; GIF is out of scope.
+- Supersampling is the Phase 3B anti-aliasing path; no temporal AA.
 
 ## Architecture Decisions
 
@@ -63,6 +65,30 @@ Store straight RGBA in the tile buffers and composite translucent surfaces with
 source-over alpha. Transparent backgrounds preserve alpha; solid backgrounds are
 filled before rasterization.
 
+### ADR-307: Triangle binning
+
+Bucket triangles by the tiles their screen bounding boxes cover before
+rasterization. Each tile then visits only its candidates, which keeps large
+meshes from multiplying tile count by triangle count.
+
+### ADR-308: Scoped tile workers
+
+Use `std::thread::scope` with an atomic tile cursor instead of a dependency on
+rayon. Each tile owns its color and depth buffers. Results merge in tile order so
+output and statistics are independent of thread count and scheduling.
+
+### ADR-309: Supersampling
+
+Render at an integer multiple of the output size and box-filter down in
+premultiplied-alpha space. This keeps transparent edges from darkening and avoids
+inventing a second anti-aliasing contract.
+
+### ADR-310: Golden PNG hashes
+
+Commit small synthetic golden PNGs and compare bytes exactly. This catches
+rasterizer, lighting, alpha, and encoder drift without committing Minecraft
+assets.
+
 ## Phase 3A Scope
 
 - `litematic-render` crate.
@@ -74,14 +100,24 @@ filled before rasterization.
 - `renderd render` CLI with width/height/yaw/elevation/background/lighting.
 - Unit and CLI tests.
 
-## Phase 3B Deferred
+## Phase 3B Implemented
 
-- Multi-view output and composited contact sheets.
-- Anti-aliasing / supersampling.
+- Multi-view output as separate PNGs.
+- Supersampling 1-4 with premultiplied-alpha downsampling.
+- Parallel tile workers with deterministic merge.
+- Triangle binning per tile.
+- Golden PNG corpus for cube, partial shapes, water, negative coordinates, and AO.
+- `renderd bench` with per-stage timings and Linux peak RSS.
+- Synthetic rasterizer scaling example (`tile_bench`).
+
+## Phase 3C Deferred
+
+- Contact-sheet composition for multiple views.
 - Texture sampling and resource-pack materials.
 - Shadows, full light propagation, and emissive bloom.
-- Parallel tile workers / SIMD.
-- Golden PNG corpus and performance benchmarks.
+- SIMD rasterization and mesh-build parallelism.
+- Golden corpus for large real structures and deployment-specific thresholds.
+- CI performance budget based on real QQBot workloads.
 
 ## Task Index
 
@@ -93,7 +129,9 @@ filled before rasterization.
 | P3-4 | Tile rasterizer and compositing | P3-3 | L |
 | P3-5 | PNG encoder and `renderd render` CLI | P3-4 | M |
 | P3-6 | Renderer tests and documentation | P3-4, P3-5 | M |
-| P3-7 | Golden PNG and performance corpus (deferred) | P3-6 | M |
+| P3-7 | Golden PNG and performance corpus | P3-6 | M |
+| P3-8 | Parallel tiles and triangle binning | P3-4 | M |
+| P3-9 | Supersampling and multi-view CLI | P3-5 | M |
 
 Detailed acceptance criteria live in `tasks/phase-3-todo.md`.
 
@@ -101,22 +139,23 @@ Detailed acceptance criteria live in `tasks/phase-3-todo.md`.
 
 ### Checkpoint 3-1: Camera and triangle build
 
-- [ ] Camera fit covers bounds and padding.
-- [ ] Backface culling keeps camera-facing quads.
-- [ ] AO and lighting attributes are applied.
+- [x] Camera fit covers bounds and padding.
+- [x] Backface culling keeps camera-facing quads.
+- [x] AO and lighting attributes are applied.
 
 ### Checkpoint 3-2: Raster and PNG
 
-- [ ] Transparent and solid backgrounds work.
-- [ ] Opaque, cutout, and translucent layers render.
-- [ ] PNG output is deterministic.
-- [ ] `renderd render` writes a valid PNG.
+- [x] Transparent and solid backgrounds work.
+- [x] Opaque, cutout, and translucent layers render.
+- [x] PNG output is deterministic.
+- [x] `renderd render` writes a valid PNG.
 
-### Checkpoint 3-3: Phase 3A acceptance
+### Checkpoint 3-3: Phase 3A/3B acceptance
 
-- [ ] `cargo fmt`, clippy, and tests pass on Windows and Linux.
-- [ ] No Minecraft assets are committed.
-- [ ] Renderer documentation is linked from README.
+- [x] `cargo fmt`, clippy, and tests pass on Windows and Linux.
+- [x] No Minecraft assets are committed.
+- [x] Renderer documentation is linked from README.
+- [x] Golden PNGs and benchmark commands exist.
 - [ ] Human review before Phase 4.
 
 ## Risks and Mitigations
@@ -126,13 +165,16 @@ Detailed acceptance criteria live in `tasks/phase-3-todo.md`.
 | Orthographic fit clips geometry | Missing edges | Bounds padding and camera span tests |
 | Translucent sorting is approximate | Local artifacts | Far-to-near tile sorting, no depth writes |
 | AO cost on large scenes | Slow mesh build | Per-vertex boundary sampling; later cache/parallelize |
-| No anti-aliasing | Jagged edges | Document limitation; add SSAA later |
+| Fixed supersampling only | Jagged thin geometry at factor 1 | Default factor 2; SSAA up to 4 |
 | f32 color precision | Banding | Straight f32 tile buffers, u8 at final PNG |
-| Large output memory | OOM | Pixel limit and tile buffers |
+| Large output memory | OOM | Pixel limit, internal pixel limit, per-tile buffers |
+| Tile scheduling changes output | Non-deterministic PNGs | Per-tile buffers and index-ordered merge |
 
 ## Open Questions
 
-1. Should the default output be one 45° view or two opposite views?
-2. Is a transparent PNG acceptable for QQ delivery, or should the default be a
+1. Is a transparent PNG acceptable for QQ delivery, or should the default be a
    light solid background?
-3. Should Phase 3B prioritize anti-aliasing or performance before Phase 4?
+2. Should multi-view output compose a contact sheet for QQ, or keep separate
+   images?
+3. Which real structure sizes and latency budget define the Phase 3C performance
+   gate?

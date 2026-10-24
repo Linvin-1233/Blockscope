@@ -1,6 +1,6 @@
 ﻿# Phase 3 Task List 鈥?CPU PNG Renderer
 
-**Status:** Active  
+**Status:** Phase 3A/3B complete; Phase 3C deferred.  
 **Plan:** `tasks/phase-3-plan.md`
 
 ## Task P3-1: AO vertex attribute
@@ -141,17 +141,71 @@ CLI.
 **Dependencies:** P3-4, P3-5  
 **Estimated scope:** Medium
 
-## Task P3-7: Golden PNG and performance corpus (deferred)
+## Task P3-7: Golden PNG and performance corpus
 
-**Description:** Add committed golden RGBA hashes, larger fixtures, and timing
-benchmarks.
+**Description:** Add committed golden images and repeatable timing benchmarks.
 
 **Acceptance criteria:**
 
-- [ ] Golden hashes cover cube, partial, transparent, and negative-coordinate
-      scenes.
-- [ ] Benchmarks record parse, mesh, raster, PNG, and peak memory.
+- [x] Golden PNGs cover cube, partial shapes, water, negative coordinates, and
+      AO.
+- [x] Benchmarks record parse, mesh, render, PNG, and buffer sizes.
+- [x] Peak RSS is reported on Linux; other platforms report `null` instead of
+      guessing.
 - [ ] Performance thresholds are based on real QQBot projections.
 
+**Verification:**
+
+- [x] Golden PNG test compares bytes exactly and supports `UPDATE_GOLDEN=1`.
+- [x] `renderd bench --json` parses in a CLI test.
+- [x] Synthetic `tile_bench` example prints single, dual, and auto-thread
+      timings.
+
 **Dependencies:** P3-6  
+**Estimated scope:** Medium
+
+## Task P3-8: Parallel tiles and triangle binning
+
+**Description:** Parallelize tile rasterization and avoid scanning the whole
+triangle list per tile.
+
+**Acceptance criteria:**
+
+- [x] Triangles are binned by covered tile bounds.
+- [x] Scoped workers pull tile indices from an atomic cursor.
+- [x] Each worker owns its tile color and depth buffers.
+- [x] Results merge in tile order for deterministic output and statistics.
+- [x] `threads` is configurable; 0 selects available parallelism.
+- [x] Worker count does not change pixels or counters.
+
+**Verification:**
+
+- [x] `parallel_tiles_match_single_thread` compares RGBA and statistics.
+- [x] `tile_bench` reports scaling for 1, 2, and auto threads.
+- [x] Golden PNGs still match.
+
+**Dependencies:** P3-4  
+**Estimated scope:** Medium
+
+## Task P3-9: Supersampling and multi-view CLI
+
+**Description:** Add anti-aliasing and two-view output for QQ previews.
+
+**Acceptance criteria:**
+
+- [x] Supersampling supports factors 1-4; default is 2.
+- [x] Downsampling works in premultiplied-alpha space.
+- [x] Internal dimensions have their own pixel limit.
+- [x] `--views 45,225` writes one PNG per yaw with a suffix.
+- [x] Render statistics include supersample and internal dimensions.
+- [x] Validation rejects zero or excessive factors and oversized buffers.
+
+**Verification:**
+
+- [x] `supersampling_changes_edge_pixels` proves SSAA affects edges.
+- [x] `render_multi_view_writes_two_files` checks suffixed outputs.
+- [x] JSON statistics expose `supersample` and internal size.
+- [x] Golden PNGs use the default supersample factor.
+
+**Dependencies:** P3-5  
 **Estimated scope:** Medium

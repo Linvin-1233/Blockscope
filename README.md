@@ -1,6 +1,7 @@
 # Litematic-render-QQBot
 
-Minecraft Litematic 无头渲染服务。当前处于 Phase 1：Rust parser + CLI。
+Minecraft Litematic 无头渲染服务。Phase 3B 已完成：Rust 解析、色块网格、
+CPU PNG 渲染和基准测试；下一步是 QQBot 服务或 Phase 3C 画质打磨。
 
 ## 文档
 
@@ -23,9 +24,11 @@ Minecraft Litematic 无头渲染服务。当前处于 Phase 1：Rust parser + CL
 - 默认色块 catalog、常见 partial shape、流体高度和静态方块实体 box mesh
 - OBJ/PLY 导出
 - CPU 正交相机、tile 光栅化、`flat-v1` / `simple-ao-v1` 和 PNG 输出
-- `renderd inspect` / `validate` / `stats` / `mesh` / `render` CLI
+- 超采样 1-4、多视角分别输出、并行 tile 和三角形分桶
+- 黄金 PNG 回归测试、`renderd bench` 分阶段计时
+- `renderd inspect` / `validate` / `stats` / `mesh` / `render` / `bench` CLI
 - 资源包由部署者自行提供
-- 暂不包含 Go QQBot 服务、多视角合成和资源包加载
+- 暂不包含 Go QQBot 服务、多视角拼图和资源包加载
 
 ## CLI
 
@@ -37,6 +40,9 @@ cargo run -p renderd-cli -- mesh path\to\model.litematic --obj out.obj
 cargo run -p renderd-cli -- mesh path\to\model.litematic --ply out.ply
 cargo run -p renderd-cli -- render path\to\model.litematic --output out.png
 cargo run -p renderd-cli -- render path\to\model.litematic --output out.png --width 2048 --height 2048
+cargo run -p renderd-cli -- render path\to\model.litematic --output out.png --views 45,225
+cargo run -p renderd-cli -- render path\to\model.litematic --output out.png --supersample 4 --threads 4
+cargo run -p renderd-cli --release -- bench path\to\model.litematic --iterations 5
 ```
 
 `inspect --json` 输出稳定 manifest，包含 bounds、region、材料统计、诊断、
