@@ -172,6 +172,75 @@ fn png_output_is_deterministic() {
 }
 
 #[test]
+fn parallel_tiles_match_single_thread() {
+    let scene = scene(vec![region(
+        "main",
+        [0, 0, 0],
+        [2, 2, 1],
+        &["minecraft:air", "minecraft:stone"],
+        &[1, 0, 0, 1],
+    )]);
+
+    let single = render(
+        &scene,
+        &RenderOptions {
+            width: 96,
+            height: 96,
+            threads: 1,
+            ..Default::default()
+        },
+    );
+    let parallel = render(
+        &scene,
+        &RenderOptions {
+            width: 96,
+            height: 96,
+            threads: 4,
+            ..Default::default()
+        },
+    );
+
+    assert_eq!(single.rgba, parallel.rgba);
+    assert_eq!(single.statistics, parallel.statistics);
+}
+
+#[test]
+fn supersampling_changes_edge_pixels() {
+    let scene = stone_scene();
+    let single = render(
+        &scene,
+        &RenderOptions {
+            supersample: 1,
+            ..options()
+        },
+    );
+    let supersampled = render(
+        &scene,
+        &RenderOptions {
+            supersample: 2,
+            ..options()
+        },
+    );
+
+    assert_eq!(single.rgba.len(), supersampled.rgba.len());
+    assert_ne!(single.rgba, supersampled.rgba);
+}
+
+#[test]
+fn rejects_supersampled_size_limit() {
+    let scene = stone_scene();
+    let options = RenderOptions {
+        width: 2048,
+        height: 2048,
+        supersample: 4,
+        ..Default::default()
+    };
+
+    let error = render_mesh(&scene, &build(&scene), &options).unwrap_err();
+    assert_eq!(error.code, RenderErrorCode::OutputTooLarge);
+}
+
+#[test]
 fn empty_mesh_renders_background_only() {
     let scene = scene(vec![region(
         "main",

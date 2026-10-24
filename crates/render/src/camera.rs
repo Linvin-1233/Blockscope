@@ -37,9 +37,9 @@ impl Camera {
 
         let (min_x, max_x, min_y, max_y) = projected_span(bounds, center, right, up);
 
-        let width = f64::from(options.width);
-        let height = f64::from(options.height);
-        let padding = f64::from(options.padding);
+        let width = f64::from(options.internal_width());
+        let height = f64::from(options.internal_height());
+        let padding = f64::from(options.padding) * f64::from(options.supersample);
         let available_width = width - 2.0 * padding;
         let available_height = height - 2.0 * padding;
         if available_width <= 0.0 || available_height <= 0.0 {

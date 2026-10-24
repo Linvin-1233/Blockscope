@@ -10,6 +10,9 @@ use serde::{Deserialize, Serialize};
 pub struct RenderStatistics {
     pub width: u32,
     pub height: u32,
+    pub supersample: u32,
+    pub internal_width: u32,
+    pub internal_height: u32,
     pub tiles: u64,
     pub triangles: u64,
     pub culled_backfaces: u64,
@@ -42,6 +45,9 @@ pub fn render_mesh(
     let mut statistics = RenderStatistics {
         width: options.width,
         height: options.height,
+        supersample: options.supersample,
+        internal_width: options.internal_width(),
+        internal_height: options.internal_height(),
         ..Default::default()
     };
 
@@ -140,88 +146,317 @@ fn rasterize(
     options: &RenderOptions,
     statistics: &mut RenderStatistics,
 ) -> Vec<u8> {
-    let width = options.width;
-    let height = options.height;
+    let width = options.internal_width();
+    let height = options.internal_height();
     let tile_size = options.tile_size;
     let tiles_x = width.div_ceil(tile_size);
     let tiles_y = height.div_ceil(tile_size);
     statistics.tiles = u64::from(tiles_x) * u64::from(tiles_y);
 
+    let jobs = tile_jobs(width, height, tile_size);
+    let bins = bin_triangles(triangles, width, height, tile_size);
+    let threads = worker_count(options.threads, jobs.len());
+    let tiles = if threads > 1 {
+        render_tiles_parallel(triangles, options, &jobs, &bins, threads)
+    } else {
+        jobs.iter()
+            .map(|job| render_tile(triangles, options, job, &bins[job.index]))
+            .collect()
+    };
+
     let mut output = vec![0u8; (u64::from(width) * u64::from(height) * 4) as usize];
+    for tile in &tiles {
+        statistics.pixels_tested += tile.pixels_tested;
+        statistics.pixels_written += tile.pixels_written;
+
+        let row_bytes = usize::try_from(tile.width).expect("tile width fits usize") * 4;
+        for row in 0..tile.height {
+            let source_start = row as usize * row_bytes;
+            let target_start =
+                ((u64::from(tile.y0 + row) * u64::from(width) + u64::from(tile.x0)) as usize) * 4;
+            output[target_start..target_start + row_bytes]
+                .copy_from_slice(&tile.rgba[source_start..source_start + row_bytes]);
+        }
+    }
+
+    if options.supersample > 1 {
+        downsample(
+            &output,
+            width,
+            height,
+            options.width,
+            options.height,
+            options.supersample,
+        )
+    } else {
+        output
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct TileJob {
+    index: usize,
+    x0: u32,
+    y0: u32,
+    width: u32,
+    height: u32,
+}
+
+fn tile_jobs(width: u32, height: u32, tile_size: u32) -> Vec<TileJob> {
+    let tiles_x = width.div_ceil(tile_size);
+    let tiles_y = height.div_ceil(tile_size);
+    let mut jobs = Vec::with_capacity((tiles_x * tiles_y) as usize);
 
     for tile_y in 0..tiles_y {
         for tile_x in 0..tiles_x {
-            let tile_x0 = tile_x * tile_size;
-            let tile_y0 = tile_y * tile_size;
-            let tile_w = tile_size.min(width - tile_x0);
-            let tile_h = tile_size.min(height - tile_y0);
-            let pixel_count = (u64::from(tile_w) * u64::from(tile_h)) as usize;
+            let x0 = tile_x * tile_size;
+            let y0 = tile_y * tile_size;
+            jobs.push(TileJob {
+                index: jobs.len(),
+                x0,
+                y0,
+                width: tile_size.min(width - x0),
+                height: tile_size.min(height - y0),
+            });
+        }
+    }
 
-            let mut colors = vec![[0.0f32; 4]; pixel_count];
-            if let Background::Solid(color) = options.background {
-                let fill = [
-                    f32::from(color.r) / 255.0,
-                    f32::from(color.g) / 255.0,
-                    f32::from(color.b) / 255.0,
-                    f32::from(color.a) / 255.0,
-                ];
-                colors.fill(fill);
+    jobs
+}
+
+/// Group triangles by the tiles their screen bounds cover, so each tile only
+/// visits candidates that can actually write a fragment.
+fn bin_triangles(triangles: &[Triangle], width: u32, height: u32, tile_size: u32) -> Vec<Vec<u32>> {
+    let tiles_x = width.div_ceil(tile_size);
+    let tiles_y = height.div_ceil(tile_size);
+    let mut bins = vec![Vec::new(); (tiles_x * tiles_y) as usize];
+    let tile_size = f64::from(tile_size);
+    let max_tile_x = f64::from(tiles_x - 1);
+    let max_tile_y = f64::from(tiles_y - 1);
+
+    for (index, triangle) in triangles.iter().enumerate() {
+        let min_x = (triangle.bbox[0] / tile_size)
+            .floor()
+            .clamp(0.0, max_tile_x) as u32;
+        let max_x = (triangle.bbox[2] / tile_size)
+            .floor()
+            .clamp(0.0, max_tile_x) as u32;
+        let min_y = (triangle.bbox[1] / tile_size)
+            .floor()
+            .clamp(0.0, max_tile_y) as u32;
+        let max_y = (triangle.bbox[3] / tile_size)
+            .floor()
+            .clamp(0.0, max_tile_y) as u32;
+
+        for tile_y in min_y..=max_y {
+            for tile_x in min_x..=max_x {
+                bins[(tile_y * tiles_x + tile_x) as usize].push(index as u32);
             }
-            let mut depths = vec![f64::INFINITY; pixel_count];
+        }
+    }
 
-            {
-                let mut tile = TileBuffer {
-                    x0: tile_x0,
-                    y0: tile_y0,
-                    width: tile_w,
-                    height: tile_h,
-                    colors: &mut colors,
-                    depths: &mut depths,
-                    statistics: &mut *statistics,
-                };
+    bins
+}
 
-                for triangle in triangles {
-                    if triangle.layer == RenderLayer::Translucent {
-                        continue;
-                    }
-                    if !intersects(triangle, tile_x0, tile_y0, tile_w, tile_h) {
-                        continue;
-                    }
-                    tile.rasterize(triangle);
-                }
+fn worker_count(requested: u32, jobs: usize) -> usize {
+    let available = if requested == 0 {
+        std::thread::available_parallelism()
+            .map(std::num::NonZeroUsize::get)
+            .unwrap_or(1)
+    } else {
+        requested as usize
+    };
 
-                let mut translucent: Vec<&Triangle> = triangles
-                    .iter()
-                    .filter(|triangle| {
-                        triangle.layer == RenderLayer::Translucent
-                            && intersects(triangle, tile_x0, tile_y0, tile_w, tile_h)
-                    })
-                    .collect();
-                translucent.sort_by(|left, right| right.depth_key.total_cmp(&left.depth_key));
+    available.clamp(1, jobs.max(1))
+}
 
-                for triangle in translucent {
-                    tile.rasterize(triangle);
-                }
-            }
+fn render_tiles_parallel(
+    triangles: &[Triangle],
+    options: &RenderOptions,
+    jobs: &[TileJob],
+    bins: &[Vec<u32>],
+    threads: usize,
+) -> Vec<TileOutput> {
+    let cursor = std::sync::atomic::AtomicUsize::new(0);
 
-            for local_y in 0..tile_h {
-                for local_x in 0..tile_w {
-                    let color = colors[(local_y * tile_w + local_x) as usize];
-                    let alpha = to_u8(color[3]);
-                    let [red, green, blue] = if alpha == 0 {
-                        [0, 0, 0]
-                    } else {
-                        [to_u8(color[0]), to_u8(color[1]), to_u8(color[2])]
+    let mut tiles: Vec<TileOutput> = std::thread::scope(|scope| {
+        let mut handles = Vec::with_capacity(threads);
+        for _ in 0..threads {
+            let cursor = &cursor;
+            handles.push(scope.spawn(move || {
+                let mut local = Vec::new();
+                loop {
+                    let index = cursor.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let Some(job) = jobs.get(index) else {
+                        break;
                     };
-                    let image_x = tile_x0 + local_x;
-                    let image_y = tile_y0 + local_y;
-                    let index =
-                        (u64::from(image_y) * u64::from(width) + u64::from(image_x)) as usize * 4;
-                    output[index] = red;
-                    output[index + 1] = green;
-                    output[index + 2] = blue;
-                    output[index + 3] = alpha;
+                    local.push(render_tile(triangles, options, job, &bins[index]));
                 }
+                local
+            }));
+        }
+
+        handles
+            .into_iter()
+            .flat_map(|handle| handle.join().expect("tile worker panicked"))
+            .collect()
+    });
+
+    // Workers finish in any order; restore tile order so statistics stay stable.
+    tiles.sort_unstable_by_key(|tile| tile.index);
+    tiles
+}
+
+struct TileOutput {
+    index: usize,
+    x0: u32,
+    y0: u32,
+    width: u32,
+    height: u32,
+    rgba: Vec<u8>,
+    pixels_tested: u64,
+    pixels_written: u64,
+}
+
+fn render_tile(
+    triangles: &[Triangle],
+    options: &RenderOptions,
+    job: &TileJob,
+    candidates: &[u32],
+) -> TileOutput {
+    let pixel_count = (u64::from(job.width) * u64::from(job.height)) as usize;
+    let mut colors = vec![[0.0f32; 4]; pixel_count];
+    if let Background::Solid(color) = options.background {
+        let fill = [
+            f32::from(color.r) / 255.0,
+            f32::from(color.g) / 255.0,
+            f32::from(color.b) / 255.0,
+            f32::from(color.a) / 255.0,
+        ];
+        colors.fill(fill);
+    }
+    let mut depths = vec![f64::INFINITY; pixel_count];
+    let mut counters = TileCounters::default();
+
+    {
+        let mut tile = TileBuffer {
+            x0: job.x0,
+            y0: job.y0,
+            width: job.width,
+            height: job.height,
+            colors: &mut colors,
+            depths: &mut depths,
+            counters: &mut counters,
+        };
+
+        for &index in candidates {
+            let triangle = &triangles[index as usize];
+            if triangle.layer == RenderLayer::Translucent {
+                continue;
+            }
+            if !intersects(triangle, job.x0, job.y0, job.width, job.height) {
+                continue;
+            }
+            tile.rasterize(triangle);
+        }
+
+        let mut translucent: Vec<&Triangle> = candidates
+            .iter()
+            .map(|&index| &triangles[index as usize])
+            .filter(|triangle| {
+                triangle.layer == RenderLayer::Translucent
+                    && intersects(triangle, job.x0, job.y0, job.width, job.height)
+            })
+            .collect();
+        translucent.sort_by(|left, right| right.depth_key.total_cmp(&left.depth_key));
+
+        for triangle in translucent {
+            tile.rasterize(triangle);
+        }
+    }
+
+    let mut rgba = vec![0u8; pixel_count * 4];
+    for local_y in 0..job.height {
+        for local_x in 0..job.width {
+            let color = colors[(local_y * job.width + local_x) as usize];
+            let alpha = to_u8(color[3]);
+            let [red, green, blue] = if alpha == 0 {
+                [0, 0, 0]
+            } else {
+                [to_u8(color[0]), to_u8(color[1]), to_u8(color[2])]
+            };
+            let index = ((local_y * job.width + local_x) as usize) * 4;
+            rgba[index] = red;
+            rgba[index + 1] = green;
+            rgba[index + 2] = blue;
+            rgba[index + 3] = alpha;
+        }
+    }
+
+    TileOutput {
+        index: job.index,
+        x0: job.x0,
+        y0: job.y0,
+        width: job.width,
+        height: job.height,
+        rgba,
+        pixels_tested: counters.pixels_tested,
+        pixels_written: counters.pixels_written,
+    }
+}
+
+#[derive(Default)]
+struct TileCounters {
+    pixels_tested: u64,
+    pixels_written: u64,
+}
+
+fn downsample(
+    input: &[u8],
+    input_width: u32,
+    input_height: u32,
+    output_width: u32,
+    output_height: u32,
+    factor: u32,
+) -> Vec<u8> {
+    let mut output = vec![0u8; (u64::from(output_width) * u64::from(output_height) * 4) as usize];
+    let factor = f64::from(factor);
+    let count = factor * factor;
+
+    for output_y in 0..output_height {
+        for output_x in 0..output_width {
+            let mut alpha_sum = 0.0f64;
+            let mut color_sum = [0.0f64; 3];
+
+            for sample_y in 0..factor as u32 {
+                for sample_x in 0..factor as u32 {
+                    let input_x = output_x * factor as u32 + sample_x;
+                    let input_y = output_y * factor as u32 + sample_y;
+                    if input_x >= input_width || input_y >= input_height {
+                        continue;
+                    }
+                    let index = (u64::from(input_y) * u64::from(input_width) + u64::from(input_x))
+                        as usize
+                        * 4;
+                    let alpha = f64::from(input[index + 3]) / 255.0;
+                    alpha_sum += alpha;
+                    color_sum[0] += f64::from(input[index]) / 255.0 * alpha;
+                    color_sum[1] += f64::from(input[index + 1]) / 255.0 * alpha;
+                    color_sum[2] += f64::from(input[index + 2]) / 255.0 * alpha;
+                }
+            }
+
+            let average_alpha = alpha_sum / count;
+            let output_index =
+                (u64::from(output_y) * u64::from(output_width) + u64::from(output_x)) as usize * 4;
+            output[output_index + 3] = (average_alpha.clamp(0.0, 1.0) * 255.0).round() as u8;
+            if alpha_sum > 0.0 {
+                output[output_index] =
+                    ((color_sum[0] / alpha_sum).clamp(0.0, 1.0) * 255.0).round() as u8;
+                output[output_index + 1] =
+                    ((color_sum[1] / alpha_sum).clamp(0.0, 1.0) * 255.0).round() as u8;
+                output[output_index + 2] =
+                    ((color_sum[2] / alpha_sum).clamp(0.0, 1.0) * 255.0).round() as u8;
             }
         }
     }
@@ -236,7 +471,7 @@ struct TileBuffer<'a> {
     height: u32,
     colors: &'a mut [[f32; 4]],
     depths: &'a mut [f64],
-    statistics: &'a mut RenderStatistics,
+    counters: &'a mut TileCounters,
 }
 
 impl TileBuffer<'_> {
@@ -265,7 +500,7 @@ impl TileBuffer<'_> {
         for y in min_y..=max_y {
             let py = f64::from(y) + 0.5;
             for x in min_x..=max_x {
-                self.statistics.pixels_tested += 1;
+                self.counters.pixels_tested += 1;
                 let px = f64::from(x) + 0.5;
                 let w0 = edge(p1, p2, [px, py, 0.0]);
                 let w1 = edge(p2, p0, [px, py, 0.0]);
@@ -318,7 +553,7 @@ impl TileBuffer<'_> {
                     self.colors[index] = color;
                     self.depths[index] = depth;
                 }
-                self.statistics.pixels_written += 1;
+                self.counters.pixels_written += 1;
             }
         }
     }

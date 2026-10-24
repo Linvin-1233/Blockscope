@@ -66,7 +66,11 @@ pub struct RenderOptions {
     pub lighting: LightingProfile,
     pub tile_size: u32,
     pub padding: f32,
+    pub supersample: u32,
+    /// Worker threads. 0 selects the available parallelism.
+    pub threads: u32,
     pub max_pixels: u64,
+    pub max_supersampled_pixels: u64,
 }
 
 impl Default for RenderOptions {
@@ -80,7 +84,10 @@ impl Default for RenderOptions {
             lighting: LightingProfile::SimpleAoV1,
             tile_size: 64,
             padding: 16.0,
+            supersample: 2,
+            threads: 0,
             max_pixels: 16_777_216,
+            max_supersampled_pixels: 33_554_432,
         }
     }
 }
@@ -99,6 +106,26 @@ impl RenderOptions {
             )));
         }
 
+        if self.supersample == 0 || self.supersample > 4 {
+            return Err(RenderError::invalid("supersample must be between 1 and 4"));
+        }
+
+        let internal_width = self
+            .width
+            .checked_mul(self.supersample)
+            .ok_or_else(|| RenderError::too_large("internal width overflow"))?;
+        let internal_height = self
+            .height
+            .checked_mul(self.supersample)
+            .ok_or_else(|| RenderError::too_large("internal height overflow"))?;
+        let internal_pixels = u64::from(internal_width) * u64::from(internal_height);
+        if internal_pixels > self.max_supersampled_pixels {
+            return Err(RenderError::too_large(format!(
+                "{internal_pixels} supersampled pixels exceed limit {}",
+                self.max_supersampled_pixels
+            )));
+        }
+
         if !self.yaw.is_finite() || !self.elevation.is_finite() {
             return Err(RenderError::invalid("yaw and elevation must be finite"));
         }
@@ -110,18 +137,30 @@ impl RenderOptions {
         if self.tile_size == 0 {
             return Err(RenderError::invalid("tile_size must be positive"));
         }
+        if self.threads > 256 {
+            return Err(RenderError::invalid("threads must be at most 256"));
+        }
         if !self.padding.is_finite() || self.padding < 0.0 {
             return Err(RenderError::invalid(
                 "padding must be a non-negative finite number",
             ));
         }
 
-        if f64::from(self.width) <= 2.0 * f64::from(self.padding)
-            || f64::from(self.height) <= 2.0 * f64::from(self.padding)
+        let internal_padding = f64::from(self.padding) * f64::from(self.supersample);
+        if f64::from(internal_width) <= 2.0 * internal_padding
+            || f64::from(internal_height) <= 2.0 * internal_padding
         {
             return Err(RenderError::invalid("padding leaves no drawable area"));
         }
 
         Ok(())
+    }
+
+    pub fn internal_width(&self) -> u32 {
+        self.width * self.supersample
+    }
+
+    pub fn internal_height(&self) -> u32 {
+        self.height * self.supersample
     }
 }
