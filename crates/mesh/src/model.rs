@@ -67,6 +67,19 @@ impl FaceDirection {
     }
 }
 
+/// A box in 0..16 model units.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ModelBox {
+    pub min: [u8; 3],
+    pub max: [u8; 3],
+}
+
+impl ModelBox {
+    pub const fn new(min: [u8; 3], max: [u8; 3]) -> Self {
+        Self { min, max }
+    }
+}
+
 /// A quad in 0..16 model units. Vertices are CCW when viewed from outside.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModelQuad {

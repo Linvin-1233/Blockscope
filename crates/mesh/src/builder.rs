@@ -135,7 +135,7 @@ fn should_cull(
         return true;
     }
 
-    neighbor.state == state && neighbor_block.model.is_full_cube
+    neighbor.state == state
 }
 
 fn page_origin(world: [i64; 3]) -> Result<[i32; 3], MeshError> {

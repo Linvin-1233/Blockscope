@@ -144,6 +144,22 @@ fn unknown_blocks_are_counted_and_visible() {
 }
 
 #[test]
+fn adjacent_partial_blocks_cull_shared_boundaries() {
+    let region = make_region(
+        "main",
+        [0, 0, 0],
+        [2, 1, 1],
+        &["minecraft:air", "minecraft:oak_slab"],
+        &[1, 1],
+    );
+    let scene = make_scene(vec![region]);
+    let mesh = build(&scene, &MeshLimits::default());
+
+    assert_eq!(mesh.statistics.quads, 10);
+    assert_eq!(mesh.statistics.blocks_rendered, 2);
+}
+
+#[test]
 fn all_air_scene_produces_an_empty_mesh() {
     let region = make_region("main", [0, 0, 0], [2, 1, 1], &["minecraft:air"], &[0, 0]);
     let mesh = build(&make_scene(vec![region]), &MeshLimits::default());

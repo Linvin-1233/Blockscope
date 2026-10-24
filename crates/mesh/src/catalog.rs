@@ -1,8 +1,10 @@
 use crate::color::{RenderLayer, Rgba};
 use crate::model::{BlockModel, empty_model, full_cube_model};
+use crate::shape;
 use litematic_scene::BlockStateKey;
 use serde::Deserialize;
-use std::collections::BTreeMap;
+use std::cell::RefCell;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::sync::Arc;
 
@@ -77,6 +79,7 @@ struct PaletteEntryData {
 #[derive(Debug, Clone)]
 pub struct ColorBlockCatalog {
     entries: BTreeMap<String, PaletteEntryData>,
+    model_cache: RefCell<HashMap<BlockStateKey, Arc<BlockModel>>>,
 }
 
 impl ColorBlockCatalog {
@@ -108,7 +111,26 @@ impl ColorBlockCatalog {
             entries.insert(name, PaletteEntryData { color, layer });
         }
 
-        Ok(Self { entries })
+        Ok(Self {
+            entries,
+            model_cache: RefCell::new(HashMap::new()),
+        })
+    }
+
+    fn model_for(&self, state: &BlockStateKey) -> Arc<BlockModel> {
+        let cached = self.model_cache.borrow().get(state).cloned();
+        if let Some(model) = cached {
+            return model;
+        }
+
+        let model = match shape::model_for(state) {
+            Some(model) => Arc::new(model),
+            None => full_cube_model(),
+        };
+        self.model_cache
+            .borrow_mut()
+            .insert(state.clone(), Arc::clone(&model));
+        model
     }
 }
 
@@ -133,7 +155,7 @@ impl BlockCatalog for ColorBlockCatalog {
             return ResolvedBlock {
                 color: entry.color,
                 layer: entry.layer.unwrap_or_else(|| layer_for_name(&state.name)),
-                model: full_cube_model(),
+                model: self.model_for(state),
                 known: true,
             };
         }
@@ -142,7 +164,7 @@ impl BlockCatalog for ColorBlockCatalog {
             return ResolvedBlock {
                 color,
                 layer,
-                model: full_cube_model(),
+                model: self.model_for(state),
                 known: true,
             };
         }
@@ -150,7 +172,7 @@ impl BlockCatalog for ColorBlockCatalog {
         ResolvedBlock {
             color: Rgba::MAGENTA,
             layer: RenderLayer::Opaque,
-            model: full_cube_model(),
+            model: self.model_for(state),
             known: false,
         }
     }
@@ -190,6 +212,28 @@ fn resolve_family(name: &str, catalog: &ColorBlockCatalog) -> Option<(Rgba, Rend
 
 fn family_color(name: &str, catalog: &ColorBlockCatalog) -> Option<Rgba> {
     let path = strip_namespace(name);
+
+    if let Some(rest) = path.strip_prefix("stripped_") {
+        return family_color(&format!("minecraft:{rest}"), catalog);
+    }
+
+    if path.ends_with("rail") {
+        return Some(Rgba::rgb(138, 138, 138));
+    }
+
+    if path.contains("torch") {
+        return Some(Rgba::rgb(240, 192, 96));
+    }
+
+    if let Some(base) = path.strip_suffix("_brick")
+        && let Some(entry) = catalog.entries.get(&format!("minecraft:{base}_bricks"))
+    {
+        return Some(entry.color);
+    }
+
+    if path.contains("kelp") {
+        return Some(Rgba::rgb(58, 122, 58));
+    }
 
     for (prefix, color) in DYE_COLORS {
         if let Some(suffix) = path.strip_prefix(prefix)

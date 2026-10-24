@@ -1,8 +1,17 @@
 use litematic_mesh::{BlockCatalog, CatalogErrorCode, ColorBlockCatalog, RenderLayer, Rgba};
 use litematic_scene::BlockStateKey;
+use std::collections::BTreeMap;
 
 fn resolve(catalog: &ColorBlockCatalog, name: &str) -> litematic_mesh::ResolvedBlock {
     catalog.resolve(&BlockStateKey::simple(name))
+}
+
+fn state(name: &str, properties: &[(&str, &str)]) -> BlockStateKey {
+    let properties = properties
+        .iter()
+        .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
+        .collect::<BTreeMap<_, _>>();
+    BlockStateKey::new(name, properties)
 }
 
 #[test]
@@ -93,6 +102,77 @@ fn custom_json_overrides_color_and_layer() {
 
     assert_eq!(stone.color, Rgba::rgb(0x11, 0x22, 0x33));
     assert_eq!(stone.layer, RenderLayer::Cutout);
+}
+
+#[test]
+fn resolves_partial_shapes() {
+    let catalog = ColorBlockCatalog::default();
+
+    let slab = resolve(&catalog, "minecraft:oak_slab");
+    assert!(!slab.model.is_full_cube);
+    assert_eq!(slab.model.quads.len(), 6);
+
+    let double_slab = catalog.resolve(&state("minecraft:oak_slab", &[("type", "double")]));
+    assert!(double_slab.model.is_full_cube);
+    assert_eq!(double_slab.model.quads.len(), 6);
+
+    let stairs = catalog.resolve(&state(
+        "minecraft:oak_stairs",
+        &[
+            ("facing", "east"),
+            ("half", "bottom"),
+            ("shape", "straight"),
+        ],
+    ));
+    assert!(!stairs.model.is_full_cube);
+    assert_eq!(stairs.model.quads.len(), 10);
+
+    let carpet = resolve(&catalog, "minecraft:white_carpet");
+    assert!(!carpet.model.is_full_cube);
+    assert_eq!(carpet.model.quads.len(), 6);
+
+    let snow = catalog.resolve(&state("minecraft:snow", &[("layers", "4")]));
+    assert!(!snow.model.is_full_cube);
+    assert_eq!(snow.model.quads.len(), 6);
+
+    let pane = resolve(&catalog, "minecraft:glass_pane");
+    assert!(!pane.model.is_full_cube);
+
+    let grass = resolve(&catalog, "minecraft:short_grass");
+    assert!(!grass.model.is_full_cube);
+    assert_eq!(grass.model.quads.len(), 4);
+
+    let fence = catalog.resolve(&state("minecraft:oak_fence", &[("north", "true")]));
+    assert!(!fence.model.is_full_cube);
+    assert!(fence.model.quads.len() > 6);
+
+    let wall = resolve(&catalog, "minecraft:stone_brick_wall");
+    assert!(wall.known);
+    assert!(!wall.model.is_full_cube);
+
+    let door = resolve(&catalog, "minecraft:oak_door");
+    assert!(!door.model.is_full_cube);
+    assert_eq!(door.model.quads.len(), 6);
+
+    let trapdoor = resolve(&catalog, "minecraft:oak_trapdoor");
+    assert!(!trapdoor.model.is_full_cube);
+
+    let button = resolve(&catalog, "minecraft:oak_button");
+    assert!(!button.model.is_full_cube);
+
+    let torch = resolve(&catalog, "minecraft:torch");
+    assert!(!torch.model.is_full_cube);
+
+    let rail = resolve(&catalog, "minecraft:rail");
+    assert!(!rail.model.is_full_cube);
+
+    let powered_rail = resolve(&catalog, "minecraft:powered_rail");
+    assert!(powered_rail.known);
+    assert!(!powered_rail.model.is_full_cube);
+
+    let stripped = resolve(&catalog, "minecraft:stripped_oak_log");
+    assert!(stripped.known);
+    assert_eq!(stripped.color, Rgba::rgb(110, 84, 52));
 }
 
 #[test]
