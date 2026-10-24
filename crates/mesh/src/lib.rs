@@ -11,8 +11,10 @@ mod shape;
 mod view;
 mod voxel;
 
-pub use builder::build_mesh;
-pub use catalog::{BlockCatalog, CatalogError, CatalogErrorCode, ColorBlockCatalog, ResolvedBlock};
+pub use builder::{build_mesh, build_mesh_parallel};
+pub use catalog::{
+    BlockCatalog, CatalogError, CatalogErrorCode, ColorBlockCatalog, ColorSnapshot, ResolvedBlock,
+};
 pub use color::{RenderLayer, Rgba};
 pub use error::{MeshError, MeshErrorCode};
 pub use export::{write_obj, write_ply};

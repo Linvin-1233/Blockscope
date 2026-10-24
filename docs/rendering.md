@@ -42,6 +42,12 @@ up      = cross(right, forward)
 
 ## Mesh Inputs
 
+The mesh builder splits the scene into 16x16x16 pages and can build pages in
+parallel (`--threads`, `0` uses all cores). Pages are merged in origin order, so
+output is byte-identical to a single-threaded build. Both the asset-backed and
+color-block paths resolve states into an immutable snapshot before workers
+start, because the mutable catalogs are not `Sync`.
+
 The rasterizer consumes the Phase 2 mesh:
 
 - page-local positions,

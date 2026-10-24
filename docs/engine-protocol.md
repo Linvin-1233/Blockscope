@@ -76,7 +76,7 @@ data from the command line.
 | `textureFilter` | string | `nearest` | `nearest` or `linear` |
 | `format` | string | `png` | `png` only in v1 |
 | `outputDir` | string | required | Absolute directory; created if missing |
-| `threads` | integer | `0` | `0` selects available parallelism |
+| `threads` | integer | `0` | Mesh and rasterizer threads; `0` uses all cores |
 | `elevation` | number | `30` | Degrees, `-89.9..=89.9` |
 
 Paths must be absolute. The supervisor resolves them before sending; relative

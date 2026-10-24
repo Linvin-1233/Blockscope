@@ -268,6 +268,7 @@ fn process(
                 &scene,
                 snapshot.as_deref(),
                 &crate::mesh_limits(force_limits),
+                request.threads.unwrap_or(default_threads),
             )?);
             let mesh_ms = mesh_started.elapsed().as_secs_f64() * 1000.0;
 

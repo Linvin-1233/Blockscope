@@ -79,6 +79,11 @@ impl<'a> SceneBlockView<'a> {
     pub fn pages(&self) -> usize {
         self.page_index.len()
     }
+
+    /// Page coordinates covered by any region, in deterministic order.
+    pub fn page_keys(&self) -> impl Iterator<Item = [i32; 3]> + '_ {
+        self.page_index.keys().copied()
+    }
 }
 
 fn region_state(region: &Region, position: [i64; 3]) -> Option<&BlockStateKey> {

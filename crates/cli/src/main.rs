@@ -2,8 +2,8 @@ use clap::{Args, Parser, Subcommand};
 use litematic_core::{DecodeLimits, LitematicError, LitematicFile, LitematicLimits};
 use litematic_material::{AssetSource, MaterialSet, MaterialSnapshot, TextureFilter};
 use litematic_mesh::{
-    ColorBlockCatalog, Mesh, MeshError, MeshLimits, MeshStatistics, Rgba, build_mesh, write_obj,
-    write_ply,
+    ColorBlockCatalog, Mesh, MeshError, MeshLimits, MeshStatistics, Rgba, build_mesh_parallel,
+    write_obj, write_ply,
 };
 use litematic_render::{
     Background, LightingProfile, RenderError, RenderOptions, RenderStatistics, render_mesh,
@@ -108,6 +108,9 @@ struct MeshArgs {
     /// Write the mesh as PLY with vertex colors.
     #[arg(long)]
     ply: Option<PathBuf>,
+    /// Mesh worker threads; 0 selects available parallelism.
+    #[arg(long, default_value_t = 0)]
+    threads: u32,
     #[command(flatten)]
     limits: LimitArgs,
 }
@@ -398,8 +401,18 @@ fn mesh(args: MeshArgs) -> Result<(), CliError> {
     warn_forced(args.limits.force_limits);
     let (_, scene) = load_scene(&args.file, args.limits.force_limits)?;
     let catalog = ColorBlockCatalog::new().map_err(CliError::internal)?;
-    let mesh = build_mesh(&scene, &catalog, &mesh_limits(args.limits.force_limits))
-        .map_err(CliError::from)?;
+    let states = scene
+        .regions
+        .iter()
+        .flat_map(|region| region.palette.iter().cloned());
+    let snapshot = catalog.snapshot(states);
+    let mesh = build_mesh_parallel(
+        &scene,
+        &snapshot,
+        &mesh_limits(args.limits.force_limits),
+        args.threads,
+    )
+    .map_err(CliError::from)?;
 
     if let Some(path) = &args.obj {
         write_export(path, |writer| write_obj(&mesh, writer))?;
@@ -446,6 +459,7 @@ fn render(args: RenderArgs) -> Result<(), CliError> {
         &scene,
         snapshot.as_ref(),
         &mesh_limits(args.limits.force_limits),
+        args.threads,
     )?;
     let mesh_ms = mesh_started.elapsed().as_secs_f64() * 1000.0;
 
@@ -551,12 +565,20 @@ fn build_scene_mesh(
     scene: &Scene,
     snapshot: Option<&MaterialSnapshot>,
     limits: &MeshLimits,
+    threads: u32,
 ) -> Result<Mesh, CliError> {
     match snapshot {
-        Some(snapshot) => build_mesh(scene, snapshot, limits).map_err(CliError::from),
+        Some(snapshot) => {
+            build_mesh_parallel(scene, snapshot, limits, threads).map_err(CliError::from)
+        }
         None => {
             let catalog = ColorBlockCatalog::new().map_err(CliError::internal)?;
-            build_mesh(scene, &catalog, limits).map_err(CliError::from)
+            let states = scene
+                .regions
+                .iter()
+                .flat_map(|region| region.palette.iter().cloned());
+            let snapshot = catalog.snapshot(states);
+            build_mesh_parallel(scene, &snapshot, limits, threads).map_err(CliError::from)
         }
     }
 }
@@ -821,6 +843,7 @@ fn bench(args: BenchArgs) -> Result<(), CliError> {
         &scene,
         snapshot.as_ref(),
         &mesh_limits(args.limits.force_limits),
+        args.threads,
     )?;
     let mesh_ms = mesh_started.elapsed().as_secs_f64() * 1000.0;
 

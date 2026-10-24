@@ -9,9 +9,33 @@ timeouts). This plan covers the extreme fixtures.
 
 | Metric | Value |
 |---|---|
-| Mesh wall time | 44.8 s (single-threaded) |
-| Peak working set | 978 MB |
+| Mesh wall time | 44.8 s (single-threaded, aborted at 5M quads) |
+| Peak working set | 978 MB at the abort |
 | Outcome | `MESH_LIMIT_EXCEEDED` at 5,000,000 quads |
+
+### After C1 (parallel meshing, 12 threads, `--force-limits`)
+
+| Metric | Value |
+|---|---|
+| Wall time | 27.1 s |
+| Peak working set | 13,493 MB |
+| Quads | 77,578,844 |
+| Vertices | 310,315,376 |
+| Pages | 2,744 |
+| Blocks visited | 9,393,931 |
+| Unknown blocks (no palette color) | 3,268,723 |
+
+The fixture is pathological: its 9.4M blocks emit 77.6M quads, roughly 8 quads
+per block, so face culling barely helps. The mesh alone needs about 13 GB, and
+a triangle table would add another 20 to 30 GB.
+
+Consequences:
+
+- The default 5M cap is the correct behaviour on small machines; this file is
+  far outside it.
+- Even a 32 GB host is marginal without level of detail.
+- 77.6M quads at roughly 0.5 to 1 second per million triangles cannot meet a
+  10 minute budget without LOD, regardless of mesh parallelization.
 
 The other extreme fixtures are 5 to 7 times larger in volume, so default limits
 reject them in minutes with multi-gigabyte memory. `all_ones_nbt_10GB.litematic`
@@ -33,22 +57,24 @@ is truncated and fails in 77 ms at the NBT layer.
 
 ## Slices
 
-### C1: Parallel mesh building
+### C1: Parallel mesh building (done)
 
 Partition the scene into 16x16x16 pages. Each worker owns whole pages, builds
 their quads in local y/z/x order, and returns them. The main thread merges pages
 in `BTreeMap` key order, so output is byte-identical to the serial builder.
 
-- `BlockCatalog` must be `Sync`. `MaterialSnapshot` already is; add a
-  `ColorSnapshot` for the no-assets path so it stops using the `RefCell` cache.
+- `BlockCatalog` must be `Sync`; `MaterialSnapshot` and the new `ColorSnapshot`
+  provide that.
 - Owned-cell resolution replaces the per-region loop; a cell is visited once by
   whichever region owns it, matching current `blocks_visited`.
 - `--threads` applies to mesh building as well as rendering; `0` uses all cores.
-- Determinism test: parallel and serial meshes are equal for a scene with
-  multiple pages and overlapping regions.
-
-**Acceptance:** `000001` mesh time drops from 44.8 s to under 8 s on 12 threads;
-existing mesh and golden manifest tests stay green.
+- Verified: a real-fixture render with `--threads 1` and `--threads 12` has the
+  same SHA-256, and a multi-region multi-page test compares serial against 2, 4,
+  and 8 threads.
+- Measured: `000001` builds 77.6M quads in 27.1 s on 12 threads, about 2.9M
+  quads/s. The original "under 8 s" target assumed a far smaller mesh; the
+  fixture is 15 times over the default quad cap, so the useful metric is
+  throughput and memory, not an absolute wall time.
 
 ### C2: Lower the render memory per quad
 
@@ -63,18 +89,19 @@ Replace it with either compact triangles or direct quad rasterization:
 **Acceptance:** peak memory per quad drops by at least 30 percent at the same
 output bytes; render time regresses by no more than 10 percent.
 
-### C3: Optional level of detail
+### C3: Level of detail (required for the extreme fixtures)
 
-For inputs beyond the memory budget, `--lod 2` or `--lod 4` merges cells before
-meshing:
+`000001` emits 77.6M quads, so exact rendering needs more than 13 GB before the
+triangle table. `--lod 2` or `--lod 4` merges cells before meshing:
 
 - Aggregate rule: keep the highest-priority non-air state per LOD cell
   (opaque before cutout before translucent), majority wins ties.
 - LOD is off by default and changes output; it is an explicit opt-in for
-  extreme schematics on small machines.
+  extreme schematics.
+- Target: LOD 4 should cut `000001` to well under 5M quads and fit in a few GB.
 
-**Acceptance:** `000003` renders at LOD 4 within the 2 GiB budget; document the
-approximation.
+**Acceptance:** `000001` renders at LOD 4 within 2 GB of mesh memory and inside
+the 10 minute budget.
 
 ### C4: Capacity-aware admission
 
@@ -85,13 +112,12 @@ approximation.
 - Supervisor hello exposes the budget.
 
 **Acceptance:** a 2 GiB worker rejects `000001` with `MEMORY_LIMIT` and no OOM;
-the same job succeeds with `--force-limits` on a larger machine.
+the same job succeeds with `--force-limits` and `--lod` on a larger machine.
 
 ## Order
 
-C1, C2, C3, C4. C1 is the largest single win and has no output change. C2 is
-required before C3 makes sense. C3 is conditional on the target machine and on
-whether approximated output is acceptable.
+C1 is done. Next C2, then C3, then C4. C3 is no longer optional: `000001` cannot
+meet the 10 minute budget exactly on any realistic host.
 
 ## Risks
 
@@ -106,6 +132,12 @@ whether approximated output is acceptable.
 ## Open Questions
 
 - What is the target machine for the extreme fixtures (RAM, cores)?
-- Is approximated output (LOD) acceptable for huge schematics, or must every
-  block be exact?
-- What is the acceptable wall time for a huge render: seconds, a minute, more?
+- What minimum LOD quality is acceptable: block majority, or "any non-air wins"?
+- Should LOD be allowed automatically when a job would exceed the memory
+  budget, or always be explicit?
+
+## Answers so far
+
+- Extreme jobs may use all available device resources.
+- LOD is allowed.
+- The wall-clock budget for one huge image is 10 minutes.

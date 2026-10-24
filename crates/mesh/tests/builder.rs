@@ -160,6 +160,48 @@ fn adjacent_partial_blocks_cull_shared_boundaries() {
 }
 
 #[test]
+fn parallel_mesh_matches_serial_across_pages_and_regions() {
+    use litematic_mesh::{ColorSnapshot, build_mesh_parallel};
+
+    let west_values: Vec<u32> = (0..40 * 10 * 40).map(|index| (index % 3) as u32).collect();
+    let west = make_region(
+        "west",
+        [-20, -5, -20],
+        [40, 10, 40],
+        &["minecraft:air", "minecraft:stone", "minecraft:oak_stairs"],
+        &west_values,
+    );
+    let east_values: Vec<u32> = (0..20 * 10 * 20).map(|index| (index % 2) as u32).collect();
+    let east = make_region(
+        "east",
+        [10, 0, 10],
+        [20, 10, 20],
+        &["minecraft:glass", "minecraft:stone"],
+        &east_values,
+    );
+    let scene = make_scene(vec![west, east]);
+
+    let catalog = ColorBlockCatalog::default();
+    let states = scene
+        .regions
+        .iter()
+        .flat_map(|region| region.palette.iter().cloned());
+    let snapshot: ColorSnapshot = catalog.snapshot(states);
+
+    let serial = build_mesh(&scene, &snapshot, &MeshLimits::default()).unwrap();
+    for threads in [2, 4, 8] {
+        let parallel =
+            build_mesh_parallel(&scene, &snapshot, &MeshLimits::default(), threads).unwrap();
+        assert_eq!(serial, parallel, "threads={threads}");
+    }
+
+    let serial_error = build_mesh(&scene, &snapshot, &MeshLimits::small()).unwrap_err();
+    let parallel_error =
+        build_mesh_parallel(&scene, &snapshot, &MeshLimits::small(), 4).unwrap_err();
+    assert_eq!(serial_error.code, parallel_error.code);
+}
+
+#[test]
 fn all_air_scene_produces_an_empty_mesh() {
     let region = make_region("main", [0, 0, 0], [2, 1, 1], &["minecraft:air"], &[0, 0]);
     let mesh = build(&make_scene(vec![region]), &MeshLimits::default());

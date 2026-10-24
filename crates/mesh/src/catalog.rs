@@ -178,6 +178,63 @@ impl BlockCatalog for ColorBlockCatalog {
     }
 }
 
+/// Immutable color catalog for parallel meshing.
+///
+/// The mutable catalog caches models in a `RefCell`, which is not `Sync`.
+/// A snapshot resolves every state once so mesh workers only read a map.
+pub struct ColorSnapshot {
+    resolved: HashMap<BlockStateKey, ResolvedBlock>,
+    air: ResolvedBlock,
+    missing: ResolvedBlock,
+}
+
+impl ColorSnapshot {
+    pub fn len(&self) -> usize {
+        self.resolved.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.resolved.is_empty()
+    }
+}
+
+impl BlockCatalog for ColorSnapshot {
+    fn resolve(&self, state: &BlockStateKey) -> ResolvedBlock {
+        if state.is_air() {
+            return self.air.clone();
+        }
+
+        match self.resolved.get(state) {
+            Some(block) => block.clone(),
+            None => self.missing.clone(),
+        }
+    }
+}
+
+impl ColorBlockCatalog {
+    pub fn snapshot<I>(&self, states: I) -> ColorSnapshot
+    where
+        I: IntoIterator<Item = BlockStateKey>,
+    {
+        let mut resolved = HashMap::new();
+        for state in states {
+            if state.is_air() || resolved.contains_key(&state) {
+                continue;
+            }
+            resolved.insert(state.clone(), BlockCatalog::resolve(self, &state));
+        }
+
+        ColorSnapshot {
+            resolved,
+            air: BlockCatalog::resolve(self, &BlockStateKey::simple("minecraft:air")),
+            missing: BlockCatalog::resolve(
+                self,
+                &BlockStateKey::simple("minecraft:__unresolved__"),
+            ),
+        }
+    }
+}
+
 fn resolve_family(name: &str, catalog: &ColorBlockCatalog) -> Option<(Rgba, RenderLayer)> {
     const SUFFIXES: &[&str] = &[
         "_stairs",
