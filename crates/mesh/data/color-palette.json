@@ -38,7 +38,7 @@
     "minecraft:ice": { "color": "#a0d0f0", "layer": "translucent" },
     "minecraft:packed_ice": { "color": "#90c0e0", "layer": "translucent" },
     "minecraft:blue_ice": { "color": "#80b0e0", "layer": "translucent" },
-    "minecraft:water": { "color": "#3a6fd0", "layer": "translucent" },
+    "minecraft:water": { "color": "#3a6fd0b4", "layer": "translucent" },
     "minecraft:lava": { "color": "#d05a1a" },
     "minecraft:glass": { "color": "#a0d0e0", "layer": "translucent" },
     "minecraft:glass_pane": { "color": "#a0d0e0", "layer": "cutout" },

@@ -1,0 +1,10 @@
+[package]
+name = "litematic-render"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+litematic-mesh = { path = "../mesh" }
+litematic-scene = { path = "../scene" }
+png.workspace = true
+serde.workspace = true

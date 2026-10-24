@@ -11,6 +11,7 @@ path = "src/main.rs"
 clap.workspace = true
 litematic-core = { path = "../litematic" }
 litematic-mesh = { path = "../mesh" }
+litematic-render = { path = "../render" }
 litematic-scene = { path = "../scene" }
 serde_json.workspace = true
 

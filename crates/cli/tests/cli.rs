@@ -1,6 +1,7 @@
 mod support;
 
 use litematic_mesh::MeshStatistics;
+use litematic_render::RenderStatistics;
 use litematic_scene::ManifestStatistics;
 use std::fs;
 use std::io::Write;
@@ -128,6 +129,97 @@ fn mesh_exports_obj_and_ply() {
     assert!(ply_text.starts_with("ply\n"));
     assert!(ply_text.contains("element vertex 24"));
     assert!(ply_text.contains("element face 6"));
+}
+
+#[test]
+fn render_writes_png() {
+    let file = write_fixture(&basic_fixture());
+    let path = file.path().to_str().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let output_path = dir.path().join("render.png");
+
+    let output = run(&[
+        "render",
+        path,
+        "--output",
+        output_path.to_str().unwrap(),
+        "--width",
+        "64",
+        "--height",
+        "64",
+    ]);
+
+    assert!(output.status.success());
+    let bytes = fs::read(&output_path).unwrap();
+    assert!(bytes.starts_with(&[0x89, b'P', b'N', b'G']));
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("output:"));
+    assert!(stdout.contains("triangles:"));
+}
+
+#[test]
+fn render_json_parses() {
+    let file = write_fixture(&basic_fixture());
+    let path = file.path().to_str().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let output_path = dir.path().join("render.png");
+
+    let output = run(&[
+        "render",
+        path,
+        "--output",
+        output_path.to_str().unwrap(),
+        "--width",
+        "64",
+        "--height",
+        "64",
+        "--json",
+    ]);
+
+    assert!(output.status.success());
+    let stats: RenderStatistics = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(stats.width, 64);
+    assert_eq!(stats.height, 64);
+    assert!(stats.triangles > 0);
+}
+
+#[test]
+fn render_rejects_invalid_options() {
+    let file = write_fixture(&basic_fixture());
+    let path = file.path().to_str().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let output_path = dir.path().join("render.png");
+
+    let output = run(&[
+        "render",
+        path,
+        "--output",
+        output_path.to_str().unwrap(),
+        "--background",
+        "not-a-color",
+    ]);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("INVALID_RENDER_OPTIONS")
+    );
+
+    let output = run(&[
+        "render",
+        path,
+        "--output",
+        output_path.to_str().unwrap(),
+        "--lighting",
+        "unknown",
+    ]);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("INVALID_RENDER_OPTIONS")
+    );
 }
 
 #[test]

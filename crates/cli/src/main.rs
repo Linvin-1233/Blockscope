@@ -1,7 +1,12 @@
 use clap::{Args, Parser, Subcommand};
 use litematic_core::{DecodeLimits, LitematicError, LitematicFile, LitematicLimits};
 use litematic_mesh::{
-    ColorBlockCatalog, MeshError, MeshLimits, MeshStatistics, build_mesh, write_obj, write_ply,
+    ColorBlockCatalog, MeshError, MeshLimits, MeshStatistics, Rgba, build_mesh, write_obj,
+    write_ply,
+};
+use litematic_render::{
+    Background, LightingProfile, RenderError, RenderOptions, RenderStatistics, render_mesh,
+    write_png,
 };
 use litematic_scene::{Manifest, Scene, sha256};
 use std::fmt;
@@ -34,6 +39,8 @@ enum Command {
     Stats(StatsArgs),
     /// Build a color-block mesh and optionally export it.
     Mesh(MeshArgs),
+    /// Render a color-block mesh to PNG.
+    Render(RenderArgs),
 }
 
 #[derive(Debug, Args)]
@@ -74,6 +81,35 @@ struct MeshArgs {
     ply: Option<PathBuf>,
 }
 
+#[derive(Debug, Args)]
+struct RenderArgs {
+    file: PathBuf,
+    /// Output PNG path.
+    #[arg(long, default_value = "render.png")]
+    output: PathBuf,
+    /// Output width in pixels.
+    #[arg(long, default_value_t = 1024)]
+    width: u32,
+    /// Output height in pixels.
+    #[arg(long, default_value_t = 1024)]
+    height: u32,
+    /// Horizontal rotation in degrees.
+    #[arg(long, default_value_t = 45.0)]
+    yaw: f32,
+    /// Camera elevation in degrees.
+    #[arg(long, default_value_t = 30.0)]
+    elevation: f32,
+    /// "transparent" or #RRGGBB / #RRGGBBAA.
+    #[arg(long, default_value = "transparent")]
+    background: String,
+    /// flat-v1 or simple-ao-v1.
+    #[arg(long, default_value = "simple-ao-v1")]
+    lighting: String,
+    /// Print render statistics as JSON.
+    #[arg(long)]
+    json: bool,
+}
+
 fn main() -> ExitCode {
     let cli = Cli::parse();
 
@@ -92,6 +128,7 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Command::Validate(args) => validate(args),
         Command::Stats(args) => stats(args),
         Command::Mesh(args) => mesh(args),
+        Command::Render(args) => render(args),
     }
 }
 
@@ -200,6 +237,74 @@ fn mesh(args: MeshArgs) -> Result<(), CliError> {
     }
 
     Ok(())
+}
+
+fn render(args: RenderArgs) -> Result<(), CliError> {
+    let (_, scene) = load_scene(&args.file)?;
+
+    let background = if args.background == "transparent" {
+        Background::Transparent
+    } else {
+        let color = Rgba::from_hex(&args.background)
+            .map_err(|error| CliError::input(format!("INVALID_RENDER_OPTIONS: {error}")))?;
+        Background::Solid(color)
+    };
+
+    let lighting = LightingProfile::parse(&args.lighting).ok_or_else(|| {
+        CliError::input(format!(
+            "INVALID_RENDER_OPTIONS: unknown lighting profile '{}'",
+            args.lighting
+        ))
+    })?;
+
+    let options = RenderOptions {
+        width: args.width,
+        height: args.height,
+        yaw: args.yaw,
+        elevation: args.elevation,
+        background,
+        lighting,
+        ..Default::default()
+    };
+
+    let catalog = ColorBlockCatalog::default();
+    let mesh = build_mesh(&scene, &catalog, &MeshLimits::default()).map_err(CliError::from)?;
+    let output = render_mesh(&scene, &mesh, &options).map_err(CliError::from)?;
+
+    let file = File::create(&args.output).map_err(|error| {
+        CliError::input(format!("IO_ERROR: {}: {error}", args.output.display()))
+    })?;
+    let mut writer = BufWriter::new(file);
+    write_png(&output, &mut writer).map_err(CliError::from)?;
+    writer.flush().map_err(|error| {
+        CliError::input(format!("IO_ERROR: {}: {error}", args.output.display()))
+    })?;
+
+    if args.json {
+        let json = serde_json::to_string_pretty(&output.statistics).map_err(CliError::internal)?;
+        println!("{json}");
+    } else {
+        println!("output: {}", args.output.display());
+        println!("size: {}x{}", output.width, output.height);
+        println!("yaw: {}, elevation: {}", options.yaw, options.elevation);
+        println!("lighting: {}", options.lighting.as_str());
+        println!("background: {}", options.background.as_str());
+        print_render_stats(&output.statistics);
+    }
+
+    Ok(())
+}
+
+fn print_render_stats(statistics: &RenderStatistics) {
+    println!("tiles: {}", statistics.tiles);
+    println!("triangles: {}", statistics.triangles);
+    println!("culled backfaces: {}", statistics.culled_backfaces);
+    println!(
+        "layer triangles: opaque {} cutout {} translucent {}",
+        statistics.opaque_triangles, statistics.cutout_triangles, statistics.translucent_triangles
+    );
+    println!("pixels tested: {}", statistics.pixels_tested);
+    println!("pixels written: {}", statistics.pixels_written);
 }
 
 fn write_export<F>(path: &Path, write: F) -> Result<(), CliError>
@@ -311,6 +416,12 @@ impl From<LitematicError> for CliError {
 
 impl From<MeshError> for CliError {
     fn from(error: MeshError) -> Self {
+        Self::input(error.to_string())
+    }
+}
+
+impl From<RenderError> for CliError {
+    fn from(error: RenderError) -> Self {
         Self::input(error.to_string())
     }
 }
