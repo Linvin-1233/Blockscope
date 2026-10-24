@@ -126,16 +126,16 @@ service code.
 
 **Acceptance criteria:**
 
-- [ ] Request covers input path or hash, views, size, supersample, lighting,
-      background, format, timeout, and job id.
-- [ ] Response covers output paths, scene hash, statistics, timings, and error
+- [x] Request covers input path or hash, views, size, supersample, lighting,
+      background, format, and job id. Job timeouts are supervisor-enforced.
+- [x] Response covers output paths, scene hash, statistics, timings, and error
       codes.
-- [ ] Transport choice (stdio JSONL or local socket) is justified.
-- [ ] Document lives in `docs/engine-protocol.md`.
+- [x] Transport choice (stdio JSONL or local socket) is justified.
+- [x] Document lives in `docs/engine-protocol.md`.
 
 **Verification:**
 
-- [ ] Example request and response for a single job and a multi-view job.
+- [x] Example request and response for a single job and a multi-view job.
 
 **Dependencies:** None
 **Files likely touched:** `docs/engine-protocol.md`

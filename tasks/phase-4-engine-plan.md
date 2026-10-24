@@ -132,8 +132,15 @@ after the pipeline switch (SHA256 `9CAFA199...`).
 
 ## Open Questions
 
-- Which platform does the engine deploy on, Linux or Windows?
 - What is the target concurrent render count?
 - Is multi-process for crash isolation, throughput, or both?
 - Is incremental warmup across requests required, or is a per-scene snapshot
   enough?
+
+## Decisions
+
+- **Platforms:** Linux and Windows, both supported from the start.
+- **Transport:** newline-delimited JSON over stdio (`docs/engine-protocol.md`).
+  No sockets in v1, so there is no named-pipe/Unix-socket split.
+- **Shutdown:** stdin EOF or a `shutdown` message, with a platform-specific
+  forced kill only after a grace period.
