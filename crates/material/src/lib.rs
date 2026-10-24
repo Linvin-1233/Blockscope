@@ -12,6 +12,7 @@ mod tint;
 
 pub use catalog::{
     MaterialDiagnostics, MaterialEntry, MaterialInfo, MaterialKind, MaterialReport, MaterialSet,
+    MaterialSnapshot,
 };
 pub use error::{MaterialError, MaterialErrorCode};
 pub use source::{AssetSource, asset_path};

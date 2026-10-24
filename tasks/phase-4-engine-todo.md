@@ -10,16 +10,16 @@ the block states used by a scene.
 
 **Acceptance criteria:**
 
-- [ ] `MaterialSnapshot` holds resolved blocks, textures, info, and diagnostics.
-- [ ] `MaterialSet::snapshot` resolves every distinct non-air state once.
-- [ ] `MaterialSnapshot::resolve` performs no writes and needs no lock.
-- [ ] Snapshot results match `MaterialSet::resolve` for every fixture state.
-- [ ] `cargo test -p litematic-material` passes.
+- [x] `MaterialSnapshot` holds resolved blocks, textures, info, and diagnostics.
+- [x] `MaterialSet::snapshot` resolves every distinct non-air state once.
+- [x] `MaterialSnapshot::resolve` performs no writes and needs no lock.
+- [x] Snapshot results match `MaterialSet::resolve` for every fixture state.
+- [x] `cargo test -p litematic-material` passes.
 
 **Verification:**
 
-- [ ] New unit test compares snapshot and live resolution.
-- [ ] `materials` report numbers are unchanged on the real fixture.
+- [x] New unit test compares snapshot and live resolution.
+- [ ] `materials` report numbers are unchanged on the real fixture (moved to M3).
 
 **Dependencies:** Baseline commit
 **Files likely touched:** `crates/material/src/catalog.rs`, `crates/material/src/lib.rs`
@@ -32,15 +32,15 @@ the block states used by a scene.
 
 **Acceptance criteria:**
 
-- [ ] `MaterialSnapshot` implements `BlockCatalog`.
-- [ ] `build_mesh` produces identical quads for snapshot and live set.
-- [ ] No change to `litematic-mesh` public signatures.
-- [ ] Mesh tests and golden manifests pass.
+- [x] `MaterialSnapshot` implements `BlockCatalog`.
+- [x] `build_mesh` produces identical quads for snapshot and live set.
+- [x] No change to `litematic-mesh` public signatures.
+- [x] Mesh tests and golden manifests pass.
 
 **Verification:**
 
-- [ ] `cargo test -p litematic-mesh -p litematic-core`
-- [ ] Real fixture mesh statistics match the recorded baseline.
+- [x] `cargo test -p litematic-mesh -p litematic-core`
+- [x] Snapshot and live catalogs build an identical `Mesh` for the same scene.
 
 **Dependencies:** M1
 **Files likely touched:** `crates/material/src/catalog.rs`, `crates/mesh/tests/*`

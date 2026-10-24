@@ -390,6 +390,99 @@ impl MaterialSet {
     }
 }
 
+/// Immutable material state that can be shared across threads.
+///
+/// Building a snapshot resolves every requested state once, so mesh building
+/// and rendering only perform lookups. `resolve` never writes and never locks.
+pub struct MaterialSnapshot {
+    resolved: HashMap<BlockStateKey, ResolvedBlock>,
+    info: HashMap<BlockStateKey, MaterialInfo>,
+    textures: TextureSet,
+    diagnostics: MaterialDiagnostics,
+    air: ResolvedBlock,
+    missing: ResolvedBlock,
+}
+
+impl MaterialSnapshot {
+    pub fn len(&self) -> usize {
+        self.resolved.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.resolved.is_empty()
+    }
+
+    pub fn textures(&self) -> &TextureSet {
+        &self.textures
+    }
+
+    pub fn diagnostics(&self) -> &MaterialDiagnostics {
+        &self.diagnostics
+    }
+
+    pub fn info_for(&self, state: &BlockStateKey) -> Option<MaterialInfo> {
+        self.info.get(state).copied()
+    }
+}
+
+impl BlockCatalog for MaterialSnapshot {
+    fn resolve(&self, state: &BlockStateKey) -> ResolvedBlock {
+        if state.is_air() {
+            return self.air.clone();
+        }
+
+        match self.resolved.get(state) {
+            Some(block) => block.clone(),
+            None => self.missing.clone(),
+        }
+    }
+}
+
+impl MaterialSet {
+    /// Pre-resolve `states` into an immutable snapshot.
+    ///
+    /// Air states are not stored; they resolve to an empty model. States that
+    /// were not part of the snapshot resolve to a magenta unknown block, so a
+    /// forgotten state stays visible instead of silently disappearing.
+    pub fn snapshot<I>(&self, states: I) -> MaterialSnapshot
+    where
+        I: IntoIterator<Item = BlockStateKey>,
+    {
+        let mut resolved = HashMap::new();
+        let mut info = HashMap::new();
+
+        for state in states {
+            if state.is_air() || resolved.contains_key(&state) {
+                continue;
+            }
+
+            let block = self.resolve(&state);
+            if let Some(entry) = self.info_for(&state) {
+                info.insert(state.clone(), entry);
+            }
+            resolved.insert(state, block);
+        }
+
+        let textures = self.textures.borrow().clone();
+        let diagnostics = self.diagnostics();
+        let air = self
+            .fallback
+            .resolve(&BlockStateKey::simple("minecraft:air"));
+        let missing = self
+            .fallback
+            .resolve(&BlockStateKey::simple("minecraft:__unresolved__"));
+
+        MaterialSnapshot {
+            resolved,
+            info,
+            textures,
+            diagnostics,
+            air,
+            missing,
+        }
+    }
+}
+
 impl BlockCatalog for MaterialSet {
     fn resolve(&self, state: &BlockStateKey) -> ResolvedBlock {
         if let Some(cached) = self.resolved.borrow().get(state) {
