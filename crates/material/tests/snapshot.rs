@@ -231,3 +231,37 @@ fn snapshot_builds_the_same_mesh_as_the_live_set() {
 
     assert_eq!(live, shared);
 }
+
+#[test]
+fn snapshot_serves_concurrent_meshing() {
+    let (_pack, materials) = fixture();
+    let scene = scene(&["minecraft:test_cube", "minecraft:stone", "minecraft:water"]);
+    let palette = scene
+        .regions
+        .iter()
+        .flat_map(|region| region.palette.iter().cloned());
+    let snapshot = Arc::new(materials.snapshot(palette));
+
+    let expected = build_mesh(&scene, snapshot.as_ref(), &MeshLimits::default()).unwrap();
+    let workers = std::thread::available_parallelism()
+        .map(std::num::NonZeroUsize::get)
+        .unwrap_or(4)
+        .min(8);
+    let results: Vec<_> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..workers)
+            .map(|_| {
+                scope.spawn(|| {
+                    build_mesh(&scene, snapshot.as_ref(), &MeshLimits::default()).unwrap()
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|handle| handle.join().expect("mesh worker panicked"))
+            .collect()
+    });
+
+    for mesh in results {
+        assert_eq!(mesh, expected, "concurrent meshing must be deterministic");
+    }
+}

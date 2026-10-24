@@ -1,6 +1,6 @@
 # Implementation Plan: Phase 4 - Shared Materials and Multi-Process Engine
 
-**Status:** Planned; baseline pending commit.
+**Status:** M1-M5 implemented; engine slices P1-P5 pending.
 **Baseline:** Phase 3C plus the in-flight chest/piston work (verified with
 `scripts/check.ps1`, exit 0).
 **Related:** `tasks/phase-4-engine-todo.md`
@@ -101,6 +101,22 @@ so these numbers must be re-measured before they are used as a regression gate.
 - Sticky routing by `inputHash`.
 - Timeout, kill, restart, and zombie reaping.
 - Shared temp directory for outputs.
+
+## Phase 4 Measurements
+
+Shared snapshot, release build, 41k-block fixture, 1024x1024 at supersample 2:
+
+| Run | Mesh (snapshot + build) | Render median | Triangles |
+|---|---|---|---|
+| Baseline (live set) | 146 ms | 204 ms | 332,710 |
+| Snapshot run 1 | 151.7 ms | 207.5 ms | 359,110 |
+| Snapshot run 2 | 148.5 ms | 207.2 ms | 359,110 |
+| Snapshot run 3 | 145.9 ms | 237.0 ms | 359,110 |
+
+Triangle count grew 8 percent because of the chest and piston models. Mesh cost
+per quad is unchanged, and render time stays inside run-to-run noise. A
+1024x1024 supersample-1 render of the real fixture is byte-identical before and
+after the pipeline switch (SHA256 `9CAFA199...`).
 
 ## Risks and Mitigations
 

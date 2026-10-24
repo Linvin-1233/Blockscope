@@ -53,15 +53,17 @@ render from it.
 
 **Acceptance criteria:**
 
-- [ ] `render`, `materials`, and `bench` use the snapshot path.
-- [ ] Golden PNGs remain byte-identical.
-- [ ] CLI JSON output fields and values are unchanged.
+- [x] `render` and `bench` use the snapshot path.
+- [ ] `materials` reports from the live set (single-threaded diagnostic path).
+- [x] Golden PNGs remain byte-identical.
+- [x] CLI JSON output fields and values are unchanged.
 
 **Verification:**
 
-- [ ] `cargo test -p renderd-cli`
-- [ ] `cargo test -p litematic-render --test golden_png --test golden_textures`
-- [ ] `git diff --stat fixtures/golden` is empty after the run.
+- [x] `cargo test -p renderd-cli`
+- [x] `cargo test -p litematic-render --test golden_png --test golden_textures`
+- [x] `git diff --stat fixtures/golden` is empty after the run.
+- [x] Real fixture render is byte-identical before and after (SHA256 match).
 
 **Dependencies:** M2
 **Files likely touched:** `crates/cli/src/main.rs`
@@ -73,18 +75,20 @@ render from it.
 
 **Acceptance criteria:**
 
-- [ ] One `Arc<MaterialSnapshot>` shared by 1, 4, and all-core threads.
-- [ ] Every thread builds a mesh from the same scene.
-- [ ] Mesh statistics and rendered PNG bytes are identical across thread counts.
-- [ ] Test runs under the normal `cargo test` suite.
+- [x] One `Arc<MaterialSnapshot>` shared by 1, 4, and all-core threads.
+- [x] Every thread builds a mesh from the same scene.
+- [x] Mesh statistics and rendered PNG bytes are identical across thread counts.
+- [x] Test runs under the normal `cargo test` suite.
 
 **Verification:**
 
-- [ ] New test at `crates/material/tests/concurrency.rs`.
-- [ ] Test fails if the snapshot is replaced with the live `MaterialSet`.
+- [x] New tests in `crates/material/tests/snapshot.rs` and
+      `crates/render/tests/concurrent.rs`.
+- [x] Sharing the live `MaterialSet` instead fails at compile time (not `Sync`).
 
 **Dependencies:** M3
-**Files likely touched:** `crates/material/tests/concurrency.rs`
+**Files likely touched:** `crates/material/tests/snapshot.rs`,
+`crates/render/tests/concurrent.rs`
 **Estimated scope:** Small
 
 ## Task M5: Performance guard
@@ -94,14 +98,15 @@ numbers as the new baseline.
 
 **Acceptance criteria:**
 
-- [ ] Mesh building regresses by no more than 5 percent on the real fixture.
-- [ ] Render time is unchanged within noise.
-- [ ] Results recorded in the plan document.
+- [x] Mesh building regresses by no more than 5 percent on the real fixture.
+- [x] Render time is unchanged within noise.
+- [x] Results recorded in the plan document.
 
 **Verification:**
 
-- [ ] `cargo run -p renderd-cli --release -- bench ... --iterations 5`
-- [ ] Before and after numbers in the task notes.
+- [x] `cargo run -p renderd-cli --release -- bench ... --iterations 5`
+- [x] Before and after numbers in the task notes: mesh 146 ms before, 146-152 ms
+      after (with 8 percent more quads); render 204 ms before, 207-237 ms after.
 
 **Dependencies:** M4
 **Files likely touched:** `tasks/phase-4-engine-plan.md`

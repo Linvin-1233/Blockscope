@@ -1,6 +1,6 @@
 use clap::{Args, Parser, Subcommand};
 use litematic_core::{DecodeLimits, LitematicError, LitematicFile, LitematicLimits};
-use litematic_material::{AssetSource, MaterialSet, TextureFilter};
+use litematic_material::{AssetSource, MaterialSet, MaterialSnapshot, TextureFilter};
 use litematic_mesh::{
     ColorBlockCatalog, Mesh, MeshError, MeshLimits, MeshStatistics, Rgba, build_mesh, write_obj,
     write_ply,
@@ -342,7 +342,8 @@ fn render(args: RenderArgs) -> Result<(), CliError> {
     let materials = load_materials(&args.assets)?;
 
     let mesh_started = Instant::now();
-    let mesh = build_scene_mesh(&scene, materials.as_ref())?;
+    let snapshot = materials.map(|materials| material_snapshot(&scene, &materials));
+    let mesh = build_scene_mesh(&scene, snapshot.as_ref())?;
     let mesh_ms = mesh_started.elapsed().as_secs_f64() * 1000.0;
 
     let mut results = Vec::with_capacity(view_count);
@@ -361,10 +362,9 @@ fn render(args: RenderArgs) -> Result<(), CliError> {
         };
 
         let render_started = Instant::now();
-        let output = match &materials {
-            Some(materials) => {
-                let textures = materials.textures();
-                render_mesh_with_textures(&scene, &mesh, &options, &textures)
+        let output = match &snapshot {
+            Some(snapshot) => {
+                render_mesh_with_textures(&scene, &mesh, &options, snapshot.textures())
                     .map_err(CliError::from)?
             }
             None => render_mesh(&scene, &mesh, &options).map_err(CliError::from)?,
@@ -427,8 +427,8 @@ fn render(args: RenderArgs) -> Result<(), CliError> {
             println!("render: {render_ms:.1} ms, png: {png_ms:.1} ms");
         }
         println!("timings: parse {parse_ms:.1} ms, mesh {mesh_ms:.1} ms, total {total_ms:.1} ms");
-        if let Some(materials) = &materials {
-            let diagnostics = materials.diagnostics();
+        if let Some(snapshot) = &snapshot {
+            let diagnostics = snapshot.diagnostics();
             println!(
                 "materials: pack {} states, chest {} states, fallback {} states, missing models {} missing textures {}",
                 diagnostics.pack_models,
@@ -443,16 +443,26 @@ fn render(args: RenderArgs) -> Result<(), CliError> {
     Ok(())
 }
 
-fn build_scene_mesh(scene: &Scene, materials: Option<&MaterialSet>) -> Result<Mesh, CliError> {
-    match materials {
-        Some(materials) => {
-            build_mesh(scene, materials, &MeshLimits::default()).map_err(CliError::from)
+fn build_scene_mesh(scene: &Scene, snapshot: Option<&MaterialSnapshot>) -> Result<Mesh, CliError> {
+    match snapshot {
+        Some(snapshot) => {
+            build_mesh(scene, snapshot, &MeshLimits::default()).map_err(CliError::from)
         }
         None => {
             let catalog = ColorBlockCatalog::new().map_err(CliError::internal)?;
             build_mesh(scene, &catalog, &MeshLimits::default()).map_err(CliError::from)
         }
     }
+}
+
+/// Resolve every block state used by the scene once, so meshing and rendering
+/// share one immutable material set.
+fn material_snapshot(scene: &Scene, materials: &MaterialSet) -> MaterialSnapshot {
+    let states = scene
+        .regions
+        .iter()
+        .flat_map(|region| region.palette.iter().cloned());
+    materials.snapshot(states)
 }
 
 fn load_materials(args: &AssetArgs) -> Result<Option<MaterialSet>, CliError> {
@@ -636,7 +646,8 @@ fn bench(args: BenchArgs) -> Result<(), CliError> {
     let parse_ms = parse_started.elapsed().as_secs_f64() * 1000.0;
 
     let mesh_started = Instant::now();
-    let mesh = build_scene_mesh(&scene, materials.as_ref())?;
+    let snapshot = materials.map(|materials| material_snapshot(&scene, &materials));
+    let mesh = build_scene_mesh(&scene, snapshot.as_ref())?;
     let mesh_ms = mesh_started.elapsed().as_secs_f64() * 1000.0;
 
     let options = RenderOptions {
@@ -660,10 +671,9 @@ fn bench(args: BenchArgs) -> Result<(), CliError> {
 
     for _ in 0..args.iterations {
         let render_started = Instant::now();
-        let output = match &materials {
-            Some(materials) => {
-                let textures = materials.textures();
-                render_mesh_with_textures(&scene, &mesh, &options, &textures)
+        let output = match &snapshot {
+            Some(snapshot) => {
+                render_mesh_with_textures(&scene, &mesh, &options, snapshot.textures())
                     .map_err(CliError::from)?
             }
             None => render_mesh(&scene, &mesh, &options).map_err(CliError::from)?,
@@ -708,7 +718,7 @@ fn bench(args: BenchArgs) -> Result<(), CliError> {
             "pngBytes": png_bytes,
             "rgbaBytes": output.rgba.len() as u64,
             "peakRssBytes": peak_rss,
-            "materials": materials.as_ref().map(MaterialSet::diagnostics),
+            "materials": snapshot.as_ref().map(|snapshot| snapshot.diagnostics().clone()),
         });
         let json = serde_json::to_string_pretty(&report).map_err(CliError::internal)?;
         println!("{json}");
@@ -743,8 +753,8 @@ fn bench(args: BenchArgs) -> Result<(), CliError> {
         if let Some(peak_rss) = peak_rss {
             println!("peak rss: {} bytes", peak_rss);
         }
-        if let Some(materials) = &materials {
-            let diagnostics = materials.diagnostics();
+        if let Some(snapshot) = &snapshot {
+            let diagnostics = snapshot.diagnostics();
             println!(
                 "materials: pack {} states, chest {} states, fallback {} states, missing models {} missing textures {}",
                 diagnostics.pack_models,
