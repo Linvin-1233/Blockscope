@@ -6,6 +6,30 @@ use litematic_scene::BlockStateKey;
 pub(crate) fn model_for(state: &BlockStateKey) -> Option<BlockModel> {
     let path = strip_namespace(&state.name);
 
+    if path == "water" || path == "lava" {
+        return Some(fluid(state));
+    }
+    if path == "chest" || path == "trapped_chest" || path == "ender_chest" {
+        return Some(single_box([1, 0, 1], [15, 14, 15]));
+    }
+    if path == "barrel" || path.ends_with("_shulker_box") {
+        return Some(single_box([1, 0, 1], [15, 16, 15]));
+    }
+    if path.ends_with("_sign") {
+        return Some(single_box([7, 0, 0], [9, 16, 16]));
+    }
+    if path.ends_with("_banner") {
+        return Some(single_box([7, 0, 0], [9, 16, 16]));
+    }
+    if path.ends_with("skull") || path.ends_with("_head") {
+        return Some(single_box([4, 0, 4], [12, 8, 12]));
+    }
+    if path == "lectern" {
+        return Some(lectern());
+    }
+    if path == "conduit" {
+        return Some(single_box([4, 4, 4], [12, 12, 12]));
+    }
     if path.ends_with("_slab") {
         return Some(slab(state));
     }
@@ -293,6 +317,22 @@ fn ladder(state: &BlockStateKey) -> BlockModel {
 
 fn single_box(min: [u8; 3], max: [u8; 3]) -> BlockModel {
     build_model(&[ModelBox::new(min, max)], Vec::new())
+}
+
+fn fluid(state: &BlockStateKey) -> BlockModel {
+    let level = prop(state, "level")
+        .and_then(|value| value.parse::<u8>().ok())
+        .unwrap_or(0)
+        .min(15);
+    let height = 16u8.saturating_sub(level).max(1);
+    single_box([0, 0, 0], [16, height, 16])
+}
+
+fn lectern() -> BlockModel {
+    let mut builder = ShapeBuilder::new();
+    builder.add([0, 0, 0], [16, 4, 16]);
+    builder.add([4, 4, 4], [12, 12, 12]);
+    builder.build()
 }
 
 fn is_cross_plant(path: &str) -> bool {

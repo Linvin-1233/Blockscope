@@ -176,6 +176,57 @@ fn resolves_partial_shapes() {
 }
 
 #[test]
+fn resolves_fluids_and_static_block_entities() {
+    let catalog = ColorBlockCatalog::default();
+
+    let source = catalog.resolve(&state("minecraft:water", &[("level", "0")]));
+    assert!(source.model.is_full_cube);
+    assert_eq!(source.layer, RenderLayer::Translucent);
+
+    let flowing = catalog.resolve(&state("minecraft:water", &[("level", "8")]));
+    assert!(!flowing.model.is_full_cube);
+    assert_eq!(flowing.model.quads.len(), 6);
+
+    let lava = catalog.resolve(&state("minecraft:lava", &[("level", "4")]));
+    assert!(!lava.model.is_full_cube);
+    assert_eq!(lava.layer, RenderLayer::Opaque);
+
+    let chest = resolve(&catalog, "minecraft:chest");
+    assert!(!chest.model.is_full_cube);
+    assert_eq!(chest.model.quads.len(), 6);
+
+    let ender_chest = resolve(&catalog, "minecraft:ender_chest");
+    assert!(!ender_chest.model.is_full_cube);
+
+    let sign = resolve(&catalog, "minecraft:oak_sign");
+    assert!(!sign.model.is_full_cube);
+    assert_eq!(sign.model.quads.len(), 6);
+
+    let banner = resolve(&catalog, "minecraft:white_banner");
+    assert!(banner.known);
+    assert!(!banner.model.is_full_cube);
+
+    let skull = resolve(&catalog, "minecraft:skeleton_skull");
+    assert!(skull.known);
+    assert!(!skull.model.is_full_cube);
+
+    let lectern = resolve(&catalog, "minecraft:lectern");
+    assert!(!lectern.model.is_full_cube);
+
+    let beacon = resolve(&catalog, "minecraft:beacon");
+    assert!(beacon.model.is_full_cube);
+    assert_eq!(beacon.layer, RenderLayer::Translucent);
+
+    let conduit = resolve(&catalog, "minecraft:conduit");
+    assert!(!conduit.model.is_full_cube);
+    assert_eq!(conduit.layer, RenderLayer::Translucent);
+
+    let shulker = resolve(&catalog, "minecraft:white_shulker_box");
+    assert!(shulker.known);
+    assert!(!shulker.model.is_full_cube);
+}
+
+#[test]
 fn invalid_palette_data_is_rejected() {
     let error = ColorBlockCatalog::from_json_str("not json").unwrap_err();
     assert_eq!(error.code, CatalogErrorCode::InvalidJson);

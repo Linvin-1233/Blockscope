@@ -235,6 +235,10 @@ fn family_color(name: &str, catalog: &ColorBlockCatalog) -> Option<Rgba> {
         return Some(Rgba::rgb(58, 122, 58));
     }
 
+    if path.contains("skull") || path.ends_with("_head") {
+        return Some(Rgba::rgb(200, 192, 176));
+    }
+
     for (prefix, color) in DYE_COLORS {
         if let Some(suffix) = path.strip_prefix(prefix)
             && let Some(suffix) = suffix.strip_prefix('_')
@@ -249,7 +253,10 @@ fn family_color(name: &str, catalog: &ColorBlockCatalog) -> Option<Rgba> {
                     | "carpet"
                     | "bed"
                     | "banner"
+                    | "wall_banner"
                     | "candle"
+                    | "shulker_box"
+                    | "glazed_terracotta"
             )
         {
             return Some(*color);
