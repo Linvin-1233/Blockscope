@@ -1,0 +1,24 @@
+# Agent skills are installed per machine; pin versions in skills-lock.json.
+/.agents/
+
+# IDE and build outputs
+/.idea/
+/target/
+**/target/
+
+# Local resource packs and fixtures (never commit Minecraft assets).
+/resourcepacks/
+/fixtures/private/
+/fixtures/litematic/*.litematic
+/fixtures/litematic/*.litematic.gz
+/fixtures/litematic/*.zip
+
+# Local renders, caches, and logs.
+/renders/
+/cache/
+/logs/
+*.log
+
+# OS metadata
+.DS_Store
+Thumbs.db
