@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "parser": {
+    "version": "0.1.0",
+    "litematicVersion": 6,
+    "minecraftDataVersion": 3700
+  },
+  "inputHash": "b5c8c8979205946755a58d9c621faf4c1748b3ef21d794854850084a5a8df17f",
+  "sceneHash": "687cdd4a92e7488f20ef2e22a6e8bdc69a9af0f39c43049d8ecba96b34a397e2",
+  "metadata": {
+    "name": "negative",
+    "author": null,
+    "description": null,
+    "litematicVersion": 6,
+    "subVersion": null,
+    "minecraftDataVersion": 3700,
+    "declaredRegionCount": 2,
+    "declaredTotalVolume": 25,
+    "declaredTotalBlocks": 1,
+    "declaredBlockEntityCount": null,
+    "declaredBlockTickCount": null,
+    "declaredMcDataVersion": null,
+    "declaredMcVersion": null,
+    "enclosingSize": [
+      11,
+      11,
+      11
+    ],
+    "originalOrigin": null,
+    "timeCreated": null,
+    "timeModified": null,
+    "previewImagePixels": null
+  },
+  "bounds": {
+    "min": [
+      0,
+      0,
+      0
+    ],
+    "maxExclusive": [
+      11,
+      11,
+      11
+    ],
+    "size": [
+      11,
+      11,
+      11
+    ],
+    "volume": 1331
+  },
+  "regions": [
+    {
+      "name": "east",
+      "origin": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        1,
+        1,
+        1
+      ],
+      "dataVersion": 3700,
+      "volume": 1,
+      "blockEntities": 0,
+      "entities": 0,
+      "pendingBlockTicks": 0,
+      "pendingFluidTicks": 0
+    },
+    {
+      "name": "west",
+      "origin": [
+        9,
+        8,
+        7
+      ],
+      "size": [
+        2,
+        3,
+        4
+      ],
+      "dataVersion": 3700,
+      "volume": 24,
+      "blockEntities": 0,
+      "entities": 0,
+      "pendingBlockTicks": 0,
+      "pendingFluidTicks": 0
+    }
+  ],
+  "statistics": {
+    "volume": 25,
+    "air": 24,
+    "nonAir": 1,
+    "blockEntities": 0,
+    "entities": 0,
+    "pendingBlockTicks": 0,
+    "pendingFluidTicks": 0,
+    "blocks": {
+      "minecraft:air": 24,
+      "minecraft:stone": 1
+    }
+  },
+  "diagnostics": []
+}

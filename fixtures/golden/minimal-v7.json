@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 1,
+  "parser": {
+    "version": "0.1.0",
+    "litematicVersion": 7,
+    "minecraftDataVersion": 3700
+  },
+  "inputHash": "098838ea7d135c516ba1ca126da693d696ddb23b5709028ba886b4361dbfeffe",
+  "sceneHash": "3fffc025ee68622b9f308cef3679b69954a2a4a18febb367b0adca1bbe18e0ef",
+  "metadata": {
+    "name": "cli-fixture",
+    "author": null,
+    "description": null,
+    "litematicVersion": 7,
+    "subVersion": null,
+    "minecraftDataVersion": 3700,
+    "declaredRegionCount": 1,
+    "declaredTotalVolume": 2,
+    "declaredTotalBlocks": 1,
+    "declaredBlockEntityCount": null,
+    "declaredBlockTickCount": null,
+    "declaredMcDataVersion": null,
+    "declaredMcVersion": null,
+    "enclosingSize": [
+      2,
+      1,
+      1
+    ],
+    "originalOrigin": null,
+    "timeCreated": null,
+    "timeModified": null,
+    "previewImagePixels": null
+  },
+  "bounds": {
+    "min": [
+      0,
+      0,
+      0
+    ],
+    "maxExclusive": [
+      2,
+      1,
+      1
+    ],
+    "size": [
+      2,
+      1,
+      1
+    ],
+    "volume": 2
+  },
+  "regions": [
+    {
+      "name": "main",
+      "origin": [
+        0,
+        0,
+        0
+      ],
+      "size": [
+        2,
+        1,
+        1
+      ],
+      "dataVersion": 3700,
+      "volume": 2,
+      "blockEntities": 0,
+      "entities": 0,
+      "pendingBlockTicks": 0,
+      "pendingFluidTicks": 0
+    }
+  ],
+  "statistics": {
+    "volume": 2,
+    "air": 1,
+    "nonAir": 1,
+    "blockEntities": 0,
+    "entities": 0,
+    "pendingBlockTicks": 0,
+    "pendingFluidTicks": 0,
+    "blocks": {
+      "minecraft:air": 1,
+      "minecraft:stone": 1
+    }
+  },
+  "diagnostics": []
+}

@@ -1,0 +1,17 @@
+[package]
+name = "renderd-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "renderd"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+litematic-core = { path = "../litematic" }
+litematic-scene = { path = "../scene" }
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

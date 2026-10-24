@@ -4,6 +4,7 @@ members = [
   "crates/nbt",
   "crates/scene",
   "crates/litematic",
+  "crates/cli",
 ]
 
 [workspace.package]
