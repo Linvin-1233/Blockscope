@@ -8,6 +8,7 @@ pub struct Vertex {
     pub normal: [f32; 3],
     pub color: [u8; 4],
     pub uv: [f32; 2],
+    pub ao: f32,
 }
 
 /// A renderable quad with its material layer.

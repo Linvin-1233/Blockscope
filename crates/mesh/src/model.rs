@@ -65,6 +65,15 @@ impl FaceDirection {
             Self::East => "east",
         }
     }
+
+    /// Tangential axes used for AO sampling: (u, v).
+    pub const fn tangents(self) -> (usize, usize) {
+        match self {
+            Self::Down | Self::Up => (0, 2),
+            Self::North | Self::South => (0, 1),
+            Self::West | Self::East => (2, 1),
+        }
+    }
 }
 
 /// A box in 0..16 model units.

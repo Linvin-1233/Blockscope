@@ -84,6 +84,7 @@ pub fn build_mesh(
                             normal: model_quad.normal,
                             color: block.color.to_array(),
                             uv: [0.0, 0.0],
+                            ao: vertex_ao(&view, catalog, world, model_quad, corner),
                         });
 
                         pages.entry(page_origin).or_default().push(Quad {
@@ -136,6 +137,63 @@ fn should_cull(
     }
 
     neighbor.state == state
+}
+
+fn vertex_ao(
+    view: &SceneBlockView<'_>,
+    catalog: &dyn BlockCatalog,
+    world: [i64; 3],
+    quad: &ModelQuad,
+    corner: [f32; 3],
+) -> f32 {
+    let Some(face) = quad.cullface else {
+        return 1.0;
+    };
+
+    let (u_axis, v_axis) = face.tangents();
+    let u = corner[u_axis];
+    let v = corner[v_axis];
+    if !(u == 0.0 || u == 16.0) || !(v == 0.0 || v == 16.0) {
+        return 1.0;
+    }
+
+    let du = if u == 16.0 { 1 } else { -1 };
+    let dv = if v == 16.0 { 1 } else { -1 };
+    let normal = face.offset();
+    let side1 = shifted(world, normal, u_axis, du);
+    let side2 = shifted(world, normal, v_axis, dv);
+    let corner_pos = {
+        let mut pos = shifted(world, normal, u_axis, du);
+        pos[v_axis] += dv;
+        pos
+    };
+
+    let s1 = occludes(view, catalog, side1);
+    let s2 = occludes(view, catalog, side2);
+    let c = occludes(view, catalog, corner_pos);
+    let raw = if s1 && s2 {
+        0.0
+    } else {
+        1.0 - (u8::from(s1) + u8::from(s2) + u8::from(c)) as f32 / 3.0
+    };
+
+    0.55 + 0.45 * raw
+}
+
+fn shifted(world: [i64; 3], base: [i64; 3], axis: usize, delta: i64) -> [i64; 3] {
+    let mut position = [world[0] + base[0], world[1] + base[1], world[2] + base[2]];
+    position[axis] += delta;
+    position
+}
+
+fn occludes(view: &SceneBlockView<'_>, catalog: &dyn BlockCatalog, position: [i64; 3]) -> bool {
+    let Some(neighbor) = view.resolve(position) else {
+        return false;
+    };
+    if neighbor.state.is_air() {
+        return false;
+    }
+    catalog.resolve(neighbor.state).occludes()
 }
 
 fn page_origin(world: [i64; 3]) -> Result<[i32; 3], MeshError> {
