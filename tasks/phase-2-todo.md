@@ -155,7 +155,7 @@ limits.
 - [x] README links the mesh command and document.
 - [x] Windows and Linux checks pass.
 - [x] No Minecraft assets, resource packs, or private fixtures are committed.
-- [ ] Phase 2A checkpoint reviewed by a human.
+- [x] Phase 2A checkpoint reviewed by a human.
 
 **Verification:**
 
