@@ -191,15 +191,19 @@ jobs sequentially.
 
 **Acceptance criteria:**
 
-- [ ] Per-job timeout kills and restarts the worker.
-- [ ] A killed worker's job is retried once, then fails with a stable code.
-- [ ] Zombie processes are reaped.
-- [ ] Memory ceiling per worker is documented and enforced.
+- [x] Per-job timeout kills and restarts the worker.
+- [x] A killed worker's job is retried once, then fails with `TIMEOUT`,
+      `MEMORY_LIMIT`, or `INTERNAL_ERROR`.
+- [x] Killed workers are reaped with `wait`; no zombies accumulate.
+- [x] Memory ceiling per worker is documented and enforced (default 85 percent
+      of available memory divided by the pool size).
 
 **Verification:**
 
-- [ ] Kill a worker mid-job and confirm the pool recovers.
-- [ ] Run for 30 minutes and confirm stable RSS.
+- [x] Kill a worker mid-job and confirm the pool recovers (timeout test).
+- [x] Memory ceiling test kills an over-budget worker and reports
+      `MEMORY_LIMIT`.
+- [ ] 30 minute soak with stable RSS (moved to P5).
 
 **Dependencies:** P3
 **Files likely touched:** supervisor module

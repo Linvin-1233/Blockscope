@@ -168,6 +168,7 @@ rasterizer mid-tile.
 | `MESH_LIMIT_EXCEEDED` | no | Mesh limits exceeded |
 | `BUSY` | yes | Supervisor queue is full |
 | `SHUTDOWN` | yes | Supervisor is draining and stopped accepting work |
+| `MEMORY_LIMIT` | yes | Worker exceeded its per-worker memory ceiling |
 | `PNG_ENCODE_FAILED` | maybe | Encoder failure; retry once |
 | `IO_ERROR` | maybe | Output path unwritable or disk full |
 | `INTERNAL_ERROR` | maybe | Bug; retry once, then report |
@@ -184,7 +185,8 @@ to a fresh directory or overwritten in place, and no state survives a job.
 ```json
 {"type":"hello","protocolVersion":1,"engineVersion":"0.1.0","platform":"linux",
  "cores":4,"memoryLimitBytes":8589934592,"workers":2,"threadsPerWorker":2,
- "queueLimit":4,"cacheEntries":1,
+ "queueLimit":4,"cacheEntries":1,"timeoutSeconds":60,
+ "memoryLimitPerWorkerBytes":3650722201,
  "defaultTier":{"width":2048,"height":2048,"supersample":2}}
 ```
 
@@ -195,10 +197,16 @@ to a fresh directory or overwritten in place, and no state survives a job.
 - Repeated inputs are routed to the worker that already cached them, so a
   second render of the same file skips parsing and meshing.
 - A worker that exits mid-job produces `INTERNAL_ERROR` and is restarted.
+- A job that exceeds `--timeout` (default 60 seconds, `0` disables) is killed,
+  retried once on a fresh worker, then answered with `TIMEOUT`.
+- A worker that exceeds its memory ceiling (85 percent of the available memory
+  divided by the pool size, or `--memory` in MiB) is killed the same way with
+  `MEMORY_LIMIT`.
 - Results may arrive out of order because workers run in parallel; match them by
   `id`.
-- v1 has no per-job timeout inside the supervisor. A stalled worker keeps its
-  slot until the supervisor is stopped; adding a deadline and kill is task P4.
+- Killed workers are reaped before replacement, so the pool does not accumulate
+  zombies. A supervisor that dies closes the worker pipes, which makes the
+  workers exit on stdin EOF.
 
 ## Cross-platform rules
 

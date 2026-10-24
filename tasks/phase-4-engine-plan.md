@@ -1,6 +1,6 @@
 # Implementation Plan: Phase 4 - Shared Materials and Multi-Process Engine
 
-**Status:** M1-M5 and P1-P3 implemented; P4-P5 pending.
+**Status:** M1-M5 and P1-P4 implemented; P5 pending.
 **Baseline:** Phase 3C plus the in-flight chest/piston work (verified with
 `scripts/check.ps1`, exit 0).
 **Related:** `tasks/phase-4-engine-todo.md`

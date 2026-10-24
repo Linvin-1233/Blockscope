@@ -39,6 +39,15 @@ docker run --rm -i \
 On a 1 CPU / 1 GiB container the capacity suggestion is one worker and one
 thread; raising `--workers` there only splits one core and doubles memory.
 
+`renderd supervise` also accepts:
+
+- `--timeout <seconds>`: per-job deadline, default 60, `0` disables.
+- `--memory <MiB>`: per-worker ceiling; defaults to 85 percent of available
+  memory divided by the worker count. A worker that crosses it is killed and
+  the job is retried once.
+- `--queue <jobs>`: queued jobs before `BUSY`; defaults to `workers * 2`.
+- `--cache <entries>`: parsed scenes cached per worker; defaults to 1.
+
 The container image never ships Minecraft assets. Mount the jar or an extracted
 `assets/` directory at runtime.
 
