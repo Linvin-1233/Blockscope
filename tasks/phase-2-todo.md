@@ -174,11 +174,11 @@ pass with greedy face merging.
 
 **Acceptance criteria:**
 
-- [ ] `ModelBox`/`ModelPart` representation exists.
-- [ ] Voxelizer removes internal faces and merges coplanar cells.
-- [ ] Model cache is keyed by canonical block state.
-- [ ] Slab and stairs produce the expected visible faces.
-- [ ] Full cubes still use the fast path.
+- [x] `ModelBox`/`ModelPart` representation exists.
+- [x] Voxelizer removes internal faces and merges coplanar cells.
+- [x] Model cache is keyed by canonical block state.
+- [x] Slab and stairs produce the expected visible faces.
+- [x] Full cubes still use the fast path.
 
 **Dependencies:** P2-4  
 **Estimated scope:** Large
@@ -190,10 +190,10 @@ button, plate, torch, ladder, rail, and cross-plant geometry.
 
 **Acceptance criteria:**
 
-- [ ] Block properties drive connection and orientation.
-- [ ] Each family has bounds/face-count tests.
-- [ ] Cutout and translucent layers are respected.
-- [ ] Unknown properties fall back safely with diagnostics.
+- [x] Block properties drive connection and orientation.
+- [x] Each family has bounds/face-count tests.
+- [x] Cutout and translucent layers are respected.
+- [x] Unknown properties fall back safely with diagnostics.
 
 **Dependencies:** P2-8  
 **Estimated scope:** Large

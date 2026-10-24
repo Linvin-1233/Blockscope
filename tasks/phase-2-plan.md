@@ -1,6 +1,6 @@
 # Implementation Plan: Phase 2 — Color-Block Geometry
 
-**Status:** Phase 2A implemented; Phase 2B/2C proposed.  
+**Status:** Phase 2A/2B implemented; Phase 2C proposed.  
 **Scope:** Build a deterministic mesh from the Phase 1 Scene IR using an
 original color-block catalog. No Minecraft assets, textures, or rasterization.
 

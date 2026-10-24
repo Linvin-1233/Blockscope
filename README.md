@@ -17,7 +17,7 @@ Minecraft Litematic 无头渲染服务。当前处于 Phase 1：Rust parser + CL
 
 - 解析 `.litematic` v1-v7
 - 规范 Scene IR、材料统计、诊断和哈希
-- 默认色块 catalog、全方块 mesh、OBJ/PLY 导出
+- 默认色块 catalog、全方块与常见 partial shape mesh、OBJ/PLY 导出
 - `renderd inspect` / `validate` / `stats` / `mesh` CLI
 - 资源包由部署者自行提供
 - 暂不包含 Go QQBot 服务、CPU 光栅化和资源包加载

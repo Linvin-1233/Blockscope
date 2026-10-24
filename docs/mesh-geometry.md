@@ -118,13 +118,63 @@ cargo run -p renderd-cli -- mesh path\to\model.litematic --ply out.ply
 `--json` prints `MeshStatistics` with pages, quads, vertices, visited/rendered
 blocks, unknown blocks, and layer counts.
 
-## Phase 2B/2C Deferred
+## Partial Shapes
 
-- Partial shapes: slab, stairs, fence, wall, pane, door, trapdoor, carpet,
-  snow, button, plate, torch, ladder, rail.
-- Voxelized box models and greedy face merging.
-- Fluids with height/flow.
-- Static block-entity boxes.
+Phase 2B adds box-based shapes. Block state properties are read from the
+canonical key:
+
+| Family | Properties | Approximation |
+|---|---|---|
+| slab | `type=bottom/top/double` | exact box |
+| stairs | `facing`, `half` | straight shape; corner `shape` values use straight geometry |
+| carpet | none | 1/16 layer |
+| snow | `layers=1..8` | 2/16 per layer |
+| trapdoor | `half`, `open`, `facing` | closed panel or open side panel |
+| door | `facing`, `open` | closed/open panel; hinge is ignored |
+| fence | `north/east/south/west` | post + two bars per connection |
+| fence gate | `facing`, `open` | post + gate panel |
+| wall | `up`, connection sides | post + 8-wide arms |
+| pane / iron bars | connection sides | center post + arms; isolated pane becomes a thin plane |
+| button | `face`, `facing` | small floor/ceiling/wall box |
+| pressure plate | none | 14x1x14 plate |
+| torch | floor/wall name | small box, wall offset by `facing` |
+| ladder | `facing` | thin side panel |
+| rail | none | 16x1x16 plate |
+| cactus | none | 14x16x14 box |
+| cross plants | none | four quads (two crossed planes, double-sided) |
+
+These are deliberately approximate. They preserve the silhouette and material
+color; they do not try to reproduce every vanilla micro-detail.
+
+## Voxel Mesher
+
+Model boxes are voxelized into a cached 16^3 occupancy grid. For each face
+plane, exposed 1x1 cells are greedily merged into the largest rectangles. This:
+
+- removes interior faces between overlapping or touching boxes;
+- merges coplanar faces across box boundaries;
+- emits `cullface` only for faces on the block boundary;
+- caches the resulting model per canonical block state.
+
+Full cubes bypass the voxel path and reuse the six-quad fast model. A model
+whose boxes fill the complete 16^3 volume also collapses to the full cube.
+
+## Same-State Culling
+
+A boundary face is culled when the neighbor is:
+
+- a full opaque cube;
+- the same canonical block state, including partial shapes.
+
+The second rule removes the touching sides of adjacent slabs, stairs, fences,
+panes, glass, and water. Different partial states keep their interface faces.
+
+## Phase 2C Deferred
+
+- Fluids with height/flow behavior. Water and lava currently use the full-cube
+  fallback.
+- Static block-entity boxes and text/icons. Chests, signs, banners, skulls,
+  lecterns, beacons, and conduits currently use full cubes.
 - Resource-pack model/texture loading.
 
 The `BlockCatalog` trait and `Mesh` contract are designed so those additions do
