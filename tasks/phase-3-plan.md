@@ -1,6 +1,6 @@
 # Implementation Plan: Phase 3 — CPU PNG Renderer
 
-**Status:** Phase 3A and 3B implemented; Phase 3C deferred.  
+**Status:** Phase 3A-3C implemented; Phase 3D deferred.  
 **Scope:** Render the Phase 2 mesh to a deterministic RGBA PNG with an
 orthographic camera, CPU tile rasterizer, two lighting profiles, transparent or
 solid backgrounds, supersampling, multi-view output, and a `renderd render` /
@@ -110,14 +110,23 @@ assets.
 - `renderd bench` with per-stage timings and Linux peak RSS.
 - Synthetic rasterizer scaling example (`tile_bench`).
 
-## Phase 3C Deferred
+## Phase 3C Implemented
+
+Resource-pack materials and models are implemented in a separate slice:
+
+- `tasks/phase-3c-textures-spec.md`
+- `tasks/phase-3c-textures-plan.md`
+- `tasks/phase-3c-textures-todo.md`
+- `docs/textures.md`
+
+## Phase 3D Deferred
 
 - Contact-sheet composition for multiple views.
-- Texture sampling and resource-pack materials.
 - Shadows, full light propagation, and emissive bloom.
 - SIMD rasterization and mesh-build parallelism.
 - Golden corpus for large real structures and deployment-specific thresholds.
 - CI performance budget based on real QQBot workloads.
+- Entity models beyond the built-in chest, and animation playback.
 
 ## Task Index
 

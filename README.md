@@ -1,7 +1,7 @@
 # Litematic-render-QQBot
 
-Minecraft Litematic 无头渲染服务。Phase 3B 已完成：Rust 解析、色块网格、
-CPU PNG 渲染和基准测试；下一步是 QQBot 服务或 Phase 3C 画质打磨。
+Minecraft Litematic 无头渲染服务。Phase 3C 已完成：Rust 解析、色块/资源包
+材质、CPU PNG 渲染和基准测试；下一步是 Go QQBot 服务。
 
 ## 文档
 
@@ -16,19 +16,25 @@ CPU PNG 渲染和基准测试；下一步是 QQBot 服务或 Phase 3C 画质打�
 - [Litematic 格式笔记](docs/litematic-format.md)
 - [Color-block 网格说明](docs/mesh-geometry.md)
 - [CPU 渲染说明](docs/rendering.md)
+- [资源包材质说明](docs/textures.md)
+- [Phase 3C 材质 spec](tasks/phase-3c-textures-spec.md)
+- [Phase 3C 材质计划](tasks/phase-3c-textures-plan.md)
+- [Phase 3C 材质任务](tasks/phase-3c-textures-todo.md)
 
 ## 当前范围
 
 - 解析 `.litematic` v1-v7
 - 规范 Scene IR、材料统计、诊断和哈希
 - 默认色块 catalog、常见 partial shape、流体高度和静态方块实体 box mesh
+- 资源包 blockstate/model 解析、PNG 贴图、tint、cutout/translucent
+- 箱子内置 body/lid/lock 模型和 entity 贴图
 - OBJ/PLY 导出
 - CPU 正交相机、tile 光栅化、`flat-v1` / `simple-ao-v1` 和 PNG 输出
 - 超采样 1-4、多视角分别输出、并行 tile 和三角形分桶
 - 黄金 PNG 回归测试、`renderd bench` 分阶段计时
-- `renderd inspect` / `validate` / `stats` / `mesh` / `render` / `bench` CLI
-- 资源包由部署者自行提供
-- 暂不包含 Go QQBot 服务、多视角拼图和资源包加载
+- `renderd inspect` / `validate` / `stats` / `mesh` / `render` / `bench` / `materials` CLI
+- 资源包由部署者自行提供，不提交任何 Minecraft 资产
+- 暂不包含 Go QQBot 服务、通用实体模型和动画播放
 
 ## CLI
 
@@ -42,6 +48,10 @@ cargo run -p renderd-cli -- render path\to\model.litematic --output out.png
 cargo run -p renderd-cli -- render path\to\model.litematic --output out.png --width 2048 --height 2048
 cargo run -p renderd-cli -- render path\to\model.litematic --output out.png --views 45,225
 cargo run -p renderd-cli -- render path\to\model.litematic --output out.png --supersample 4 --threads 4
+cargo run -p renderd-cli -- render path\to\model.litematic --output out.png `
+  --client-jar "D:\hmcl\.minecraft\versions\26.2-Fabric\26.2-Fabric.jar"
+cargo run -p renderd-cli --release -- materials path\to\model.litematic `
+  --client-jar "D:\hmcl\.minecraft\versions\26.2-Fabric\26.2-Fabric.jar" --json
 cargo run -p renderd-cli --release -- bench path\to\model.litematic --iterations 5
 ```
 

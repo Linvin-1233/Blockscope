@@ -1,16 +1,19 @@
 # CPU Rendering and PNG Output
 
 Phase 3 renders the Phase 2 mesh to an RGBA PNG on the CPU. It uses an
-orthographic camera and a tile rasterizer. No GPU, Minecraft client, textures,
-or resource packs are required.
+orthographic camera and a tile rasterizer. No GPU or Minecraft client is
+required.
+
+Textures are optional: without a resource pack the renderer uses flat block
+colors; with one it samples the pack textures. See `docs/textures.md`.
 
 ## Pipeline
 
 ```text
 Scene + Mesh
   -> Camera (orthographic fit, internal supersampled size)
-  -> triangle build (page origin, lighting, AO)
-  -> tile rasterizer (depth, culling, alpha)
+  -> triangle build (page origin, lighting, AO, UV)
+  -> tile rasterizer (depth, culling, alpha, texture sampling)
   -> RGBA8 buffer (supersampled)
   -> box-filter downsample
   -> PNG
@@ -40,8 +43,9 @@ The rasterizer consumes the Phase 2 mesh:
 
 - page-local positions,
 - face normals,
-- straight RGBA block colors,
-- render layer,
+- straight RGBA block colors or texture tint,
+- texture id and per-vertex UVs,
+- render layer and shade flag,
 - per-vertex ambient occlusion.
 
 Backface culling uses the camera forward vector:
@@ -61,6 +65,8 @@ cull.
 - Depth is interpolated linearly, which is correct for orthographic projection.
 - Opaque and cutout triangles run first and write depth.
 - Cutout fragments with alpha `< 0.5` are discarded.
+- Textured fragments sample the texture, multiply by tint, face shade, and AO,
+  then apply the same cutout/translucent rules.
 - Translucent triangles are sorted far-to-near per tile and blended without
   writing depth.
 - Solid backgrounds are filled before rasterization; transparent backgrounds
@@ -128,6 +134,7 @@ shadows, or biome tinting. It is stable and deterministic.
 | padding | 16 px |
 | supersample | 2 |
 | threads | 0 (auto) |
+| texture filter | nearest |
 | max pixels | 16,777,216 |
 | max supersampled pixels | 33,554,432 |
 
@@ -144,6 +151,9 @@ cargo run -p renderd-cli -- render path\to\model.litematic --output out.png --ya
 cargo run -p renderd-cli -- render path\to\model.litematic --output out.png --supersample 4
 cargo run -p renderd-cli -- render path\to\model.litematic --output out.png --threads 4
 cargo run -p renderd-cli -- render path\to\model.litematic --output out.png --background "#202830" --lighting flat-v1
+cargo run -p renderd-cli -- render path\to\model.litematic --output out.png `
+  --client-jar "D:\hmcl\.minecraft\versions\26.2-Fabric\26.2-Fabric.jar"
+cargo run -p renderd-cli -- render path\to\model.litematic --output out.png --texture-filter linear
 cargo run -p renderd-cli -- render path\to\model.litematic --output out.png --json
 ```
 
@@ -189,16 +199,19 @@ threshold.
 - tile count;
 - total triangles and culled backfaces;
 - opaque/cutout/translucent triangle counts;
+- textured triangle count;
 - pixels tested and pixels written.
 
-Golden PNGs for cube, partial shapes, water, negative coordinates, and AO live
-in `fixtures/golden/render/`. Regenerate them with `UPDATE_GOLDEN=1` after an
-intentional renderer change.
+Golden PNGs for cube, partial shapes, water, negative coordinates, AO, textured
+cube, stairs, cutout, glass, and chest live in `fixtures/golden/render/`.
+Regenerate them with `UPDATE_GOLDEN=1` after an intentional renderer change.
+Textured goldens use project-owned synthetic assets only.
 
 ## Known Limitations
 
 - Multi-view output writes separate PNGs; it does not compose a contact sheet.
-- No textures, resource packs, or mipmaps.
+- Textures require a user-provided resource pack or client jar.
+- No mipmaps; nearest or bilinear sampling only.
 - No shadows, full light propagation, or emissive bloom.
 - Translucent sorting is per tile and approximate.
 - CPU-only; tiles are parallel, but mesh construction and PNG encoding are not.

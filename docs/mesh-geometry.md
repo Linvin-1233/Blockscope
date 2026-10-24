@@ -178,10 +178,17 @@ A boundary face is culled when the neighbor is:
 The second rule removes the touching sides of adjacent slabs, stairs, fences,
 panes, glass, and water. Different partial states keep their interface faces.
 
-## Resource Packs Deferred
+## Resource Packs
 
-- Resource-pack model/texture loading is not implemented.
-- The `BlockCatalog` trait and `Mesh` contract are designed so a future
-  resource-pack catalog can replace the color catalog without changing the CLI
-  or scene format.
-- Block-entity text/icons and dynamic item contents remain future work.
+The `BlockCatalog` trait is implemented by both the original color catalog and
+the resource-pack catalog (`litematic-material`). Pack models replace the
+built-in shape when their blockstate/model resolves to elements; otherwise the
+Phase 2 shape, the model `particle` texture, or the color palette is used.
+
+Pack quads carry explicit UVs, a texture id, a tint, an optional per-quad layer,
+and a shade flag. Texture coordinates follow Minecraft's face convention; chest
+entity textures use the standard box unwrap. See `docs/textures.md` for the full
+asset and fallback contract.
+
+Block-entity text/icons, entity models beyond the built-in chest, and dynamic
+item contents remain future work.
