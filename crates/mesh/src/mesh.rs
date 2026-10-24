@@ -8,6 +8,8 @@ pub struct Vertex {
     pub normal: [f32; 3],
     pub color: [u8; 4],
     pub uv: [f32; 2],
+    pub texture: u16,
+    pub shade: bool,
     pub ao: f32,
 }
 

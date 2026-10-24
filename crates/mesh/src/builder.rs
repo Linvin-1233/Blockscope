@@ -1,5 +1,5 @@
 use crate::catalog::BlockCatalog;
-use crate::model::ModelQuad;
+use crate::model::{ModelQuad, NO_TEXTURE};
 use crate::view::SceneBlockView;
 use crate::{Mesh, MeshError, MeshLimits, MeshPage, MeshStatistics, Quad, Vertex};
 use litematic_scene::{BlockStateKey, Scene};
@@ -74,23 +74,40 @@ pub fn build_mesh(
                             )));
                         }
 
-                        statistics.add_quad(block.layer);
-                        let vertices = model_quad.vertices.map(|corner| Vertex {
-                            position: [
-                                local[0] + corner[0] / 16.0,
-                                local[1] + corner[1] / 16.0,
-                                local[2] + corner[2] / 16.0,
-                            ],
-                            normal: model_quad.normal,
-                            color: block.color.to_array(),
-                            uv: [0.0, 0.0],
-                            ao: vertex_ao(&view, catalog, world, model_quad, corner),
+                        let layer = model_quad.layer.unwrap_or(block.layer);
+                        statistics.add_quad(layer);
+
+                        let color = if model_quad.texture == NO_TEXTURE {
+                            block.color
+                        } else {
+                            model_quad.tint
+                        };
+                        let ambient_occlusion = block.model.ambient_occlusion;
+                        let vertices = std::array::from_fn(|index| {
+                            let corner = model_quad.vertices[index];
+                            Vertex {
+                                position: [
+                                    local[0] + corner[0] / 16.0,
+                                    local[1] + corner[1] / 16.0,
+                                    local[2] + corner[2] / 16.0,
+                                ],
+                                normal: model_quad.normal,
+                                color: color.to_array(),
+                                uv: model_quad.uv[index],
+                                texture: model_quad.texture,
+                                shade: model_quad.shade,
+                                ao: if ambient_occlusion {
+                                    vertex_ao(&view, catalog, world, model_quad, corner)
+                                } else {
+                                    1.0
+                                },
+                            }
                         });
 
-                        pages.entry(page_origin).or_default().push(Quad {
-                            vertices,
-                            layer: block.layer,
-                        });
+                        pages
+                            .entry(page_origin)
+                            .or_default()
+                            .push(Quad { vertices, layer });
                     }
                 }
             }

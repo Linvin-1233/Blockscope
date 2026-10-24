@@ -1,4 +1,7 @@
-use crate::model::{BlockModel, FaceDirection, ModelBox, ModelQuad, full_cube_model};
+use crate::color::Rgba;
+use crate::model::{
+    BlockModel, FaceDirection, ModelBox, ModelQuad, NO_TEXTURE, face_uv, full_cube_model,
+};
 
 const SIZE: usize = 16;
 const CELLS: usize = SIZE * SIZE * SIZE;
@@ -10,6 +13,7 @@ pub(crate) fn build_model(boxes: &[ModelBox], extra_quads: Vec<ModelQuad>) -> Bl
         return BlockModel {
             quads: extra_quads,
             is_full_cube: false,
+            ambient_occlusion: true,
         };
     }
 
@@ -22,6 +26,7 @@ pub(crate) fn build_model(boxes: &[ModelBox], extra_quads: Vec<ModelQuad>) -> Bl
         return BlockModel {
             quads: full_cube_model().quads.clone(),
             is_full_cube: true,
+            ambient_occlusion: true,
         };
     }
 
@@ -45,6 +50,7 @@ pub(crate) fn build_model(boxes: &[ModelBox], extra_quads: Vec<ModelQuad>) -> Bl
     BlockModel {
         quads,
         is_full_cube: false,
+        ambient_occlusion: true,
     }
 }
 
@@ -214,6 +220,11 @@ fn plane_quad(
         normal: face.normal(),
         face,
         cullface: boundary.then_some(face),
+        uv: face_uv(face, vertices),
+        texture: NO_TEXTURE,
+        tint: Rgba::WHITE,
+        layer: None,
+        shade: true,
     }
 }
 

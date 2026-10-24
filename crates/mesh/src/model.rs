@@ -1,5 +1,8 @@
-use crate::color::RenderLayer;
+use crate::color::{RenderLayer, Rgba};
 use std::sync::{Arc, OnceLock};
+
+/// Sentinel for geometry that uses the block color instead of a texture.
+pub const NO_TEXTURE: u16 = u16::MAX;
 
 /// The six axis-aligned face directions.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -96,13 +99,19 @@ pub struct ModelQuad {
     pub normal: [f32; 3],
     pub face: FaceDirection,
     pub cullface: Option<FaceDirection>,
+    pub uv: [[f32; 2]; 4],
+    pub texture: u16,
+    pub tint: Rgba,
+    pub layer: Option<RenderLayer>,
+    pub shade: bool,
 }
 
-/// A resolved block model. Phase 2A uses only the full cube.
+/// A resolved block model.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BlockModel {
     pub quads: Vec<ModelQuad>,
     pub is_full_cube: bool,
+    pub ambient_occlusion: bool,
 }
 
 impl BlockModel {
@@ -120,6 +129,7 @@ pub fn full_cube_model() -> Arc<BlockModel> {
             Arc::new(BlockModel {
                 quads: full_cube_quads(),
                 is_full_cube: true,
+                ambient_occlusion: true,
             })
         })
         .clone()
@@ -131,6 +141,7 @@ pub fn empty_model() -> Arc<BlockModel> {
             Arc::new(BlockModel {
                 quads: Vec::new(),
                 is_full_cube: false,
+                ambient_occlusion: true,
             })
         })
         .clone()
@@ -201,5 +212,28 @@ fn quad(face: FaceDirection, vertices: [[f32; 3]; 4]) -> ModelQuad {
         normal: face.normal(),
         face,
         cullface: Some(face),
+        uv: face_uv(face, vertices),
+        texture: NO_TEXTURE,
+        tint: Rgba::WHITE,
+        layer: None,
+        shade: true,
     }
+}
+
+/// Derive 0..1 UVs from model coordinates, matching Minecraft's texture
+/// orientation for axis-aligned faces.
+pub fn face_uv(face: FaceDirection, vertices: [[f32; 3]; 4]) -> [[f32; 2]; 4] {
+    let mut uv = [[0.0f32; 2]; 4];
+    for (index, vertex) in vertices.iter().enumerate() {
+        let (u, v) = match face {
+            FaceDirection::Down => (vertex[0], 16.0 - vertex[2]),
+            FaceDirection::Up => (vertex[0], vertex[2]),
+            FaceDirection::North => (16.0 - vertex[0], 16.0 - vertex[1]),
+            FaceDirection::South => (vertex[0], 16.0 - vertex[1]),
+            FaceDirection::West => (vertex[2], 16.0 - vertex[1]),
+            FaceDirection::East => (16.0 - vertex[2], 16.0 - vertex[1]),
+        };
+        uv[index] = [u / 16.0, v / 16.0];
+    }
+    uv
 }

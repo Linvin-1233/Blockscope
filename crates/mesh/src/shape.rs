@@ -1,4 +1,5 @@
-use crate::model::{BlockModel, FaceDirection, ModelBox, ModelQuad};
+use crate::color::Rgba;
+use crate::model::{BlockModel, FaceDirection, ModelBox, ModelQuad, NO_TEXTURE};
 use crate::voxel::build_model;
 use litematic_scene::BlockStateKey;
 
@@ -408,6 +409,11 @@ fn cross_quad(vertices: [[f32; 3]; 4], normal: [f32; 3]) -> ModelQuad {
         normal,
         face: FaceDirection::Up,
         cullface: None,
+        uv: [[0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]],
+        texture: NO_TEXTURE,
+        tint: Rgba::WHITE,
+        layer: None,
+        shade: true,
     }
 }
 

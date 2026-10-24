@@ -5,6 +5,7 @@ members = [
   "crates/scene",
   "crates/litematic",
   "crates/mesh",
+  "crates/material",
   "crates/render",
   "crates/cli",
 ]
@@ -23,3 +24,4 @@ serde_json = "1"
 sha2 = "0.10"
 tempfile = "3"
 thiserror = "2"
+zip = { version = "2", default-features = false, features = ["deflate"] }
