@@ -1,4 +1,5 @@
 use crate::RenderError;
+use litematic_material::TextureFilter;
 use litematic_mesh::Rgba;
 use serde::{Deserialize, Serialize};
 
@@ -69,6 +70,7 @@ pub struct RenderOptions {
     pub supersample: u32,
     /// Worker threads. 0 selects the available parallelism.
     pub threads: u32,
+    pub texture_filter: TextureFilter,
     pub max_pixels: u64,
     pub max_supersampled_pixels: u64,
 }
@@ -86,6 +88,7 @@ impl Default for RenderOptions {
             padding: 16.0,
             supersample: 2,
             threads: 0,
+            texture_filter: TextureFilter::Nearest,
             max_pixels: 16_777_216,
             max_supersampled_pixels: 33_554_432,
         }

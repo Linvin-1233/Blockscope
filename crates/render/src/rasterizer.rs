@@ -1,6 +1,7 @@
 use crate::camera::Camera;
 use crate::{Background, LightingProfile, RenderError, RenderOptions};
-use litematic_mesh::{Mesh, RenderLayer};
+use litematic_material::{TextureFilter, TextureSet};
+use litematic_mesh::{Mesh, NO_TEXTURE, RenderLayer};
 use litematic_scene::Scene;
 use serde::{Deserialize, Serialize};
 
@@ -19,6 +20,7 @@ pub struct RenderStatistics {
     pub opaque_triangles: u64,
     pub cutout_triangles: u64,
     pub translucent_triangles: u64,
+    pub textured_triangles: u64,
     pub pixels_tested: u64,
     pub pixels_written: u64,
 }
@@ -32,11 +34,30 @@ pub struct RenderOutput {
     pub statistics: RenderStatistics,
 }
 
-/// Render a mesh with the selected camera and lighting profile.
+/// Render a color-only mesh with the selected camera and lighting profile.
 pub fn render_mesh(
     scene: &Scene,
     mesh: &Mesh,
     options: &RenderOptions,
+) -> Result<RenderOutput, RenderError> {
+    render_mesh_internal(scene, mesh, options, None)
+}
+
+/// Render a mesh and sample its texture ids from `textures`.
+pub fn render_mesh_with_textures(
+    scene: &Scene,
+    mesh: &Mesh,
+    options: &RenderOptions,
+    textures: &TextureSet,
+) -> Result<RenderOutput, RenderError> {
+    render_mesh_internal(scene, mesh, options, Some(textures))
+}
+
+fn render_mesh_internal(
+    scene: &Scene,
+    mesh: &Mesh,
+    options: &RenderOptions,
+    textures: Option<&TextureSet>,
 ) -> Result<RenderOutput, RenderError> {
     options.validate()?;
     let camera = Camera::new(&scene.bounds, options)?;
@@ -69,6 +90,7 @@ pub fn render_mesh(
 
             let mut triangle_points = [[[0.0f64; 3]; 3]; 2];
             let mut triangle_colors = [[[0.0f32; 4]; 3]; 2];
+            let mut triangle_uvs = [[[0.0f32; 2]; 3]; 2];
             let mut projected = [[0.0f64; 3]; 4];
             let mut vertex_colors = [[0.0f32; 4]; 4];
 
@@ -80,7 +102,11 @@ pub fn render_mesh(
                 ];
                 projected[index] = camera.project(world);
 
-                let shade = f64::from(options.lighting.face_shade(vertex.normal));
+                let shade = if vertex.shade {
+                    f64::from(options.lighting.face_shade(vertex.normal))
+                } else {
+                    1.0
+                };
                 let ao = match options.lighting {
                     LightingProfile::FlatV1 => 1.0,
                     LightingProfile::SimpleAoV1 => f64::from(vertex.ao),
@@ -97,6 +123,7 @@ pub fn render_mesh(
                 for (slot, index) in indices.into_iter().enumerate() {
                     triangle_points[triangle_index][slot] = projected[index];
                     triangle_colors[triangle_index][slot] = vertex_colors[index];
+                    triangle_uvs[triangle_index][slot] = quad.vertices[index].uv;
                 }
                 let points = triangle_points[triangle_index];
                 let bbox = bounds(points);
@@ -107,6 +134,8 @@ pub fn render_mesh(
                 let triangle = Triangle {
                     points,
                     colors: triangle_colors[triangle_index],
+                    uvs: triangle_uvs[triangle_index],
+                    texture: quad.vertices[0].texture,
                     layer: quad.layer,
                     depth_key,
                     bbox,
@@ -117,13 +146,16 @@ pub fn render_mesh(
                     RenderLayer::Cutout => statistics.cutout_triangles += 1,
                     RenderLayer::Translucent => statistics.translucent_triangles += 1,
                 }
+                if quad.vertices[0].texture != NO_TEXTURE {
+                    statistics.textured_triangles += 1;
+                }
                 statistics.triangles += 1;
                 triangles.push(triangle);
             }
         }
     }
 
-    let rgba = rasterize(&triangles, options, &mut statistics);
+    let rgba = rasterize(&triangles, options, &mut statistics, textures);
     Ok(RenderOutput {
         width: options.width,
         height: options.height,
@@ -136,6 +168,8 @@ pub fn render_mesh(
 struct Triangle {
     points: [[f64; 3]; 3],
     colors: [[f32; 4]; 3],
+    uvs: [[f32; 2]; 3],
+    texture: u16,
     layer: RenderLayer,
     depth_key: f64,
     bbox: [f64; 4],
@@ -145,6 +179,7 @@ fn rasterize(
     triangles: &[Triangle],
     options: &RenderOptions,
     statistics: &mut RenderStatistics,
+    textures: Option<&TextureSet>,
 ) -> Vec<u8> {
     let width = options.internal_width();
     let height = options.internal_height();
@@ -157,10 +192,10 @@ fn rasterize(
     let bins = bin_triangles(triangles, width, height, tile_size);
     let threads = worker_count(options.threads, jobs.len());
     let tiles = if threads > 1 {
-        render_tiles_parallel(triangles, options, &jobs, &bins, threads)
+        render_tiles_parallel(triangles, options, &jobs, &bins, threads, textures)
     } else {
         jobs.iter()
-            .map(|job| render_tile(triangles, options, job, &bins[job.index]))
+            .map(|job| render_tile(triangles, options, job, &bins[job.index], textures))
             .collect()
     };
 
@@ -276,6 +311,7 @@ fn render_tiles_parallel(
     jobs: &[TileJob],
     bins: &[Vec<u32>],
     threads: usize,
+    textures: Option<&TextureSet>,
 ) -> Vec<TileOutput> {
     let cursor = std::sync::atomic::AtomicUsize::new(0);
 
@@ -290,7 +326,7 @@ fn render_tiles_parallel(
                     let Some(job) = jobs.get(index) else {
                         break;
                     };
-                    local.push(render_tile(triangles, options, job, &bins[index]));
+                    local.push(render_tile(triangles, options, job, &bins[index], textures));
                 }
                 local
             }));
@@ -323,6 +359,7 @@ fn render_tile(
     options: &RenderOptions,
     job: &TileJob,
     candidates: &[u32],
+    textures: Option<&TextureSet>,
 ) -> TileOutput {
     let pixel_count = (u64::from(job.width) * u64::from(job.height)) as usize;
     let mut colors = vec![[0.0f32; 4]; pixel_count];
@@ -347,6 +384,8 @@ fn render_tile(
             colors: &mut colors,
             depths: &mut depths,
             counters: &mut counters,
+            textures,
+            filter: options.texture_filter,
         };
 
         for &index in candidates {
@@ -472,6 +511,8 @@ struct TileBuffer<'a> {
     colors: &'a mut [[f32; 4]],
     depths: &'a mut [f64],
     counters: &'a mut TileCounters,
+    textures: Option<&'a TextureSet>,
+    filter: TextureFilter,
 }
 
 impl TileBuffer<'_> {
@@ -528,7 +569,7 @@ impl TileBuffer<'_> {
                     continue;
                 }
 
-                let color = [
+                let mut color = [
                     (triangle.colors[0][0] as f64 * b0
                         + triangle.colors[1][0] as f64 * b1
                         + triangle.colors[2][0] as f64 * b2) as f32,
@@ -542,6 +583,25 @@ impl TileBuffer<'_> {
                         + triangle.colors[1][3] as f64 * b1
                         + triangle.colors[2][3] as f64 * b2) as f32,
                 ];
+
+                if triangle.texture != NO_TEXTURE
+                    && let Some(textures) = self.textures
+                {
+                    let uv = [
+                        (triangle.uvs[0][0] as f64 * b0
+                            + triangle.uvs[1][0] as f64 * b1
+                            + triangle.uvs[2][0] as f64 * b2) as f32,
+                        (triangle.uvs[0][1] as f64 * b0
+                            + triangle.uvs[1][1] as f64 * b1
+                            + triangle.uvs[2][1] as f64 * b2) as f32,
+                    ];
+                    if let Some(texel) = textures.sample(triangle.texture, uv, self.filter) {
+                        color[0] *= texel[0];
+                        color[1] *= texel[1];
+                        color[2] *= texel[2];
+                        color[3] *= texel[3];
+                    }
+                }
 
                 if triangle.layer == RenderLayer::Cutout && color[3] < 0.5 {
                     continue;
