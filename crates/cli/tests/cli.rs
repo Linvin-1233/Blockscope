@@ -4,7 +4,8 @@ use litematic_mesh::MeshStatistics;
 use litematic_render::RenderStatistics;
 use litematic_scene::ManifestStatistics;
 use std::fs;
-use std::io::Write;
+use std::io::{BufWriter, Write};
+use std::path::Path;
 use std::process::{Command, Output};
 use support::*;
 use tempfile::NamedTempFile;
@@ -21,6 +22,66 @@ fn run(args: &[&str]) -> Output {
         .args(args)
         .output()
         .unwrap()
+}
+
+fn write_material_pack(root: &Path) {
+    let assets = root.join("assets/minecraft");
+    fs::create_dir_all(assets.join("blockstates")).unwrap();
+    fs::create_dir_all(assets.join("models/block")).unwrap();
+    fs::create_dir_all(assets.join("textures/block")).unwrap();
+
+    fs::write(
+        assets.join("blockstates/stone.json"),
+        r##"{ "variants": { "": { "model": "block/test_cube" } } }"##,
+    )
+    .unwrap();
+    fs::write(
+        assets.join("models/block/cube.json"),
+        r##"{
+            "elements": [{
+                "from": [0, 0, 0],
+                "to": [16, 16, 16],
+                "faces": {
+                    "down":  { "texture": "#all", "cullface": "down" },
+                    "up":    { "texture": "#all", "cullface": "up" },
+                    "north": { "texture": "#all", "cullface": "north" },
+                    "south": { "texture": "#all", "cullface": "south" },
+                    "west":  { "texture": "#all", "cullface": "west" },
+                    "east":  { "texture": "#all", "cullface": "east" }
+                }
+            }]
+        }"##,
+    )
+    .unwrap();
+    fs::write(
+        assets.join("models/block/cube_all.json"),
+        r##"{
+            "parent": "block/cube",
+            "textures": {
+                "down": "#all", "up": "#all", "north": "#all",
+                "south": "#all", "west": "#all", "east": "#all"
+            }
+        }"##,
+    )
+    .unwrap();
+    fs::write(
+        assets.join("models/block/test_cube.json"),
+        r##"{
+            "parent": "block/cube_all",
+            "textures": { "all": "block/test_texture" }
+        }"##,
+    )
+    .unwrap();
+
+    let file = fs::File::create(assets.join("textures/block/test_texture.png")).unwrap();
+    let mut encoder = png::Encoder::new(BufWriter::new(file), 16, 16);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder.write_header().unwrap();
+    writer
+        .write_image_data(&[200, 40, 40, 255].repeat(16 * 16))
+        .unwrap();
+    writer.finish().unwrap();
 }
 
 #[test]
@@ -248,6 +309,117 @@ fn render_rejects_invalid_options() {
         String::from_utf8(output.stderr)
             .unwrap()
             .contains("INVALID_RENDER_OPTIONS")
+    );
+
+    let output = run(&[
+        "render",
+        path,
+        "--output",
+        output_path.to_str().unwrap(),
+        "--texture-filter",
+        "magic",
+    ]);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("INVALID_RENDER_OPTIONS")
+    );
+}
+
+#[test]
+fn render_with_assets_writes_textured_png() {
+    let pack = tempfile::tempdir().unwrap();
+    write_material_pack(pack.path());
+
+    let file = write_fixture(&basic_fixture());
+    let path = file.path().to_str().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let output_path = dir.path().join("textured.png");
+
+    let output = run(&[
+        "render",
+        path,
+        "--assets",
+        pack.path().to_str().unwrap(),
+        "--output",
+        output_path.to_str().unwrap(),
+        "--width",
+        "64",
+        "--height",
+        "64",
+        "--supersample",
+        "1",
+    ]);
+
+    assert!(output.status.success());
+    assert!(
+        fs::read(&output_path)
+            .unwrap()
+            .starts_with(&[0x89, b'P', b'N', b'G'])
+    );
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("materials: pack"));
+}
+
+#[test]
+fn materials_json_reports_pack_coverage() {
+    let pack = tempfile::tempdir().unwrap();
+    write_material_pack(pack.path());
+
+    let file = write_fixture(&basic_fixture());
+    let path = file.path().to_str().unwrap();
+
+    let output = run(&[
+        "materials",
+        path,
+        "--assets",
+        pack.path().to_str().unwrap(),
+        "--json",
+    ]);
+
+    assert!(output.status.success());
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["packModels"], 1);
+    assert_eq!(report["textured"], 1);
+    assert_eq!(report["unknown"], 0);
+}
+
+#[test]
+fn materials_requires_assets() {
+    let file = write_fixture(&basic_fixture());
+    let path = file.path().to_str().unwrap();
+    let output = run(&["materials", path]);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("ASSET_SOURCE_REQUIRED")
+    );
+}
+
+#[test]
+fn missing_client_jar_exits_with_asset_error() {
+    let file = write_fixture(&basic_fixture());
+    let path = file.path().to_str().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let output_path = dir.path().join("out.png");
+
+    let output = run(&[
+        "render",
+        path,
+        "--client-jar",
+        "does-not-exist.jar",
+        "--output",
+        output_path.to_str().unwrap(),
+    ]);
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("ASSET_READ_FAILED")
     );
 }
 

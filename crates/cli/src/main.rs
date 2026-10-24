@@ -1,12 +1,13 @@
 use clap::{Args, Parser, Subcommand};
 use litematic_core::{DecodeLimits, LitematicError, LitematicFile, LitematicLimits};
+use litematic_material::{AssetSource, MaterialSet, TextureFilter};
 use litematic_mesh::{
-    ColorBlockCatalog, MeshError, MeshLimits, MeshStatistics, Rgba, build_mesh, write_obj,
+    ColorBlockCatalog, Mesh, MeshError, MeshLimits, MeshStatistics, Rgba, build_mesh, write_obj,
     write_ply,
 };
 use litematic_render::{
     Background, LightingProfile, RenderError, RenderOptions, RenderStatistics, render_mesh,
-    write_png,
+    render_mesh_with_textures, write_png,
 };
 use litematic_scene::{Manifest, Scene, sha256};
 use std::fmt;
@@ -44,6 +45,8 @@ enum Command {
     Render(RenderArgs),
     /// Measure parse, mesh, render, and PNG timings.
     Bench(BenchArgs),
+    /// Report model and texture coverage from a resource pack.
+    Materials(MaterialsArgs),
 }
 
 #[derive(Debug, Args)]
@@ -84,6 +87,22 @@ struct MeshArgs {
     ply: Option<PathBuf>,
 }
 
+#[derive(Debug, Args, Clone, Default)]
+struct AssetArgs {
+    /// Read blockstates, models, and textures directly from a client jar.
+    #[arg(long)]
+    client_jar: Option<PathBuf>,
+    /// Read assets from an extracted assets/resource-pack directory.
+    #[arg(long)]
+    assets: Option<PathBuf>,
+    /// Optional resource-pack overlay directory or zip.
+    #[arg(long)]
+    resource_pack: Option<PathBuf>,
+    /// Texture filter: nearest or linear.
+    #[arg(long, default_value = "nearest")]
+    texture_filter: String,
+}
+
 #[derive(Debug, Args)]
 struct RenderArgs {
     file: PathBuf,
@@ -120,6 +139,8 @@ struct RenderArgs {
     /// Print render statistics as JSON.
     #[arg(long)]
     json: bool,
+    #[command(flatten)]
+    assets: AssetArgs,
 }
 
 #[derive(Debug, Args)]
@@ -149,6 +170,18 @@ struct BenchArgs {
     /// Print the report as JSON.
     #[arg(long)]
     json: bool,
+    #[command(flatten)]
+    assets: AssetArgs,
+}
+
+#[derive(Debug, Args)]
+struct MaterialsArgs {
+    file: PathBuf,
+    /// Print the coverage report as JSON.
+    #[arg(long)]
+    json: bool,
+    #[command(flatten)]
+    assets: AssetArgs,
 }
 
 fn main() -> ExitCode {
@@ -171,6 +204,7 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Command::Mesh(args) => mesh(args),
         Command::Render(args) => render(args),
         Command::Bench(args) => bench(args),
+        Command::Materials(args) => materials(args),
     }
 }
 
@@ -303,10 +337,11 @@ fn render(args: RenderArgs) -> Result<(), CliError> {
 
     let views = parse_views(&args)?;
     let view_count = views.len();
+    let texture_filter = parse_texture_filter(&args.assets.texture_filter)?;
+    let materials = load_materials(&args.assets)?;
 
     let mesh_started = Instant::now();
-    let catalog = ColorBlockCatalog::default();
-    let mesh = build_mesh(&scene, &catalog, &MeshLimits::default()).map_err(CliError::from)?;
+    let mesh = build_scene_mesh(&scene, materials.as_ref())?;
     let mesh_ms = mesh_started.elapsed().as_secs_f64() * 1000.0;
 
     let mut results = Vec::with_capacity(view_count);
@@ -320,11 +355,19 @@ fn render(args: RenderArgs) -> Result<(), CliError> {
             lighting,
             supersample: args.supersample,
             threads: args.threads,
+            texture_filter,
             ..Default::default()
         };
 
         let render_started = Instant::now();
-        let output = render_mesh(&scene, &mesh, &options).map_err(CliError::from)?;
+        let output = match &materials {
+            Some(materials) => {
+                let textures = materials.textures();
+                render_mesh_with_textures(&scene, &mesh, &options, &textures)
+                    .map_err(CliError::from)?
+            }
+            None => render_mesh(&scene, &mesh, &options).map_err(CliError::from)?,
+        };
         let render_ms = render_started.elapsed().as_secs_f64() * 1000.0;
 
         let output_path = if view_count == 1 {
@@ -383,6 +426,98 @@ fn render(args: RenderArgs) -> Result<(), CliError> {
             println!("render: {render_ms:.1} ms, png: {png_ms:.1} ms");
         }
         println!("timings: parse {parse_ms:.1} ms, mesh {mesh_ms:.1} ms, total {total_ms:.1} ms");
+        if let Some(materials) = &materials {
+            let diagnostics = materials.diagnostics();
+            println!(
+                "materials: pack {} states, chest {} states, fallback {} states, missing models {} missing textures {}",
+                diagnostics.pack_models,
+                diagnostics.chests,
+                diagnostics.fallback_shapes,
+                diagnostics.missing_models,
+                diagnostics.missing_textures
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn build_scene_mesh(scene: &Scene, materials: Option<&MaterialSet>) -> Result<Mesh, CliError> {
+    match materials {
+        Some(materials) => {
+            build_mesh(scene, materials, &MeshLimits::default()).map_err(CliError::from)
+        }
+        None => {
+            let catalog = ColorBlockCatalog::new().map_err(CliError::internal)?;
+            build_mesh(scene, &catalog, &MeshLimits::default()).map_err(CliError::from)
+        }
+    }
+}
+
+fn load_materials(args: &AssetArgs) -> Result<Option<MaterialSet>, CliError> {
+    if args.client_jar.is_none() && args.assets.is_none() && args.resource_pack.is_none() {
+        return Ok(None);
+    }
+
+    let mut source = AssetSource::new();
+    if let Some(path) = &args.client_jar {
+        source.add_jar(path).map_err(CliError::from)?;
+    }
+    if let Some(path) = &args.assets {
+        source.add_dir(path).map_err(CliError::from)?;
+    }
+    if let Some(path) = &args.resource_pack {
+        if path.is_dir() {
+            source.add_overlay_dir(path).map_err(CliError::from)?;
+        } else {
+            source.add_overlay_zip(path).map_err(CliError::from)?;
+        }
+    }
+
+    MaterialSet::open(source).map(Some).map_err(CliError::from)
+}
+
+fn parse_texture_filter(value: &str) -> Result<TextureFilter, CliError> {
+    match value {
+        "nearest" => Ok(TextureFilter::Nearest),
+        "linear" => Ok(TextureFilter::Linear),
+        other => Err(CliError::input(format!(
+            "INVALID_RENDER_OPTIONS: unknown texture filter '{other}'"
+        ))),
+    }
+}
+
+fn materials(args: MaterialsArgs) -> Result<(), CliError> {
+    let (_, scene) = load_scene(&args.file)?;
+    let materials = load_materials(&args.assets)?.ok_or_else(|| {
+        CliError::input("ASSET_SOURCE_REQUIRED: provide --client-jar or --assets")
+    })?;
+    let report = materials.report(&scene);
+
+    if args.json {
+        let json = serde_json::to_string_pretty(&report).map_err(CliError::internal)?;
+        println!("{json}");
+        return Ok(());
+    }
+
+    println!("file: {}", args.file.display());
+    println!("total blocks: {}", report.total_blocks);
+    println!("pack models: {}", report.pack_models);
+    println!("chests: {}", report.chests);
+    println!("fallback: {}", report.fallback);
+    println!("unknown: {}", report.unknown);
+    println!("textured: {}", report.textured);
+    println!("missing textures: {}", report.missing_textures);
+    println!("entries:");
+
+    for entry in &report.entries {
+        println!(
+            "{:>10}  {:<10} {}  {}",
+            entry.count,
+            entry.kind.as_str(),
+            if entry.textured { "textured" } else { "color" },
+            entry.state
+        );
     }
 
     Ok(())
@@ -492,13 +627,15 @@ fn bench(args: BenchArgs) -> Result<(), CliError> {
         ))
     })?;
 
+    let texture_filter = parse_texture_filter(&args.assets.texture_filter)?;
+    let materials = load_materials(&args.assets)?;
+
     let parse_started = Instant::now();
     let (_, scene) = load_scene(&args.file)?;
     let parse_ms = parse_started.elapsed().as_secs_f64() * 1000.0;
 
     let mesh_started = Instant::now();
-    let catalog = ColorBlockCatalog::default();
-    let mesh = build_mesh(&scene, &catalog, &MeshLimits::default()).map_err(CliError::from)?;
+    let mesh = build_scene_mesh(&scene, materials.as_ref())?;
     let mesh_ms = mesh_started.elapsed().as_secs_f64() * 1000.0;
 
     let options = RenderOptions {
@@ -510,6 +647,7 @@ fn bench(args: BenchArgs) -> Result<(), CliError> {
         lighting,
         supersample: args.supersample,
         threads: args.threads,
+        texture_filter,
         ..Default::default()
     };
     options.validate().map_err(CliError::from)?;
@@ -521,7 +659,14 @@ fn bench(args: BenchArgs) -> Result<(), CliError> {
 
     for _ in 0..args.iterations {
         let render_started = Instant::now();
-        let output = render_mesh(&scene, &mesh, &options).map_err(CliError::from)?;
+        let output = match &materials {
+            Some(materials) => {
+                let textures = materials.textures();
+                render_mesh_with_textures(&scene, &mesh, &options, &textures)
+                    .map_err(CliError::from)?
+            }
+            None => render_mesh(&scene, &mesh, &options).map_err(CliError::from)?,
+        };
         render_samples.push(render_started.elapsed().as_secs_f64() * 1000.0);
 
         let png_started = Instant::now();
@@ -562,6 +707,7 @@ fn bench(args: BenchArgs) -> Result<(), CliError> {
             "pngBytes": png_bytes,
             "rgbaBytes": output.rgba.len() as u64,
             "peakRssBytes": peak_rss,
+            "materials": materials.as_ref().map(MaterialSet::diagnostics),
         });
         let json = serde_json::to_string_pretty(&report).map_err(CliError::internal)?;
         println!("{json}");
@@ -595,6 +741,17 @@ fn bench(args: BenchArgs) -> Result<(), CliError> {
         );
         if let Some(peak_rss) = peak_rss {
             println!("peak rss: {} bytes", peak_rss);
+        }
+        if let Some(materials) = &materials {
+            let diagnostics = materials.diagnostics();
+            println!(
+                "materials: pack {} states, chest {} states, fallback {} states, missing models {} missing textures {}",
+                diagnostics.pack_models,
+                diagnostics.chests,
+                diagnostics.fallback_shapes,
+                diagnostics.missing_models,
+                diagnostics.missing_textures
+            );
         }
     }
 
@@ -754,6 +911,12 @@ impl From<MeshError> for CliError {
 
 impl From<RenderError> for CliError {
     fn from(error: RenderError) -> Self {
+        Self::input(error.to_string())
+    }
+}
+
+impl From<litematic_material::MaterialError> for CliError {
+    fn from(error: litematic_material::MaterialError) -> Self {
         Self::input(error.to_string())
     }
 }
