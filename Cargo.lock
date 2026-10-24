@@ -634,6 +634,7 @@ dependencies = [
  "litematic-render",
  "litematic-scene",
  "png",
+ "serde",
  "serde_json",
  "tempfile",
 ]

@@ -18,6 +18,9 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Instant;
 
+mod capacity;
+mod serve;
+
 /// Litematic parser and render service.
 #[derive(Debug, Parser)]
 #[command(
@@ -47,6 +50,10 @@ enum Command {
     Bench(BenchArgs),
     /// Report model and texture coverage from a resource pack.
     Materials(MaterialsArgs),
+    /// Print detected CPU and memory capacity with suggested pool settings.
+    Capacity(CapacityArgs),
+    /// Run as a long-lived worker speaking newline-delimited JSON on stdio.
+    Serve(serve::ServeArgs),
 }
 
 #[derive(Debug, Args)]
@@ -206,6 +213,53 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Command::Render(args) => render(args),
         Command::Bench(args) => bench(args),
         Command::Materials(args) => materials(args),
+        Command::Capacity(args) => capacity(args),
+        Command::Serve(args) => serve::run(args),
+    }
+}
+
+#[derive(Debug, Args)]
+struct CapacityArgs {
+    /// Print capacity as JSON.
+    #[arg(long)]
+    json: bool,
+}
+
+fn capacity(args: CapacityArgs) -> Result<(), CliError> {
+    let capacity = capacity::Capacity::detect();
+
+    if args.json {
+        let json = serde_json::to_string_pretty(&capacity).map_err(CliError::internal)?;
+        println!("{json}");
+        return Ok(());
+    }
+
+    println!("platform: {}", capacity.platform);
+    println!("cores: {}", capacity.cores);
+    match capacity.cpu_quota_milli {
+        Some(milli) => println!("cpu quota: {:.1} cores", f64::from(milli) / 1000.0),
+        None => println!("cpu quota: unlimited"),
+    }
+    println!(
+        "memory limit: {}",
+        format_megabytes(capacity.memory_limit_bytes)
+    );
+    println!(
+        "memory available: {}",
+        format_megabytes(capacity.memory_available_bytes)
+    );
+    println!("suggested workers: {}", capacity.suggested_workers);
+    println!("suggested threads: {}", capacity.suggested_threads);
+    println!("default tier: {}", capacity.tier());
+
+    Ok(())
+}
+
+fn format_megabytes(bytes: u64) -> String {
+    if bytes == 0 {
+        "unknown".to_string()
+    } else {
+        format!("{} MB", bytes / (1024 * 1024))
     }
 }
 
@@ -321,13 +375,7 @@ fn render(args: RenderArgs) -> Result<(), CliError> {
     let (_, scene) = load_scene(&args.file)?;
     let parse_ms = started.elapsed().as_secs_f64() * 1000.0;
 
-    let background = if args.background == "transparent" {
-        Background::Transparent
-    } else {
-        let color = Rgba::from_hex(&args.background)
-            .map_err(|error| CliError::input(format!("INVALID_RENDER_OPTIONS: {error}")))?;
-        Background::Solid(color)
-    };
+    let background = parse_background(&args.background)?;
 
     let lighting = LightingProfile::parse(&args.lighting).ok_or_else(|| {
         CliError::input(format!(
@@ -496,6 +544,16 @@ fn parse_texture_filter(value: &str) -> Result<TextureFilter, CliError> {
             "INVALID_RENDER_OPTIONS: unknown texture filter '{other}'"
         ))),
     }
+}
+
+fn parse_background(value: &str) -> Result<Background, CliError> {
+    if value == "transparent" {
+        return Ok(Background::Transparent);
+    }
+
+    let color = Rgba::from_hex(value)
+        .map_err(|error| CliError::input(format!("INVALID_RENDER_OPTIONS: {error}")))?;
+    Ok(Background::Solid(color))
 }
 
 fn materials(args: MaterialsArgs) -> Result<(), CliError> {

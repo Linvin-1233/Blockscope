@@ -148,15 +148,16 @@ jobs sequentially.
 
 **Acceptance criteria:**
 
-- [ ] First job after start has no repeated material load cost.
-- [ ] Job failures return a structured error and keep the process alive.
-- [ ] Rasterizer threads are configurable per process.
-- [ ] SIGINT or stdin close shuts down cleanly.
+- [x] First job after start has no repeated material load cost.
+- [x] Job failures return a structured error and keep the process alive.
+- [x] Rasterizer threads are configurable per process and per request.
+- [x] Closing stdin or sending `shutdown` ends the process with `bye` and exit 0.
+- [ ] SIGINT is left to the supervisor kill path (no custom handler in v1).
 
 **Verification:**
 
-- [ ] Manual run: two jobs in one process, second is faster.
-- [ ] `cargo test -p renderd-cli` still passes.
+- [x] Manual run: two jobs in one process took 412 ms and 394 ms with no reload.
+- [x] `cargo test -p renderd-cli` passes, including protocol round-trip tests.
 
 **Dependencies:** P1, M3
 **Files likely touched:** `crates/cli/src/main.rs`, `crates/cli/src/serve.rs`

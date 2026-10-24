@@ -1,6 +1,6 @@
 # Implementation Plan: Phase 4 - Shared Materials and Multi-Process Engine
 
-**Status:** M1-M5 implemented; engine slices P1-P5 pending.
+**Status:** M1-M5 and P1-P2 implemented; engine slices P3-P5 pending.
 **Baseline:** Phase 3C plus the in-flight chest/piston work (verified with
 `scripts/check.ps1`, exit 0).
 **Related:** `tasks/phase-4-engine-todo.md`
@@ -117,6 +117,18 @@ Triangle count grew 8 percent because of the chest and piston models. Mesh cost
 per quad is unchanged, and render time stays inside run-to-run noise. A
 1024x1024 supersample-1 render of the real fixture is byte-identical before and
 after the pipeline switch (SHA256 `9CAFA199...`).
+
+### Serve mode
+
+Two jobs in one worker with the real fixture, 1024x1024 at supersample 2:
+
+| Job | Total | Parse | Mesh | Render | PNG |
+|---|---|---|---|---|---|
+| `two-1` | 412 ms | 22 ms | 147 ms | 222 ms | 14 ms |
+| `two-2` | 394 ms | 22 ms | 131 ms | 226 ms | 6 ms |
+
+No material reload between jobs. `renderd capacity --json` on this host reports
+12 cores, 4 suggested workers, 3 threads, and a 2048 supersample-2 default tier.
 
 ## Risks and Mitigations
 

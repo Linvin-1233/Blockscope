@@ -42,7 +42,10 @@ supervisor                          worker
 ### Messages
 
 ```json
-{"type":"hello","protocolVersion":1,"engineVersion":"0.1.0","platform":"windows","cores":12}
+{"type":"hello","protocolVersion":1,"engineVersion":"0.1.0","platform":"windows","cores":12,
+ "cpuQuota":null,"memoryLimitBytes":51401564160,"memoryAvailableBytes":21526179840,
+ "suggestedWorkers":4,"suggestedThreads":3,
+ "defaultTier":{"width":2048,"height":2048,"supersample":2}}
 {"type":"render","id":"...","input":{...},...}
 {"type":"result","id":"...","ok":true,...}
 {"type":"result","id":"...","ok":false,...}
@@ -50,12 +53,18 @@ supervisor                          worker
 {"type":"bye"}
 ```
 
+`hello` is printed only after the material set is ready, so the supervisor can
+size its pool from `suggestedWorkers` and `suggestedThreads` instead of guessing
+from the host. Values come from cgroup limits on Linux and
+`GlobalMemoryStatusEx` on Windows; see `renderd capacity --json` for the same
+data from the command line.
+
 ## Render request
 
 | Field | Type | Default | Notes |
 |---|---|---|---|
 | `type` | string | required | `"render"` |
-| `id` | string | required | Client-generated, echoed in the result |
+| `id` | string | required | 1-64 characters of `[A-Za-z0-9_-]`, echoed in the result |
 | `input.path` | string | required | Absolute path to a `.litematic` |
 | `input.hash` | string | optional | Expected SHA-256 of the file; mismatch fails the job |
 | `views` | number[] | `[45]` | Yaw angles in degrees, finite, `0..=360` |
@@ -131,8 +140,8 @@ rasterizer mid-tile.
 ```
 
 - `outputs` preserves `views` order, one entry per view.
-- Output file names are `{stem}-{yaw}.{ext}` when there is more than one view,
-  matching the CLI.
+- Output files are `{id}.png` for a single view and `{id}-{yaw}.png` for
+  multiple views. The engine never overwrites a result from another job.
 - `timings` are wall-clock aggregates for the whole job.
 - `statistics` is advisory; consumers must not depend on fields beyond
   `triangles`.
@@ -153,6 +162,7 @@ rasterizer mid-tile.
 | `INVALID_LITEMATIC` | no | Corrupt or unsupported file |
 | `ASSET_SOURCE_REQUIRED` | no | Worker started without a pack or client jar |
 | `ASSET_ERROR` | no | Pack or jar cannot be read |
+| `INPUT_HASH_MISMATCH` | no | `input.hash` does not match the file |
 | `MESH_LIMIT_EXCEEDED` | no | Mesh limits exceeded |
 | `PNG_ENCODE_FAILED` | maybe | Encoder failure; retry once |
 | `IO_ERROR` | maybe | Output path unwritable or disk full |
