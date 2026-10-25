@@ -10,11 +10,12 @@ User-facing changes are recorded here. The format follows
 
 ### Fixed
 
-- The MSI now sets `ALLUSERS=2` and `MSIINSTALLPERUSER=1`, so it installs per
-  user even when started from an elevated shell; the uninstall entry and `PATH`
-  both belong to the current user and are removed on uninstall.
+- The MSI now sets `ALLUSERS=2` and `MSIINSTALLPERUSER=1`, so it uses the
+  per-user context even when started from an elevated shell; files go to the
+  user profile, the `PATH` entry belongs to the current user, and uninstall
+  removes both.
 - CI now runs an MSI install/uninstall smoke test covering the install
-  directory, uninstall entry, `PATH` entry, and file cleanup.
+  directory, per-user registration, `PATH` entry, and file cleanup.
 
 ## [0.1.1] - 2026-10-25
 
