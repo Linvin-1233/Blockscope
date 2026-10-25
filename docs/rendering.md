@@ -96,6 +96,25 @@ Measured on the 370x370 fixture at 1024x1024 and supersample 2: peak memory
 dropped from 19.6 GB to 13.5 GB, render time from 13.5 s to 6.6 s, and the PNG
 hash did not change.
 
+### Page streaming
+
+When the projected quad table would be larger than the persistent tile
+buffers, the rasterizer streams mesh pages instead. It projects a chunk of
+pages, bins them to the tiles they touch, renders those tiles into buffers that
+stay resident for the whole image, and drops the chunk. Only one chunk of
+geometry is alive at a time. Output is byte-identical to the table path.
+
+Measured on the test host at 1024x1024 and supersample 2:
+
+| Scene | Peak working set | Wall | Render |
+|---|---|---|---|
+| `000002` exact | 7.5 GB | 29.8 s | 4.3 s |
+| `000001` exact | 23.1 GB | 37.2 s | 11.6 s |
+
+Both used to need the full per-quad table (13.5 GB and roughly 45 GB
+respectively). A small-scene equality test forces streaming and compares RGBA
+and statistics against the table path.
+
 ### Triangle binning
 
 Before rasterization, each triangle is inserted into every tile its screen-space
@@ -249,7 +268,7 @@ Measured on the 9.4M-block stress fixture (211x211x211, 1024x1024, supersample
 
 | LOD | Quads | Triangles | Wall | Peak working set |
 |---|---|---|---|---|
-| 1 (exact) | 77.6M | - | mesh only: 27.1 s | 13.5 GB mesh |
+| 1 (exact) | 77.6M | 117M | 37.2 s | 23.1 GB |
 | 2 | 10.5M | 14.6M | 9.4 s | 5.5 GB |
 | 4 | 1.3M | 1.55M | 4.0 s | 683 MB |
 

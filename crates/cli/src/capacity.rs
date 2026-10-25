@@ -22,6 +22,8 @@ pub struct Capacity {
     pub memory_available_bytes: u64,
     pub suggested_workers: u32,
     pub suggested_threads: u32,
+    /// Quad budget for one job, from available memory at roughly 400 B/quad.
+    pub suggested_max_quads: u64,
     pub default_width: u32,
     pub default_height: u32,
     pub default_supersample: u32,
@@ -34,6 +36,7 @@ impl Capacity {
             .unwrap_or(1);
         let limits = platform_limits();
         let plan = plan(cores, limits.memory_limit);
+        let suggested_max_quads = quad_budget(limits.memory_available);
 
         Self {
             platform: std::env::consts::OS.to_string(),
@@ -43,6 +46,7 @@ impl Capacity {
             memory_available_bytes: limits.memory_available,
             suggested_workers: plan.workers,
             suggested_threads: plan.threads,
+            suggested_max_quads,
             default_width: plan.width,
             default_height: plan.height,
             default_supersample: plan.supersample,
@@ -97,6 +101,15 @@ fn plan(cores: u32, memory_limit: u64) -> Plan {
         height,
         supersample,
     }
+}
+
+/// Memory budget for one job. Peak streaming rendering costs roughly 300 bytes
+/// per quad; use 400 with headroom. Unknown memory falls back to the default cap.
+fn quad_budget(memory_available: u64) -> u64 {
+    if memory_available == 0 {
+        return 5_000_000;
+    }
+    ((memory_available as f64 * 0.8 / 400.0) as u64).max(1_000_000)
 }
 
 fn default_tier(cores: u32, memory_limit: u64) -> (u32, u32, u32) {
@@ -382,5 +395,16 @@ mod tests {
         let unknown = plan(12, 0);
         assert_eq!(unknown.workers, 4);
         assert_eq!(unknown.threads, 3);
+    }
+
+    #[test]
+    fn quad_budget_scales_with_memory() {
+        assert_eq!(quad_budget(0), 5_000_000);
+
+        let budget = quad_budget(8 * 1024 * 1024 * 1024);
+        assert!(budget > 15_000_000 && budget < 20_000_000, "{budget}");
+
+        // Tiny containers still get a usable minimum.
+        assert_eq!(quad_budget(256 * MIB), 1_000_000);
     }
 }

@@ -75,6 +75,8 @@ pub struct RenderOptions {
     pub texture_filter: TextureFilter,
     pub max_pixels: u64,
     pub max_supersampled_pixels: u64,
+    /// Use the page-streaming rasterizer even when the quad table would fit.
+    pub force_streaming: bool,
 }
 
 impl Default for RenderOptions {
@@ -93,6 +95,7 @@ impl Default for RenderOptions {
             texture_filter: TextureFilter::Nearest,
             max_pixels: 16_777_216,
             max_supersampled_pixels: 33_554_432,
+            force_streaming: false,
         }
     }
 }

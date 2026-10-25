@@ -158,6 +158,7 @@ fn hello(capacity: &Capacity) -> Value {
         "memoryAvailableBytes": capacity.memory_available_bytes,
         "suggestedWorkers": capacity.suggested_workers,
         "suggestedThreads": capacity.suggested_threads,
+        "suggestedMaxQuads": capacity.suggested_max_quads,
         "defaultLod": 1,
         "defaultTier": {
             "width": capacity.default_width,

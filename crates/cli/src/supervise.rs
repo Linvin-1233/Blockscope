@@ -156,6 +156,7 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
             "queueLimit": queue_limit,
             "cacheEntries": spec.cache,
             "defaultLod": 1,
+            "suggestedMaxQuads": capacity.suggested_max_quads,
             "timeoutSeconds": timeout.map(|value| value.as_secs()),
             "memoryLimitPerWorkerBytes": memory_limit,
             "defaultTier": {
@@ -691,6 +692,7 @@ mod tests {
             memory_available_bytes: available,
             suggested_workers: 2,
             suggested_threads: 2,
+            suggested_max_quads: 20_000_000,
             default_width: 1024,
             default_height: 1024,
             default_supersample: 2,

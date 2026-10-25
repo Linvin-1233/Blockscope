@@ -1,7 +1,6 @@
 # Phase 5 Plan: Huge Structures
 
-**Status:** C1, C2, and C3 implemented; C4 pending. This plan covers the
-extreme fixtures.
+**Status:** C1-C4 implemented. This plan covers the extreme fixtures.
 
 ## Measured baseline
 
@@ -116,31 +115,38 @@ Measured with the client jar at 1024x1024, supersample 2, 12 threads:
 
 | LOD | Quads | Triangles | Wall | Peak working set |
 |---|---|---|---|---|
-| 1 | 77.6M | - | mesh only: 27.1 s | 13.5 GB mesh |
+| 1 | 77.6M | 117M | 37.2 s | 23.1 GB |
 | 2 | 10.5M | 14.6M | 9.4 s | 5.5 GB |
 | 4 | 1.3M | 1.55M | 4.0 s | 683 MB |
+
+With page streaming, exact `000001` now completes in 37.2 s and 23.1 GB, within
+the 10 minute budget on a 48 GB host. LOD remains necessary for smaller hosts.
 
 LOD 4 meets the 10 minute budget with a large margin. LOD 2 is viable on a
 16 GB host but not on a small VPS. The render for LOD 4 reports 18 missing
 models and 4 missing textures out of 9,190 resolved states; no magenta blocks
 appear in the output.
 
-### C4: Capacity-aware admission
+### C4: Capacity-aware admission (implemented)
 
-- `renderd capacity` reports `suggestedMaxQuads` from available memory.
-- The engine estimates quads after meshing; if the estimate exceeds the budget
-  and `--force-limits` is absent, fail with `MEMORY_LIMIT` before allocating
-  the render buffers.
-- Supervisor hello exposes the budget.
+- `renderd capacity` and both `hello` messages report `suggestedMaxQuads`
+  (80 percent of available memory at roughly 400 bytes per quad).
+- The default mesh cap is the lower of 5,000,000 quads and that budget, so a
+  small container rejects oversized schematics before allocating render
+  buffers. `--force-limits` remains the explicit override.
+- `--lod auto` uses the same budget to choose a factor.
 
-**Acceptance:** a 2 GiB worker rejects `000001` with `MEMORY_LIMIT` and no OOM;
+Measured on the test host: 27 GB free produced a 54.3M quad budget. `000002`
+exact (19.9M quads) is now chosen automatically; `000001` (77.6M quads) falls
+back to LOD 2, and `000001` exact succeeds when forced.
+
+**Acceptance:** a 2 GiB worker rejects `000001` with the mesh cap and no OOM;
 the same job succeeds with `--force-limits` and `--lod` on a larger machine.
 
 ## Order
 
-C1 is done. C2 is done. C3 is done. Remaining: C4 (capacity-aware admission).
-C2 and LOD together cover both ends: exact rendering for scenes that fit, LOD
-for the rest.
+C1, C2, C3, and C4 are implemented. Exact rendering covers scenes that fit the
+budget, streaming keeps memory near the mesh size, and LOD covers the rest.
 
 ## Risks
 

@@ -44,7 +44,7 @@ supervisor                          worker
 ```json
 {"type":"hello","protocolVersion":1,"engineVersion":"0.1.0","platform":"windows","cores":12,
  "cpuQuota":null,"memoryLimitBytes":51401564160,"memoryAvailableBytes":21526179840,
- "suggestedWorkers":4,"suggestedThreads":3,
+ "suggestedWorkers":4,"suggestedThreads":3,"suggestedMaxQuads":54313181,
  "defaultTier":{"width":2048,"height":2048,"supersample":2}}
 {"type":"render","id":"...","input":{...},...}
 {"type":"result","id":"...","ok":true,...}
@@ -194,7 +194,8 @@ to a fresh directory or overwritten in place, and no state survives a job.
 {"type":"hello","protocolVersion":1,"engineVersion":"0.1.0","platform":"linux",
  "cores":4,"memoryLimitBytes":8589934592,"workers":2,"threadsPerWorker":2,
  "queueLimit":4,"cacheEntries":1,"timeoutSeconds":60,
- "memoryLimitPerWorkerBytes":3650722201,
+ "memoryLimitPerWorkerBytes":3650722201,"suggestedMaxQuads":17000000,
+ "defaultLod":1,
  "defaultTier":{"width":2048,"height":2048,"supersample":2}}
 ```
 

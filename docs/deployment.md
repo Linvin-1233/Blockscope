@@ -112,6 +112,12 @@ Expected output: `cores: 1`, `cpuQuotaMilli: 1000`,
 
 ## Capacity reference
 
+`renderd capacity` also reports `suggestedMaxQuads`: 80 percent of available
+memory divided by roughly 400 bytes per quad. The default mesh cap is the lower
+of 5,000,000 quads and that budget, so a 1 GiB container rejects oversized
+schematics earlier than a 32 GiB host. `--force-limits` bypasses the cap;
+`--lod auto` uses the budget to pick a factor.
+
 | Machine | workers | threads | default tier | peak RSS per worker |
 |---|---|---|---|---|
 | 1 CPU / 1 GiB container | 1 | 1 | 1024 @ ss1 | ~200 MB |

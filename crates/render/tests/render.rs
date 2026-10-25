@@ -264,6 +264,43 @@ fn empty_mesh_renders_background_only() {
 }
 
 #[test]
+fn streaming_matches_the_table_path() {
+    let scene = scene(vec![region(
+        "main",
+        [0, 0, 0],
+        [3, 2, 1],
+        &["minecraft:air", "minecraft:stone", "minecraft:water"],
+        &[1, 2, 1, 0, 2, 1],
+    )]);
+    let mesh = build_mesh(
+        &scene,
+        &ColorBlockCatalog::default(),
+        &MeshLimits::default(),
+    )
+    .unwrap();
+    let base = RenderOptions {
+        width: 96,
+        height: 96,
+        supersample: 2,
+        ..Default::default()
+    };
+
+    let table = render_mesh(&scene, &mesh, &base).unwrap();
+    let streaming = render_mesh(
+        &scene,
+        &mesh,
+        &RenderOptions {
+            force_streaming: true,
+            ..base
+        },
+    )
+    .unwrap();
+
+    assert_eq!(table.rgba, streaming.rgba);
+    assert_eq!(table.statistics, streaming.statistics);
+}
+
+#[test]
 fn rejects_invalid_options() {
     let scene = stone_scene();
 

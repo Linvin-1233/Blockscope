@@ -307,6 +307,7 @@ fn capacity(args: CapacityArgs) -> Result<(), CliError> {
     );
     println!("suggested workers: {}", capacity.suggested_workers);
     println!("suggested threads: {}", capacity.suggested_threads);
+    println!("suggested max quads: {}", capacity.suggested_max_quads);
     println!("default tier: {}", capacity.tier());
 
     Ok(())
@@ -631,7 +632,14 @@ fn mesh_limits(force: bool) -> MeshLimits {
             max_vertices: usize::MAX,
         }
     } else {
-        MeshLimits::default()
+        let default = MeshLimits::default();
+        let budget =
+            usize::try_from(capacity::Capacity::detect().suggested_max_quads).unwrap_or(usize::MAX);
+        MeshLimits {
+            max_pages: default.max_pages,
+            max_quads: default.max_quads.min(budget),
+            max_vertices: default.max_vertices.min(budget.saturating_mul(4)),
+        }
     }
 }
 
@@ -1127,11 +1135,8 @@ fn prepare_auto(
     base_limits: &MeshLimits,
     threads: u32,
 ) -> Result<PreparedScene, CliError> {
-    // Mesh plus triangle table cost roughly 600 bytes per quad. Keep 20 percent
-    // of available memory for everything else.
     let capacity = capacity::Capacity::detect();
-    let budget_bytes = capacity.memory_available_bytes as f64 * 0.8;
-    let budget_quads = ((budget_bytes / 600.0) as usize).max(1_000_000);
+    let budget_quads = usize::try_from(capacity.suggested_max_quads).unwrap_or(usize::MAX);
     let limits = MeshLimits {
         max_quads: budget_quads,
         max_vertices: budget_quads.saturating_mul(4),

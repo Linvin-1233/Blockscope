@@ -1,7 +1,7 @@
 use crate::camera::Camera;
 use crate::{Background, LightingProfile, RenderError, RenderOptions};
 use litematic_material::{TextureFilter, TextureSet};
-use litematic_mesh::{Mesh, NO_TEXTURE, RenderLayer};
+use litematic_mesh::{Mesh, MeshPage, NO_TEXTURE, RenderLayer};
 use litematic_scene::Scene;
 use serde::{Deserialize, Serialize};
 
@@ -62,8 +62,6 @@ fn render_mesh_internal(
     options.validate()?;
     let camera = Camera::new(&scene.bounds, options)?;
 
-    let mut quads = Vec::new();
-    let mut translucent = Vec::new();
     let mut statistics = RenderStatistics {
         width: options.width,
         height: options.height,
@@ -73,121 +71,145 @@ fn render_mesh_internal(
         ..Default::default()
     };
 
-    for page in &mesh.pages {
-        for quad in &page.quads {
-            let normal = quad.vertices[0].normal;
-            if dot3(
-                [
-                    f64::from(normal[0]),
-                    f64::from(normal[1]),
-                    f64::from(normal[2]),
-                ],
-                camera.forward(),
-            ) >= 0.0
-            {
-                statistics.culled_backfaces += 1;
-                continue;
-            }
-
-            let mut projected = [[0.0f64; 3]; 4];
-            let mut vertex_colors = [[0.0f32; 4]; 4];
-
-            for (index, vertex) in quad.vertices.iter().enumerate() {
-                let world = [
-                    f64::from(page.origin[0]) + f64::from(vertex.position[0]),
-                    f64::from(page.origin[1]) + f64::from(vertex.position[1]),
-                    f64::from(page.origin[2]) + f64::from(vertex.position[2]),
-                ];
-                projected[index] = camera.project(world);
-
-                let shade = if vertex.shade {
-                    f64::from(options.lighting.face_shade(vertex.normal))
-                } else {
-                    1.0
-                };
-                let ao = match options.lighting {
-                    LightingProfile::FlatV1 => 1.0,
-                    LightingProfile::SimpleAoV1 => f64::from(vertex.ao),
-                };
-                vertex_colors[index] = [
-                    (f64::from(vertex.color[0]) / 255.0 * shade * ao) as f32,
-                    (f64::from(vertex.color[1]) / 255.0 * shade * ao) as f32,
-                    (f64::from(vertex.color[2]) / 255.0 * shade * ao) as f32,
-                    f32::from(vertex.color[3]) / 255.0,
-                ];
-            }
-
-            let texture = quad.vertices[0].texture;
-            let layer = quad.layer;
-            let mut keep = false;
-
-            for indices in [[0usize, 1, 2], [0, 2, 3]] {
-                let points = [
-                    projected[indices[0]],
-                    projected[indices[1]],
-                    projected[indices[2]],
-                ];
-                let bbox = bounds(&points);
-                if bbox[0] > bbox[2] || bbox[1] > bbox[3] {
-                    continue;
-                }
-                keep = true;
-
-                match layer {
-                    RenderLayer::Opaque => statistics.opaque_triangles += 1,
-                    RenderLayer::Cutout => statistics.cutout_triangles += 1,
-                    RenderLayer::Translucent => statistics.translucent_triangles += 1,
-                }
-                if texture != NO_TEXTURE {
-                    statistics.textured_triangles += 1;
-                }
-                statistics.triangles += 1;
-
-                if layer == RenderLayer::Translucent {
-                    let depth_key = (points[0][2] + points[1][2] + points[2][2]) / 3.0;
-                    translucent.push(Triangle {
-                        points,
-                        colors: [
-                            vertex_colors[indices[0]],
-                            vertex_colors[indices[1]],
-                            vertex_colors[indices[2]],
-                        ],
-                        uvs: [
-                            quad.vertices[indices[0]].uv,
-                            quad.vertices[indices[1]].uv,
-                            quad.vertices[indices[2]].uv,
-                        ],
-                        texture,
-                        layer,
-                        depth_key,
-                    });
-                }
-            }
-
-            if keep && layer != RenderLayer::Translucent {
-                quads.push(QuadRender {
-                    points: projected,
-                    colors: vertex_colors,
-                    uvs: [
-                        quad.vertices[0].uv,
-                        quad.vertices[1].uv,
-                        quad.vertices[2].uv,
-                        quad.vertices[3].uv,
-                    ],
-                    texture,
-                    layer,
-                });
-            }
+    let streaming = options.force_streaming || table_bytes(mesh) > tile_buffer_bytes(options);
+    let rgba = if streaming {
+        rasterize_streaming(mesh, &camera, options, &mut statistics, textures)
+    } else {
+        let mut quads = Vec::new();
+        let mut translucent = Vec::new();
+        for page in &mesh.pages {
+            push_page_quads(
+                page,
+                &camera,
+                options,
+                &mut statistics,
+                &mut quads,
+                &mut translucent,
+            );
         }
-    }
-
-    let rgba = rasterize(&quads, &translucent, options, &mut statistics, textures);
+        rasterize(&quads, &translucent, options, &mut statistics, textures)
+    };
     Ok(RenderOutput {
         width: options.width,
         height: options.height,
         rgba,
         statistics,
     })
+}
+
+fn push_page_quads(
+    page: &MeshPage,
+    camera: &Camera,
+    options: &RenderOptions,
+    statistics: &mut RenderStatistics,
+    quads: &mut Vec<QuadRender>,
+    translucent: &mut Vec<Triangle>,
+) {
+    for quad in &page.quads {
+        let normal = quad.vertices[0].normal;
+        if dot3(
+            [
+                f64::from(normal[0]),
+                f64::from(normal[1]),
+                f64::from(normal[2]),
+            ],
+            camera.forward(),
+        ) >= 0.0
+        {
+            statistics.culled_backfaces += 1;
+            continue;
+        }
+
+        let mut projected = [[0.0f64; 3]; 4];
+        let mut vertex_colors = [[0.0f32; 4]; 4];
+
+        for (index, vertex) in quad.vertices.iter().enumerate() {
+            let world = [
+                f64::from(page.origin[0]) + f64::from(vertex.position[0]),
+                f64::from(page.origin[1]) + f64::from(vertex.position[1]),
+                f64::from(page.origin[2]) + f64::from(vertex.position[2]),
+            ];
+            projected[index] = camera.project(world);
+
+            let shade = if vertex.shade {
+                f64::from(options.lighting.face_shade(vertex.normal))
+            } else {
+                1.0
+            };
+            let ao = match options.lighting {
+                LightingProfile::FlatV1 => 1.0,
+                LightingProfile::SimpleAoV1 => f64::from(vertex.ao),
+            };
+            vertex_colors[index] = [
+                (f64::from(vertex.color[0]) / 255.0 * shade * ao) as f32,
+                (f64::from(vertex.color[1]) / 255.0 * shade * ao) as f32,
+                (f64::from(vertex.color[2]) / 255.0 * shade * ao) as f32,
+                f32::from(vertex.color[3]) / 255.0,
+            ];
+        }
+
+        let texture = quad.vertices[0].texture;
+        let layer = quad.layer;
+        let mut keep = false;
+
+        for indices in [[0usize, 1, 2], [0, 2, 3]] {
+            let points = [
+                projected[indices[0]],
+                projected[indices[1]],
+                projected[indices[2]],
+            ];
+            let bbox = bounds(&points);
+            if bbox[0] > bbox[2] || bbox[1] > bbox[3] {
+                continue;
+            }
+            keep = true;
+
+            match layer {
+                RenderLayer::Opaque => statistics.opaque_triangles += 1,
+                RenderLayer::Cutout => statistics.cutout_triangles += 1,
+                RenderLayer::Translucent => statistics.translucent_triangles += 1,
+            }
+            if texture != NO_TEXTURE {
+                statistics.textured_triangles += 1;
+            }
+            statistics.triangles += 1;
+
+            if layer == RenderLayer::Translucent {
+                let depth_key = (points[0][2] + points[1][2] + points[2][2]) / 3.0;
+                translucent.push(Triangle {
+                    points,
+                    colors: [
+                        vertex_colors[indices[0]],
+                        vertex_colors[indices[1]],
+                        vertex_colors[indices[2]],
+                    ],
+                    uvs: [
+                        quad.vertices[indices[0]].uv,
+                        quad.vertices[indices[1]].uv,
+                        quad.vertices[indices[2]].uv,
+                    ],
+                    texture,
+                    layer,
+                    depth_key,
+                });
+            }
+        }
+
+        if keep && layer != RenderLayer::Translucent {
+            quads.push(QuadRender {
+                points: projected,
+                colors: vertex_colors,
+                uvs: [
+                    quad.vertices[0].uv,
+                    quad.vertices[1].uv,
+                    quad.vertices[2].uv,
+                    quad.vertices[3].uv,
+                ],
+                texture,
+                layer,
+            });
+        }
+    }
 }
 
 /// An opaque or cutout quad, projected once and split into triangles per tile.
@@ -315,6 +337,317 @@ fn tile_jobs(width: u32, height: u32, tile_size: u32) -> Vec<TileJob> {
     }
 
     jobs
+}
+
+const STREAM_PAGES_PER_CHUNK: usize = 8;
+
+fn table_bytes(mesh: &Mesh) -> u64 {
+    mesh.statistics
+        .quads
+        .saturating_mul(std::mem::size_of::<QuadRender>() as u64)
+}
+
+fn tile_buffer_bytes(options: &RenderOptions) -> u64 {
+    u64::from(options.internal_width()) * u64::from(options.internal_height()) * 24
+}
+
+struct StreamTile {
+    job: TileJob,
+    colors: Vec<[f32; 4]>,
+    depths: Vec<f64>,
+    counters: TileCounters,
+}
+
+impl StreamTile {
+    fn new(job: TileJob, background: Background) -> Self {
+        let count = (u64::from(job.width) * u64::from(job.height)) as usize;
+        let mut colors = vec![[0.0f32; 4]; count];
+        if let Background::Solid(color) = background {
+            let fill = [
+                f32::from(color.r) / 255.0,
+                f32::from(color.g) / 255.0,
+                f32::from(color.b) / 255.0,
+                f32::from(color.a) / 255.0,
+            ];
+            colors.fill(fill);
+        }
+
+        Self {
+            job,
+            colors,
+            depths: vec![f64::INFINITY; count],
+            counters: TileCounters::default(),
+        }
+    }
+}
+
+fn rasterize_streaming(
+    mesh: &Mesh,
+    camera: &Camera,
+    options: &RenderOptions,
+    statistics: &mut RenderStatistics,
+    textures: Option<&TextureSet>,
+) -> Vec<u8> {
+    let width = options.internal_width();
+    let height = options.internal_height();
+    let tile_size = options.tile_size;
+    let tiles_x = width.div_ceil(tile_size);
+    let tiles_y = height.div_ceil(tile_size);
+    statistics.tiles = u64::from(tiles_x) * u64::from(tiles_y);
+
+    let jobs = tile_jobs(width, height, tile_size);
+    let tiles: Vec<std::sync::Mutex<StreamTile>> = jobs
+        .into_iter()
+        .map(|job| std::sync::Mutex::new(StreamTile::new(job, options.background)))
+        .collect();
+    let threads = worker_count(options.threads, tiles.len());
+
+    let mut quads = Vec::new();
+    let mut translucent = Vec::new();
+    let mut page_index = 0;
+
+    while page_index < mesh.pages.len() {
+        let end = (page_index + STREAM_PAGES_PER_CHUNK).min(mesh.pages.len());
+        quads.clear();
+        for page in &mesh.pages[page_index..end] {
+            push_page_quads(
+                page,
+                camera,
+                options,
+                statistics,
+                &mut quads,
+                &mut translucent,
+            );
+        }
+        page_index = end;
+
+        if quads.is_empty() {
+            continue;
+        }
+
+        let quad_bins = bin_quads(&quads, width, height, tile_size);
+        let touched: Vec<usize> = quad_bins
+            .iter()
+            .enumerate()
+            .filter(|(_, bin)| !bin.is_empty())
+            .map(|(index, _)| index)
+            .collect();
+        render_stream_chunk(
+            &tiles, &quads, &quad_bins, &touched, options, threads, textures,
+        );
+    }
+
+    if !translucent.is_empty() {
+        let triangle_bins = bin_triangles(&translucent, width, height, tile_size);
+        let touched: Vec<usize> = triangle_bins
+            .iter()
+            .enumerate()
+            .filter(|(_, bin)| !bin.is_empty())
+            .map(|(index, _)| index)
+            .collect();
+        render_stream_translucent(
+            &tiles,
+            &translucent,
+            &triangle_bins,
+            &touched,
+            options,
+            threads,
+            textures,
+        );
+    }
+
+    let mut output = vec![0u8; (u64::from(width) * u64::from(height) * 4) as usize];
+    for tile in tiles {
+        let tile = tile.into_inner().expect("stream tile mutex poisoned");
+        statistics.pixels_tested += tile.counters.pixels_tested;
+        statistics.pixels_written += tile.counters.pixels_written;
+        copy_tile(&tile.job, &tile.colors, &mut output, width);
+    }
+
+    if options.supersample > 1 {
+        downsample(
+            &output,
+            width,
+            height,
+            options.width,
+            options.height,
+            options.supersample,
+        )
+    } else {
+        output
+    }
+}
+
+fn render_stream_chunk(
+    tiles: &[std::sync::Mutex<StreamTile>],
+    quads: &[QuadRender],
+    bins: &[Vec<u32>],
+    touched: &[usize],
+    options: &RenderOptions,
+    threads: usize,
+    textures: Option<&TextureSet>,
+) {
+    let work = |tile_index: usize| {
+        let mut guard = tiles[tile_index]
+            .lock()
+            .expect("stream tile mutex poisoned");
+        let StreamTile {
+            job,
+            colors,
+            depths,
+            counters,
+        } = &mut *guard;
+        let job = *job;
+        let mut buffer = TileBuffer {
+            x0: job.x0,
+            y0: job.y0,
+            width: job.width,
+            height: job.height,
+            colors,
+            depths,
+            counters,
+            textures,
+            filter: options.texture_filter,
+        };
+
+        for &index in &bins[tile_index] {
+            let quad = &quads[index as usize];
+            if !intersects(
+                &quad_bounds(&quad.points),
+                job.x0,
+                job.y0,
+                job.width,
+                job.height,
+            ) {
+                continue;
+            }
+            buffer.rasterize_quad(quad);
+        }
+    };
+
+    run_parallel(touched, threads, work);
+}
+
+fn render_stream_translucent(
+    tiles: &[std::sync::Mutex<StreamTile>],
+    triangles: &[Triangle],
+    bins: &[Vec<u32>],
+    touched: &[usize],
+    options: &RenderOptions,
+    threads: usize,
+    textures: Option<&TextureSet>,
+) {
+    let work = |tile_index: usize| {
+        let mut guard = tiles[tile_index]
+            .lock()
+            .expect("stream tile mutex poisoned");
+        let StreamTile {
+            job,
+            colors,
+            depths,
+            counters,
+        } = &mut *guard;
+        let job = *job;
+        let mut buffer = TileBuffer {
+            x0: job.x0,
+            y0: job.y0,
+            width: job.width,
+            height: job.height,
+            colors,
+            depths,
+            counters,
+            textures,
+            filter: options.texture_filter,
+        };
+
+        let mut translucent: Vec<&Triangle> = bins[tile_index]
+            .iter()
+            .map(|&index| &triangles[index as usize])
+            .filter(|triangle| {
+                intersects(
+                    &bounds(&triangle.points),
+                    job.x0,
+                    job.y0,
+                    job.width,
+                    job.height,
+                )
+            })
+            .collect();
+        translucent.sort_by(|left, right| right.depth_key.total_cmp(&left.depth_key));
+
+        for triangle in translucent {
+            buffer.rasterize_triangle(
+                &triangle.points,
+                &triangle.colors,
+                &triangle.uvs,
+                triangle.texture,
+                triangle.layer,
+            );
+        }
+    };
+
+    run_parallel(touched, threads, work);
+}
+
+fn run_parallel<F>(indices: &[usize], threads: usize, work: F)
+where
+    F: Fn(usize) + Sync,
+{
+    if threads <= 1 || indices.len() <= 1 {
+        for &index in indices {
+            work(index);
+        }
+        return;
+    }
+
+    let cursor = std::sync::atomic::AtomicUsize::new(0);
+    std::thread::scope(|scope| {
+        for _ in 0..threads {
+            let cursor = &cursor;
+            let work = &work;
+            scope.spawn(move || {
+                loop {
+                    let position = cursor.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let Some(&index) = indices.get(position) else {
+                        break;
+                    };
+                    work(index);
+                }
+            });
+        }
+    });
+}
+
+fn encode_tile(colors: &[[f32; 4]], width: u32, height: u32) -> Vec<u8> {
+    let mut rgba = vec![0u8; (u64::from(width) * u64::from(height) * 4) as usize];
+    for y in 0..height {
+        for x in 0..width {
+            let color = colors[(y * width + x) as usize];
+            let alpha = to_u8(color[3]);
+            let [red, green, blue] = if alpha == 0 {
+                [0, 0, 0]
+            } else {
+                [to_u8(color[0]), to_u8(color[1]), to_u8(color[2])]
+            };
+            let index = ((y * width + x) * 4) as usize;
+            rgba[index] = red;
+            rgba[index + 1] = green;
+            rgba[index + 2] = blue;
+            rgba[index + 3] = alpha;
+        }
+    }
+    rgba
+}
+
+fn copy_tile(job: &TileJob, colors: &[[f32; 4]], output: &mut [u8], width: u32) {
+    let rgba = encode_tile(colors, job.width, job.height);
+    let row_bytes = job.width as usize * 4;
+    for row in 0..job.height {
+        let source = row as usize * row_bytes;
+        let target =
+            ((u64::from(job.y0 + row) * u64::from(width) + u64::from(job.x0)) as usize) * 4;
+        output[target..target + row_bytes].copy_from_slice(&rgba[source..source + row_bytes]);
+    }
 }
 
 /// Group quads by the tiles their screen bounds cover, so each tile only visits
