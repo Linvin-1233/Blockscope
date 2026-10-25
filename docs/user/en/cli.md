@@ -11,7 +11,7 @@ See [Installation and Quick Start](getting-started.md) for building
 | `validate` | Validate a file and print a summary |
 | `stats` | Print block/material statistics |
 | `mesh` | Build a mesh and optionally export OBJ or PLY |
-| `render` | Render PNG output |
+| `render` | Render PNG output or display directly in the terminal |
 | `bench` | Measure parse, LOD, mesh, render, and PNG timings |
 | `materials` | Report resource-pack coverage for the scene |
 | `capacity` | Print detected CPU/memory capacity and suggested worker/thread settings |
@@ -47,6 +47,11 @@ blockscope materials model.litematic --client-jar client.jar --json
 
 # Capacity
 blockscope capacity --json
+# Terminal image rendering (Kitty, iTerm2, Sixel, Halfblocks/Truecolor)
+blockscope render model.litematic --terminal
+blockscope render model.litematic -t --terminal-protocol kitty
+blockscope render model.litematic -t --no-file
+blockscope preview model.litematic -t
 ```
 
 A single view writes `out.png`. Multiple views write `out-45.png`,
@@ -71,6 +76,10 @@ or `{id}-{yaw}.png` for multiple views.
 | `--lod 1\|2-16\|auto` | LOD factor; default `1` (disabled) |
 | `--force-limits` | Raises input, scene, mesh, and pixel caps; can exhaust memory |
 | `--ignore-block-entity-nbt` | Skip container NBT; always on for `mesh`/`render`/`bench` |
+| `-t, --terminal` | Render and display the image directly in the terminal |
+| `--terminal-protocol <auto\|kitty\|iterm2\|sixel\|halfblocks>` | Specify terminal graphics protocol; defaults to auto-detection |
+| `--terminal-width <COLS>` / `--terminal-height <ROWS>` | Target display width in columns and height in rows |
+| `--no-file` | Render only to the terminal without writing an output PNG file |
 
 `inspect`, `validate`, and `stats` keep `TileEntities` by default. Geometry
 commands skip them by default to reduce parse time and memory for large
