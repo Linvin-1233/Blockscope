@@ -66,7 +66,7 @@ Minecraft textures, or user uploads.
 
 ## See Also
 
-- [CLI Reference](cli.md)
-- [Limits and Security](limits.md)
-- [Troubleshooting](troubleshooting.md)
+- [CLI Reference](./cli.md)
+- [Limits and Security](./limits.md)
+- [Troubleshooting](./troubleshooting.md)
 - [中文](../materials.md)

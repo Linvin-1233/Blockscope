@@ -18,9 +18,11 @@ environment.
 
 ## Documentation
 
+Documentation is hosted under `docs/` as a [Mintlify](https://mintlify.com) site. Preview locally with `cd docs && mint dev`.
+
 ### User Guide
 
-- [User documentation index](docs/user/en/README.md)
+- [User documentation index](docs/user/en/index.md)
 - [Features and limitations](docs/user/en/features.md)
 - [Installation and quick start](docs/user/en/getting-started.md)
 - [CLI reference](docs/user/en/cli.md)

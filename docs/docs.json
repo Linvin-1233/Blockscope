@@ -1,0 +1,119 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "Blockscope",
+  "colors": {
+    "primary": "#16A34A",
+    "light": "#4ADE80",
+    "dark": "#15803D"
+  },
+  "favicon": "/favicon.svg",
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg"
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "GitHub",
+        "href": "https://github.com/Linvin-1233/Blockscope"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Repository",
+      "href": "https://github.com/Linvin-1233/Blockscope"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/Linvin-1233/Blockscope"
+    }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "User Guide",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "index",
+              "user/en/index",
+              "user/en/getting-started",
+              "user/en/features",
+              "user/en/cli"
+            ]
+          },
+          {
+            "group": "Guides & Operations",
+            "pages": [
+              "user/en/materials",
+              "user/en/lod",
+              "user/en/service",
+              "user/en/docker"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "user/en/limits",
+              "user/en/troubleshooting"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "用户指南",
+        "groups": [
+          {
+            "group": "入门与概览",
+            "pages": [
+              "user/index",
+              "user/getting-started",
+              "user/features",
+              "user/cli"
+            ]
+          },
+          {
+            "group": "进阶与部署",
+            "pages": [
+              "user/materials",
+              "user/lod",
+              "user/service",
+              "user/docker"
+            ]
+          },
+          {
+            "group": "参考与排查",
+            "pages": [
+              "user/limits",
+              "user/troubleshooting"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Technical Specs",
+        "groups": [
+          {
+            "group": "Pipeline Architecture",
+            "pages": [
+              "litematic-format",
+              "mesh-geometry",
+              "rendering",
+              "textures"
+            ]
+          },
+          {
+            "group": "System & Protocol",
+            "pages": [
+              "engine-protocol",
+              "deployment"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

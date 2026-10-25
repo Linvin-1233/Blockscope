@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 36" fill="none">
+  <!-- Isometric Cube Icon -->
+  <g transform="translate(2, 2)">
+    <!-- Top Face -->
+    <polygon points="16,2 28,9 16,16 4,9" fill="#16a34a"/>
+    <!-- Left Face -->
+    <polygon points="4,9 16,16 16,28 4,21" fill="#15803d"/>
+    <!-- Right Face -->
+    <polygon points="16,16 28,9 28,21 16,28" fill="#166534"/>
+    <!-- Wireframe grid lines -->
+    <line x1="16" y1="2" x2="16" y2="16" stroke="#86efac" stroke-width="0.5" stroke-opacity="0.7"/>
+    <line x1="4" y1="9" x2="28" y2="9" stroke="#86efac" stroke-width="0.5" stroke-opacity="0.7"/>
+  </g>
+  <!-- Brand Text -->
+  <text x="38" y="24" font-family="system-ui, -apple-system, sans-serif" font-size="19" font-weight="700" fill="#0f172a" letter-spacing="-0.5px">Blockscope</text>
+</svg>

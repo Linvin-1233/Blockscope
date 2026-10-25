@@ -44,6 +44,6 @@ of opening a public issue with sensitive details.
 
 ## See Also
 
-- [Limits and Security](limits.md)
-- [Service Mode](service.md)
+- [Limits and Security](./limits.md)
+- [Service Mode](./service.md)
 - [中文](../troubleshooting.md)

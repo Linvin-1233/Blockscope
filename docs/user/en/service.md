@@ -76,6 +76,6 @@ the stdio service directly to untrusted network clients.
 ## See Also
 
 - [Engine protocol v1](../../engine-protocol.md)
-- [Docker](docker.md)
-- [Troubleshooting](troubleshooting.md)
+- [Docker](./docker.md)
+- [Troubleshooting](./troubleshooting.md)
 - [中文](../service.md)

@@ -55,7 +55,7 @@
 
 ## 相关文档
 
-- [CLI 命令](cli.md)
-- [服务模式](service.md)
-- [故障排查](troubleshooting.md)
-- [English](en/limits.md)
+- [CLI 命令](./cli.md)
+- [服务模式](./service.md)
+- [故障排查](./troubleshooting.md)
+- [English](./en/limits.md)

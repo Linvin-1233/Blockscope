@@ -1,6 +1,6 @@
 # CLI 命令
 
-`blockscope` 的构建和路径说明见 [安装与快速开始](getting-started.md)。
+`blockscope` 的构建和路径说明见 [安装与快速开始](./getting-started.md)。
 
 ## 命令总览
 
@@ -81,8 +81,8 @@ blockscope capacity --json
 
 ## 相关文档
 
-- [材质与资源包](materials.md)
-- [LOD 与大结构](lod.md)
-- [限制与安全](limits.md)
-- [服务模式](service.md)
-- [English](en/cli.md)
+- [材质与资源包](./materials.md)
+- [LOD 与大结构](./lod.md)
+- [限制与安全](./limits.md)
+- [服务模式](./service.md)
+- [English](./en/cli.md)

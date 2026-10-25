@@ -72,6 +72,6 @@ blockscope supervise \
 ## 相关文档
 
 - [引擎协议 v1](../engine-protocol.md)
-- [Docker](docker.md)
-- [故障排查](troubleshooting.md)
-- [English](en/service.md)
+- [Docker](./docker.md)
+- [故障排查](./troubleshooting.md)
+- [English](./en/service.md)

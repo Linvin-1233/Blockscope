@@ -1,0 +1,46 @@
+---
+title: "Blockscope Documentation"
+description: "High-performance Minecraft .litematic schematic parser, mesh generator, and CPU software rasterizer"
+---
+
+## Welcome to Blockscope
+
+**Blockscope** is an offline, standalone Minecraft schematic inspection and rendering engine written in Rust. It turns `.litematic` files into Scene IR, generates color-block or textured meshes (OBJ/PLY), and produces orthographic preview PNGs on the CPU without requiring a GPU or a running Minecraft client.
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/user/en/getting-started">
+    Install prebuilt binaries and render your first schematic in seconds.
+  </Card>
+  <Card title="CLI Reference" icon="terminal" href="/user/en/cli">
+    Explore commands for inspecting, validating, meshing, and rendering.
+  </Card>
+  <Card title="用户指南 (中文)" icon="language" href="/user/getting-started">
+    面向部署者与开发者的完整中文指南与操作参考。
+  </Card>
+  <Card title="Technical Specs" icon="microchip" href="/rendering">
+    Deep-dive into CPU rasterization, mesh geometry, and the stdio protocol.
+  </Card>
+</CardGroup>
+
+## Core Capabilities
+
+<Steps>
+  <Step title="1. Container Parsing (Phase 1)">
+    Streaming, memory-bounded NBT reader capable of parsing `.litematic` files (v1 through v7). Reconstructs region hierarchy, resolves palettes, and normalizes block states into a queryable `Scene`.
+  </Step>
+  <Step title="2. Mesh Geometry (Phase 2)">
+    Paginates scene geometry into 16³ voxel chunks with automatic face culling, smooth ambient occlusion (AO), and quad deduplication. Exports to standard Wavefront OBJ and Stanford PLY.
+  </Step>
+  <Step title="3. CPU Rasterization (Phase 3)">
+    Custom software rasterizer rendering anti-aliased orthographic previews to RGBA PNG. Supports both built-in color-block palettes and official Java resource-pack textures without GPU dependencies.
+  </Step>
+  <Step title="4. Service Protocol (Phase 4)">
+    Single-job worker isolation with stdio JSONL wire protocol (`serve` / `supervise`), supervisor process management, and predictable error handling.
+  </Step>
+</Steps>
+
+## Navigation
+
+- **User Guide (EN)**: Comprehensive guides for installation, CLI flags, resource packs, LOD, Docker, and service mode.
+- **用户指南**: 完整的中文使用指南与排查手册。
+- **Technical Specs**: Deep dive documentation covering rendering mathematics, mesh formats, engine protocols, and deployment assets.

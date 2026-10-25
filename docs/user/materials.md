@@ -61,7 +61,7 @@ blockscope materials model.litematic --client-jar client.jar --json
 
 ## 相关文档
 
-- [CLI 命令](cli.md)
-- [限制与安全](limits.md)
-- [故障排查](troubleshooting.md)
-- [English](en/materials.md)
+- [CLI 命令](./cli.md)
+- [限制与安全](./limits.md)
+- [故障排查](./troubleshooting.md)
+- [English](./en/materials.md)

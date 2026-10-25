@@ -460,3 +460,23 @@ were fixed in 0.1.2.
 - [x] `cargo build --target x86_64-apple-darwin --bin blockscope` builds x86_64 binary on macOS.
 - [x] `npx js-yaml .github/workflows/ci.yml` and `release.yml` pass validation.
 - [x] `bash scripts/check.sh` passes format, clippy with `-D warnings`, and test suite.
+
+## Documentation: Mintlify site setup
+
+**Status:** Done.
+
+**Acceptance criteria:**
+
+- [x] Refactor `docs/` as a Mintlify documentation site with `docs.json`.
+- [x] Configure navigation tabs for User Guide (EN), 用户指南 (中文), and Technical Specs.
+- [x] Add site landing page `docs/index.mdx` with quickstart cards and core capabilities.
+- [x] Add brand assets (`docs/favicon.svg`, `docs/logo/light.svg`, `docs/logo/dark.svg`, `docs/.mintignore`).
+- [x] Fix intra-doc relative links to satisfy `mint broken-links`.
+- [x] Update root README navigation and add local preview instructions.
+
+**Verification:**
+
+- [x] `mint validate` passes with strict validation.
+- [x] `mint broken-links` passes with zero broken links.
+- [x] `mint dev --no-open` starts local preview server successfully.
+- [x] `bash scripts/check.sh` passes format, clippy, and full test suite.

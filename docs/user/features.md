@@ -51,7 +51,7 @@ Blockscope 是一个把 Minecraft `.litematic` 投影文件渲染成 PNG 的
 
 ## 下一步
 
-- [安装与快速开始](getting-started.md)
-- [CLI 命令](cli.md)
-- [限制与安全](limits.md)
-- [English](en/features.md)
+- [安装与快速开始](./getting-started.md)
+- [CLI 命令](./cli.md)
+- [限制与安全](./limits.md)
+- [English](./en/features.md)
