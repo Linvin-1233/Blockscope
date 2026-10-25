@@ -109,15 +109,8 @@ Both exporters are deterministic: the same mesh produces identical bytes.
 
 ## CLI
 
-```powershell
-cargo run -p blockscope-cli -- mesh path\to\model.litematic
-cargo run -p blockscope-cli -- mesh path\to\model.litematic --json
-cargo run -p blockscope-cli -- mesh path\to\model.litematic --obj out.obj
-cargo run -p blockscope-cli -- mesh path\to\model.litematic --ply out.ply
-```
-
-`--json` prints `MeshStatistics` with pages, quads, vertices, visited/rendered
-blocks, unknown blocks, and layer counts.
+For CLI invocation and mesh export options (`--obj`, `--ply`, `--json`), see
+[CLI Reference - mesh](./user/en/cli.md).
 
 ## Partial Shapes
 

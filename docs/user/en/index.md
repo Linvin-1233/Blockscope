@@ -1,36 +1,20 @@
 # User Documentation
 
-This directory is for people deploying `blockscope` or integrating it into a
-service. The project [README](https://github.com/Linvin-1233/Blockscope/blob/main/README.en.md) only contains navigation,
-contribution links, and license information.
+Welcome to the Blockscope User Guide. Blockscope is an offline, standalone Minecraft
+schematic inspection and rendering engine written in Rust.
 
-## Reading Order
-1. [Features and Limitations](./features.md)
-2. [Installation and Quick Start](./getting-started.md)
-3. [CLI Reference](./cli.md)
-4. [Materials and Resource Packs](./materials.md)
-5. [LOD and Large Structures](./lod.md)
-6. [Service Mode](./service.md)
-7. [Limits and Security](./limits.md)
-8. [Docker](./docker.md)
-9. [Troubleshooting](./troubleshooting.md)
+This guide covers everything needed to install, configure, operate, and troubleshoot
+Blockscope across desktop and server environments.
 
-## Technical Documentation
+## Guide Overview
 
-- [Litematic format](../../litematic-format.md)
-- [Color-block mesh](../../mesh-geometry.md)
-- [CPU rendering](../../rendering.md)
-- [Resource-pack materials](../../textures.md)
-- [Engine protocol v1](../../engine-protocol.md)
-- [Deployment](../../deployment.md)
+- **Getting Started**: Understand [Features and Limitations](./features.md), install prebuilt binaries with [Installation and Quick Start](./getting-started.md), and explore all subcommands in the [CLI Reference](./cli.md).
+- **Materials & Large Structures**: Configure textures and client jars in [Materials and Resource Packs](./materials.md), and handle large structures efficiently using [LOD and Large Structures](./lod.md).
+- **Service & Deployment**: Run headless workers via stdin/stdout in [Service Mode](./service.md), and containerize workloads using the [Docker Guide](./docker.md).
+- **Reference & Operations**: Review resource constraints in [Limits and Security](./limits.md), and resolve issues with the [Troubleshooting Guide](./troubleshooting.md).
 
-## Project Documentation
+## Project Links
 
-- [Contributing](https://github.com/Linvin-1233/Blockscope/blob/main/CONTRIBUTING.en.md)
+- [Contributing Guidelines](https://github.com/Linvin-1233/Blockscope/blob/main/CONTRIBUTING.en.md)
 - [Code of Conduct](https://github.com/Linvin-1233/Blockscope/blob/main/CODE_OF_CONDUCT.en.md)
 - [Changelog](https://github.com/Linvin-1233/Blockscope/blob/main/CHANGELOG.en.md)
-
-## Languages
-
-- [中文](../index.md)
-- English (current)

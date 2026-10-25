@@ -480,3 +480,24 @@ were fixed in 0.1.2.
 - [x] `mint broken-links` passes with zero broken links.
 - [x] `mint dev --no-open` starts local preview server successfully.
 - [x] `bash scripts/check.sh` passes format, clippy, and full test suite.
+
+## Documentation: Deduplicate redundant content
+
+**Status:** Done.
+
+**Acceptance criteria:**
+
+- [x] Identify repetitive and redundant sections across `@docs/`.
+- [x] Prune copy-pasted prebuilt binary tables and Docker command sequences from `docs/deployment.md`, linking to canonical user guides.
+- [x] Prune duplicated CLI invocation code blocks from technical specs (`docs/rendering.md`, `docs/mesh-geometry.md`, `docs/textures.md`).
+- [x] Prune internal repository layout tables from user guides (`docs/user/features.md`, `docs/user/en/features.md`).
+- [x] Prune redundant developer CI quality-gate commands from user installation guides (`docs/user/getting-started.md`, `docs/user/en/getting-started.md`).
+- [x] Restructure flat link lists in user index landing pages (`docs/user/index.md`, `docs/user/en/index.md`) into thematic overview summaries.
+
+**Verification:**
+
+- [x] `mint validate` passes with strict validation.
+- [x] `mint broken-links` passes with zero broken links.
+- [x] `cargo fmt --all --check` passes.
+- [x] `cargo clippy --workspace --all-targets -- -D warnings` passes with zero warnings.
+- [x] `cargo test --workspace` passes all 223 tests.

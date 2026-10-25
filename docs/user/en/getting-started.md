@@ -104,27 +104,14 @@ cargo build --release -p blockscope-cli
 Artifacts:
 
 - Linux: `target/release/blockscope`
-- Windows: `../../../target/release/blockscope.exe`
+- Windows: `target/release/blockscope.exe`
 
-Add `../../../target/release` to `PATH` or use the full path.
+Add `target/release` to `PATH` or use the full path.
 
 ## Test
 
 ```bash
 cargo test --workspace
-```
-
-Full quality gate:
-
-```bash
-# Linux
-bash ./scripts/check.sh
-
-# Windows PowerShell 7+
-pwsh ./scripts/check.ps1
-
-# Windows PowerShell 5.1
-powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/check.ps1
 ```
 
 ## First Render
