@@ -461,7 +461,7 @@ were fixed in 0.1.2.
 - [x] `npx js-yaml .github/workflows/ci.yml` and `release.yml` pass validation.
 - [x] `bash scripts/check.sh` passes format, clippy with `-D warnings`, and test suite.
 
-## Documentation: Mintlify site setup
+## Feature: Terminal image rendering protocols
 
 **Status:** Done.
 
@@ -480,3 +480,11 @@ were fixed in 0.1.2.
 - [x] `mint broken-links` passes with zero broken links.
 - [x] `mint dev --no-open` starts local preview server successfully.
 - [x] `bash scripts/check.sh` passes format, clippy, and full test suite.
+- [x] Implement Kitty graphics protocol encoder (`a=T,f=100`, chunking, dimension constraints, quiet mode).
+- [x] Implement iTerm2 inline image protocol encoder (`OSC 1337;File=inline=1`, size, aspect ratio, width/height).
+- [x] Implement DEC Sixel graphics protocol encoder with color quantization, palette generation, and RLE compression.
+- [x] Implement universal Halfblocks (Unicode ▀ + ANSI 24-bit Truecolor) raster text renderer with color caching.
+- [x] Support automatic terminal protocol and dimension detection across Linux, macOS, and Windows.
+- [x] Support Windows (PowerShell, Windows Terminal, conhost) with `ENABLE_VIRTUAL_TERMINAL_PROCESSING` console mode initialization and buffer info queries.
+- [x] CLI flags added to `blockscope render`: `--terminal` (`-t`), `--terminal-protocol`, `--terminal-width`, `--terminal-height`, and `--no-file`.
+- [x] CLI aliases `preview` and `term` added for intuitive terminal previewing.

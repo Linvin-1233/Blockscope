@@ -5,7 +5,8 @@ use crate::{
 };
 use clap::Args;
 use litematic_render::{
-    LightingProfile, RenderOptions, RenderStatistics, render_mesh, render_mesh_with_textures,
+    LightingProfile, RenderOptions, RenderStatistics, TerminalOptions, TerminalProtocol,
+    detect_terminal_protocol, render_mesh, render_mesh_with_textures, render_to_terminal,
     write_png,
 };
 use std::fs::File;
@@ -53,6 +54,21 @@ pub(crate) struct RenderArgs {
     /// Print render statistics as JSON.
     #[arg(long)]
     json: bool,
+    /// Display the rendered image directly in the terminal.
+    #[arg(long, short = 't')]
+    terminal: bool,
+    /// Terminal graphics protocol: auto, kitty, iterm2, sixel, or halfblocks.
+    #[arg(long, value_name = "PROTOCOL")]
+    terminal_protocol: Option<String>,
+    /// Terminal display width in character columns.
+    #[arg(long, value_name = "COLS")]
+    terminal_width: Option<u32>,
+    /// Terminal display height in character rows.
+    #[arg(long, value_name = "ROWS")]
+    terminal_height: Option<u32>,
+    /// Skip writing output image file (useful with --terminal).
+    #[arg(long)]
+    no_file: bool,
     #[command(flatten)]
     assets: AssetArgs,
     #[command(flatten)]
@@ -84,6 +100,30 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
     let texture_filter = parse_texture_filter(&args.assets.texture_filter)?;
     let materials = load_materials(&args.assets)?;
 
+    let show_terminal = args.terminal
+        || args.terminal_protocol.is_some()
+        || args.terminal_width.is_some()
+        || args.terminal_height.is_some();
+
+    let term_options = if show_terminal {
+        let protocol = match args.terminal_protocol.as_deref() {
+            Some(p) if p.eq_ignore_ascii_case("auto") => detect_terminal_protocol(),
+            Some(p) => TerminalProtocol::parse(p).ok_or_else(|| {
+                CliError::input(format!(
+                    "INVALID_TERMINAL_PROTOCOL: unknown protocol '{p}', expected one of: auto, kitty, iterm2, sixel, halfblocks"
+                ))
+            })?,
+            None => detect_terminal_protocol(),
+        };
+        Some(TerminalOptions {
+            protocol,
+            width: args.terminal_width,
+            height: args.terminal_height,
+            ..Default::default()
+        })
+    } else {
+        None
+    };
     let PreparedScene {
         scene,
         mesh,
@@ -125,21 +165,34 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
         };
         let render_ms = render_started.elapsed().as_secs_f64() * 1000.0;
 
+        if let Some(term_options) = &term_options {
+            if args.json {
+                render_to_terminal(&output, term_options, &mut std::io::stderr())
+                    .map_err(CliError::from)?;
+            } else {
+                render_to_terminal(&output, term_options, &mut std::io::stdout())
+                    .map_err(CliError::from)?;
+            }
+        }
+
         let output_path = if view_count == 1 {
             args.output.clone()
         } else {
             output_path_for_yaw(&args.output, yaw)
         };
-        let png_started = Instant::now();
-        let file = File::create(&output_path).map_err(|error| {
-            CliError::input(format!("IO_ERROR: {}: {error}", output_path.display()))
-        })?;
-        let mut writer = BufWriter::new(file);
-        write_png(&output, &mut writer).map_err(CliError::from)?;
-        writer.flush().map_err(|error| {
-            CliError::input(format!("IO_ERROR: {}: {error}", output_path.display()))
-        })?;
-        let png_ms = png_started.elapsed().as_secs_f64() * 1000.0;
+        let mut png_ms = 0.0;
+        if !args.no_file {
+            let png_started = Instant::now();
+            let file = File::create(&output_path).map_err(|error| {
+                CliError::input(format!("IO_ERROR: {}: {error}", output_path.display()))
+            })?;
+            let mut writer = BufWriter::new(file);
+            write_png(&output, &mut writer).map_err(CliError::from)?;
+            writer.flush().map_err(|error| {
+                CliError::input(format!("IO_ERROR: {}: {error}", output_path.display()))
+            })?;
+            png_ms = png_started.elapsed().as_secs_f64() * 1000.0;
+        }
 
         results.push((output_path, output, options, render_ms, png_ms));
     }
@@ -166,7 +219,13 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
         }
     } else {
         for (path, output, options, render_ms, png_ms) in &results {
-            println!("output: {}", path.display());
+            if args.no_file {
+                if let Some(opts) = &term_options {
+                    println!("output: terminal ({})", opts.protocol.name());
+                }
+            } else {
+                println!("output: {}", path.display());
+            }
             println!("size: {}x{}", output.width, output.height);
             println!("yaw: {}, elevation: {}", options.yaw, options.elevation);
             println!("lighting: {}", options.lighting.as_str());
@@ -178,7 +237,11 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
                 output.statistics.internal_height
             );
             print_render_stats(&output.statistics);
-            println!("render: {render_ms:.1} ms, png: {png_ms:.1} ms");
+            if args.no_file {
+                println!("render: {render_ms:.1} ms");
+            } else {
+                println!("render: {render_ms:.1} ms, png: {png_ms:.1} ms");
+            }
         }
         println!("timings: parse {parse_ms:.1} ms, mesh {mesh_ms:.1} ms, total {total_ms:.1} ms");
         if factor > 1 || matches!(lod, LodMode::Auto) {
