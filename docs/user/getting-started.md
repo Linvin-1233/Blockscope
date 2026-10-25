@@ -98,27 +98,14 @@ cargo build --release -p blockscope-cli
 构建产物：
 
 - Linux：`target/release/blockscope`
-- Windows：`../../target/release/blockscope.exe`
+- Windows：`target/release/blockscope.exe`
 
-可以把 `../../target/release` 加入 `PATH`，也可以在命令中直接使用完整路径。
+可以把 `target/release` 加入 `PATH`，也可以在命令中直接使用完整路径。
 
 ## 运行测试
 
 ```bash
 cargo test --workspace
-```
-
-完整质量门禁：
-
-```bash
-# Linux
-bash ./scripts/check.sh
-
-# Windows PowerShell 7+
-pwsh ./scripts/check.ps1
-
-# Windows PowerShell 5.1
-powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/check.ps1
 ```
 
 ## 第一次渲染

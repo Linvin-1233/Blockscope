@@ -4,33 +4,11 @@ Phase 3C resolves block states through a Minecraft Java resource pack, loads the
 referenced textures, and renders them on the CPU. The pack is supplied at
 runtime; no Minecraft assets are stored in this repository.
 
-## Quick Start
+## Overview
 
-Point the CLI at a client jar:
-
-```powershell
-blockscope render model.litematic `
-  --client-jar "D:\hmcl\.minecraft\versions\26.2-Fabric\26.2-Fabric.jar" `
-  --output out.png
-```
-
-Or at extracted assets:
-
-```powershell
-blockscope render model.litematic --assets D:\mc-assets --output out.png
-```
-
-Add an overlay resource pack on top of the base:
-
-```powershell
-blockscope render model.litematic `
-  --client-jar "D:\...\26.2-Fabric.jar" `
-  --resource-pack "D:\...\resourcepacks\MyPack" `
-  --output out.png
-```
-
-Without `--client-jar`, `--assets`, or `--resource-pack`, rendering stays in the
-original color-block mode.
+For end-user CLI workflows using `--client-jar`, `--assets`, and `--resource-pack`,
+see [Materials and Resource Packs](./user/en/materials.md). Without resource pack
+options, rendering defaults to the built-in color-block mode.
 
 ## Asset Layout
 
@@ -148,15 +126,9 @@ texture coordinates or materials yet; use `blockscope render` for textured outpu
 
 ## Coverage Report
 
-```powershell
-blockscope materials model.litematic `
-  --client-jar "D:\...\26.2-Fabric.jar"
-blockscope materials model.litematic --client-jar "D:\...\26.2-Fabric.jar" --json
-```
-
-The report includes per-block counts, `pack-model` / `chest` / `fallback` /
-`unknown` kinds, whether the block rendered with a texture, and missing texture
-counts.
+The `materials` command (documented in [CLI Reference](./user/en/cli.md))
+reports per-block kinds (`pack-model`, `chest`, `fallback`, `unknown`), texture
+status, and missing texture counts.
 
 On the private `四边形大宗` fixture with `26.2-Fabric.jar`:
 

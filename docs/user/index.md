@@ -1,36 +1,18 @@
 # 用户文档
 
-本目录面向使用 `blockscope` 的部署者和上层服务开发者。项目根目录的
-[README](https://github.com/Linvin-1233/Blockscope/blob/main/README.md) 只保留文档导航、贡献入口和许可证说明。
+欢迎阅读 Blockscope 用户指南。Blockscope 是一个用 Rust 编写的高性能离线 Minecraft `.litematic` 投影文件解析、网格生成与 CPU 光栅化渲染引擎。
 
-## 阅读顺序
+本指南提供在桌面和服务器环境中安装、配置、运行及排查 Blockscope 所需的全部说明。
 
-1. [功能与限制](./features.md)
-2. [安装与快速开始](./getting-started.md)
-3. [CLI 命令](./cli.md)
-4. [材质与资源包](./materials.md)
-5. [LOD 与大结构](./lod.md)
-6. [服务模式](./service.md)
-7. [限制与安全](./limits.md)
-8. [Docker](./docker.md)
-9. [故障排查](./troubleshooting.md)
+## 指南总览
 
-## 技术文档
+- **入门与概览**：了解引擎能力与边界 [功能与限制](./features.md)，按照 [安装与快速开始](./getting-started.md) 安装预编译程序，查阅 [CLI 命令](./cli.md) 了解所有子命令与参数。
+- **材质与大结构**：在 [材质与资源包](./materials.md) 中配置客户端 jar 与材质包，在 [LOD 与大结构](./lod.md) 中了解大体量结构的分级渲染与降级策略。
+- **服务与容器部署**：通过 [服务模式](./service.md) 使用 stdio JSONL 协议启动长驻 worker 与 supervisor，使用 [Docker](./docker.md) 进行轻量容器化部署。
+- **参考与排查**：在 [限制与安全](./limits.md) 中了解各项安全上限与 `--force-limits`，遇到异常时查阅 [故障排查](./troubleshooting.md)。
 
-- [Litematic 格式说明](../litematic-format.md)
-- [Color-block 网格说明](../mesh-geometry.md)
-- [CPU 渲染说明](../rendering.md)
-- [资源包材质说明](../textures.md)
-- [引擎协议 v1](../engine-protocol.md)
-- [部署说明](../deployment.md)
-
-## 项目文档
+## 项目链接
 
 - [贡献指南](https://github.com/Linvin-1233/Blockscope/blob/main/CONTRIBUTING.md)
 - [行为准则](https://github.com/Linvin-1233/Blockscope/blob/main/CODE_OF_CONDUCT.md)
 - [变更日志](https://github.com/Linvin-1233/Blockscope/blob/main/CHANGELOG.md)
-
-## 语言
-
-- 中文（当前）
-- [English](./en/index.md)

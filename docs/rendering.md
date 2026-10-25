@@ -208,34 +208,9 @@ shadows, or biome tinting. It is stable and deterministic.
 Validation rejects zero dimensions, elevation beyond ±89.9°, non-finite values,
 padding that leaves no drawable area, and outputs above the pixel limit.
 
-Parser, mesh, and render caps can be disabled per invocation with
-`--force-limits`. The CLI prints `WARNING: resource limits are disabled` to
-stderr and otherwise proceeds, which is intended for offline renders of
-oversized schematics on a machine with enough memory.
-
-## CLI
-
-```powershell
-cargo run -p blockscope-cli -- render path\to\model.litematic --output out.png
-cargo run -p blockscope-cli -- render path\to\model.litematic --output out.png --width 2048 --height 2048
-cargo run -p blockscope-cli -- render path\to\model.litematic --output out.png --views 45,225
-cargo run -p blockscope-cli -- render path\to\model.litematic --output out.png --yaw 225 --elevation 35
-cargo run -p blockscope-cli -- render path\to\model.litematic --output out.png --supersample 4
-cargo run -p blockscope-cli -- render path\to\model.litematic --output out.png --threads 4
-cargo run -p blockscope-cli -- render path\to\model.litematic --output out.png --background "#202830" --lighting flat-v1
-cargo run -p blockscope-cli -- render path\to\model.litematic --output out.png `
-  --client-jar "D:\hmcl\.minecraft\versions\26.2-Fabric\26.2-Fabric.jar"
-cargo run -p blockscope-cli -- render path\to\model.litematic --output out.png --texture-filter linear
-cargo run -p blockscope-cli -- render path\to\model.litematic --output out.png --json
-```
-
-`--views` accepts comma-separated yaw angles. With one view the output path is
-used as-is; with multiple views the renderer writes `out-45.png`,
-`out-225.png`, and so on. `--background` accepts `transparent`, `#RRGGBB`, or
-`#RRGGBBAA`. `--json` prints render statistics instead of the human-readable
-summary.
-
-The human-readable output includes parse, mesh, render, PNG, and total timings.
+For CLI rendering flags, multi-view output naming, and options reference, see
+[CLI Reference - render](./user/en/cli.md). Resource limits and
+`--force-limits` behavior are detailed in [Limits and Security](./user/en/limits.md).
 
 ## Benchmark
 

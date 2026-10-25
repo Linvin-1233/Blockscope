@@ -40,21 +40,6 @@ stdio service. It does not contain a chat-platform or bot adapter.
 - Resource packs, client jars, and private `.litematic` files are not committed
 - No network listener; `serve`/`supervise` communicate over stdio only
 
-## Repository Layout
-
-| Path | Contents |
-|---|---|
-| `../../../crates/nbt` | NBT decoding, compression detection, limits |
-| `../../../crates/litematic` | `.litematic` container parsing and Scene construction |
-| `../../../crates/scene` | Scene IR, statistics, diagnostics, manifest, hash, LOD |
-| `../../../crates/material` | Blockstates/models, resource packs, PNG, tint, chest |
-| `../../../crates/mesh` | Color-block/pack meshing, culling, AO, OBJ/PLY |
-| `../../../crates/render` | CPU rasterization, tiles, supersampling, PNG |
-| `../../../crates/cli` | `blockscope` CLI, serve, supervise, capacity detection |
-| `../..` | Format, rendering, material, protocol, and deployment docs |
-| `../../../fixtures/golden` | Golden manifests and PNGs |
-| `../../../scripts` | Windows/Linux quality gates |
-
 ## Next
 
 - [Installation and Quick Start](./getting-started.md)
