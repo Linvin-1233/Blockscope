@@ -17,7 +17,7 @@ pub fn write_obj<W: Write>(mesh: &Mesh, writer: &mut W) -> io::Result<()> {
                 writeln!(writer, "v {x} {y} {z}")?;
             }
 
-            let normal = quad.vertices[0].normal;
+            let normal = quad.normal;
             writeln!(writer, "vn {} {} {}", normal[0], normal[1], normal[2])?;
             writeln!(
                 writer,
@@ -66,7 +66,7 @@ pub fn write_ply<W: Write>(mesh: &Mesh, writer: &mut W) -> io::Result<()> {
                 let x = page.origin[0] as f64 + f64::from(vertex.position[0]);
                 let y = page.origin[1] as f64 + f64::from(vertex.position[1]);
                 let z = page.origin[2] as f64 + f64::from(vertex.position[2]);
-                let [r, g, b, a] = vertex.color;
+                let [r, g, b, a] = quad.color;
                 writeln!(writer, "{x} {y} {z} {r} {g} {b} {a}")?;
             }
         }

@@ -47,7 +47,7 @@ fn single_cube_emits_six_quads() {
         let u = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
         let v = [p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]];
         assert!(
-            dot(cross(u, v), quad.vertices[0].normal) > 0.0,
+            dot(cross(u, v), quad.normal) > 0.0,
             "quad winding should match its normal"
         );
     }
@@ -140,7 +140,7 @@ fn unknown_blocks_are_counted_and_visible() {
 
     assert_eq!(mesh.statistics.quads, 6);
     assert_eq!(mesh.statistics.unknown_blocks, 1);
-    assert_eq!(mesh.pages[0].quads[0].vertices[0].color, [255, 0, 255, 255]);
+    assert_eq!(mesh.pages[0].quads[0].color, [255, 0, 255, 255]);
 }
 
 #[test]
@@ -249,15 +249,13 @@ fn ambient_occlusion_darkens_contact_vertices() {
         mesh.pages[0]
             .quads
             .iter()
-            .flat_map(|quad| &quad.vertices)
-            .any(|vertex| vertex.ambient_occlusion() < 0.99)
+            .any(|quad| (0..4).any(|index| quad.ambient_occlusion(index) < 0.99))
     );
     assert!(
         mesh.pages[0]
             .quads
             .iter()
-            .flat_map(|quad| &quad.vertices)
-            .all(|vertex| vertex.ambient_occlusion() > 0.0)
+            .all(|quad| (0..4).all(|index| quad.ambient_occlusion(index) > 0.0))
     );
 }
 
