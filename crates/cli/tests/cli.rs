@@ -535,6 +535,21 @@ fn lod_reduces_the_mesh() {
 }
 
 #[test]
+fn auto_lod_renders_when_the_scene_fits() {
+    let fixture = write_fixture(&basic_fixture());
+    let path = fixture.path().to_str().unwrap();
+
+    let output = run(&["mesh", path, "--json", "--lod", "auto"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stats: MeshStatistics = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(stats.quads > 0);
+}
+
+#[test]
 fn force_limits_prints_a_warning() {
     let fixture = write_fixture(&basic_fixture());
     let path = fixture.path().to_str().unwrap();

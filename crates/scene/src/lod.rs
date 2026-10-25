@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 const MIN_FACTOR: u32 = 2;
 const MAX_FACTOR: u32 = 16;
+const AIR: u32 = u32::MAX;
 
 /// Aggregate a scene into `factor`-sized cells for level-of-detail rendering.
 ///
@@ -41,11 +42,13 @@ pub fn aggregate(scene: &Scene, factor: u32) -> Result<Scene, SceneError> {
     let volume = u64::from(size[0]) * u64::from(size[1]) * u64::from(size[2]);
     let capacity = usize::try_from(volume).map_err(size_overflow)?;
 
+    let table = build_state_table(scene);
     let air = BlockStateKey::simple("minecraft:air");
     let mut values = Vec::with_capacity(capacity);
     let mut palette: Vec<BlockStateKey> = Vec::new();
-    let mut palette_index: HashMap<BlockStateKey, u32> = HashMap::new();
-    let mut counts: Vec<(&BlockStateKey, u32)> = Vec::new();
+    let mut palette_ids: HashMap<u32, u32> = HashMap::new();
+    let mut air_index: Option<u32> = None;
+    let mut counts: HashMap<u32, u32> = HashMap::new();
 
     for y in 0..size[1] {
         for z in 0..size[2] {
@@ -61,35 +64,42 @@ pub fn aggregate(scene: &Scene, factor: u32) -> Result<Scene, SceneError> {
                     for dz in 0..factor {
                         for dx in 0..factor {
                             let world = [base[0] + dx, base[1] + dy, base[2] + dz];
-                            let Some(state) = resolve(scene, world) else {
+                            let Some(id) = resolve_id(scene, &table, world) else {
                                 continue;
                             };
-                            if state.is_air() {
-                                continue;
-                            }
-
-                            match counts.iter_mut().find(|(key, _)| **key == *state) {
-                                Some((_, count)) => *count += 1,
-                                None => counts.push((state, 1)),
-                            }
+                            *counts.entry(id).or_insert(0) += 1;
                         }
                     }
                 }
 
                 let chosen = counts
                     .iter()
-                    .max_by(|left, right| left.1.cmp(&right.1).then_with(|| right.0.cmp(left.0)))
-                    .map(|(state, _)| (*state).clone())
-                    .unwrap_or_else(|| air.clone());
+                    .max_by(|left, right| {
+                        left.1.cmp(right.1).then_with(|| {
+                            table.states[*right.0 as usize].cmp(table.states[*left.0 as usize])
+                        })
+                    })
+                    .map(|(id, _)| *id);
 
-                let index = match palette_index.get(&chosen) {
-                    Some(index) => *index,
-                    None => {
-                        let index = u32::try_from(palette.len()).map_err(size_overflow)?;
-                        palette.push(chosen.clone());
-                        palette_index.insert(chosen, index);
-                        index
-                    }
+                let index = match chosen {
+                    Some(id) => match palette_ids.get(&id) {
+                        Some(index) => *index,
+                        None => {
+                            let index = u32::try_from(palette.len()).map_err(size_overflow)?;
+                            palette.push(table.states[id as usize].clone());
+                            palette_ids.insert(id, index);
+                            index
+                        }
+                    },
+                    None => match air_index {
+                        Some(index) => index,
+                        None => {
+                            let index = u32::try_from(palette.len()).map_err(size_overflow)?;
+                            palette.push(air.clone());
+                            air_index = Some(index);
+                            index
+                        }
+                    },
                 };
                 values.push(index);
             }
@@ -120,8 +130,46 @@ pub fn aggregate(scene: &Scene, factor: u32) -> Result<Scene, SceneError> {
     Scene::new(scene.metadata.clone(), vec![region], Vec::new())
 }
 
-fn resolve(scene: &Scene, world: [i64; 3]) -> Option<&BlockStateKey> {
-    for region in scene.regions.iter().rev() {
+/// Unique non-air states and a per-region mapping from palette id to state id.
+struct StateTable<'a> {
+    states: Vec<&'a BlockStateKey>,
+    region_ids: Vec<Vec<u32>>,
+}
+
+fn build_state_table(scene: &Scene) -> StateTable<'_> {
+    let mut states: Vec<&BlockStateKey> = Vec::new();
+    let mut ids: HashMap<&BlockStateKey, u32> = HashMap::new();
+    let mut region_ids = Vec::with_capacity(scene.regions.len());
+
+    for region in &scene.regions {
+        let mut local = Vec::with_capacity(region.palette.len());
+        for state in &region.palette {
+            if state.is_air() {
+                local.push(AIR);
+                continue;
+            }
+
+            let id = match ids.get(state) {
+                Some(&id) => id,
+                None => {
+                    let id = u32::try_from(states.len()).unwrap_or(AIR);
+                    if id != AIR {
+                        states.push(state);
+                        ids.insert(state, id);
+                    }
+                    id
+                }
+            };
+            local.push(id);
+        }
+        region_ids.push(local);
+    }
+
+    StateTable { states, region_ids }
+}
+
+fn resolve_id(scene: &Scene, table: &StateTable<'_>, world: [i64; 3]) -> Option<u32> {
+    for (region_index, region) in scene.regions.iter().enumerate().rev() {
         let local = [
             world[0] - region.origin[0],
             world[1] - region.origin[1],
@@ -135,13 +183,15 @@ fn resolve(scene: &Scene, world: [i64; 3]) -> Option<&BlockStateKey> {
             continue;
         }
 
-        let size_x = u64::from(region.size[0]);
-        let size_z = u64::from(region.size[2]);
-        let index = u64::try_from(local[1]).ok()? * size_x * size_z
-            + u64::try_from(local[2]).ok()? * size_x
-            + u64::try_from(local[0]).ok()?;
+        let size_x = region.size[0] as u64;
+        let size_z = region.size[2] as u64;
+        let index = local[1] as u64 * size_x * size_z + local[2] as u64 * size_x + local[0] as u64;
         let palette_id = usize::try_from(region.states.get(index)).ok()?;
-        return region.palette.get(palette_id);
+        let id = *table.region_ids.get(region_index)?.get(palette_id)?;
+        if id == AIR {
+            return None;
+        }
+        return Some(id);
     }
 
     None

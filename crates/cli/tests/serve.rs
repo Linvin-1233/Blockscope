@@ -185,6 +185,41 @@ fn serve_cache_separates_lod_levels() {
 }
 
 #[test]
+fn serve_accepts_auto_lod() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = fixture(dir.path());
+    let out_dir = dir.path().join("out");
+
+    let (mut child, mut stdin, mut lines) = start();
+    let _hello = read_json(&mut lines);
+
+    let request = json!({
+        "type": "render",
+        "id": "auto-1",
+        "input": { "path": input.display().to_string() },
+        "views": [45],
+        "width": 64,
+        "height": 64,
+        "supersample": 1,
+        "lod": "auto",
+        "outputDir": out_dir.display().to_string(),
+    });
+    send(&mut stdin, &request);
+    let first = read_json(&mut lines);
+    assert_eq!(first["ok"], true, "{first}");
+    assert_eq!(first["lod"], 1);
+    assert_eq!(first["cacheHit"], false);
+
+    send(&mut stdin, &request);
+    let second = read_json(&mut lines);
+    assert_eq!(second["cacheHit"], true);
+
+    send(&mut stdin, &json!({ "type": "shutdown" }));
+    assert_eq!(read_json(&mut lines)["type"], "bye");
+    assert!(child.wait().unwrap().success());
+}
+
+#[test]
 fn serve_reports_bad_requests_without_exiting() {
     let (mut child, mut stdin, mut lines) = start();
     let _hello = read_json(&mut lines);

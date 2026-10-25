@@ -111,9 +111,9 @@ struct MeshArgs {
     /// Mesh worker threads; 0 selects available parallelism.
     #[arg(long, default_value_t = 0)]
     threads: u32,
-    /// Level of detail factor; 1 disables it.
-    #[arg(long, default_value_t = 1)]
-    lod: u32,
+    /// Level of detail: 1 disables, 2-16 sets a factor, "auto" picks one.
+    #[arg(long, default_value = "1")]
+    lod: String,
     #[command(flatten)]
     limits: LimitArgs,
 }
@@ -185,9 +185,9 @@ struct RenderArgs {
     /// Rasterizer worker threads; 0 selects available parallelism.
     #[arg(long, default_value_t = 0)]
     threads: u32,
-    /// Level of detail factor; 1 disables it.
-    #[arg(long, default_value_t = 1)]
-    lod: u32,
+    /// Level of detail: 1 disables, 2-16 sets a factor, "auto" picks one.
+    #[arg(long, default_value = "1")]
+    lod: String,
     /// Comma-separated yaw angles, for example 45,225.
     #[arg(long)]
     views: Option<String>,
@@ -218,9 +218,9 @@ struct BenchArgs {
     /// Rasterizer worker threads; 0 selects available parallelism.
     #[arg(long, default_value_t = 0)]
     threads: u32,
-    /// Level of detail factor; 1 disables it.
-    #[arg(long, default_value_t = 1)]
-    lod: u32,
+    /// Level of detail: 1 disables, 2-16 sets a factor, "auto" picks one.
+    #[arg(long, default_value = "1")]
+    lod: String,
     /// Number of render iterations.
     #[arg(long, default_value_t = 3)]
     iterations: u32,
@@ -409,20 +409,14 @@ fn stats(args: StatsArgs) -> Result<(), CliError> {
 fn mesh(args: MeshArgs) -> Result<(), CliError> {
     warn_forced(args.limits.force_limits);
     let (_, scene) = load_scene(&args.file, args.limits.force_limits)?;
-    let scene = apply_lod(scene, args.lod)?;
-    let catalog = ColorBlockCatalog::new().map_err(CliError::internal)?;
-    let states = scene
-        .regions
-        .iter()
-        .flat_map(|region| region.palette.iter().cloned());
-    let snapshot = catalog.snapshot(states);
-    let mesh = build_mesh_parallel(
-        &scene,
-        &snapshot,
+    let lod = parse_lod(&args.lod)?;
+    let PreparedScene { mesh, .. } = prepare_scene(
+        scene,
+        None,
+        lod,
         &mesh_limits(args.limits.force_limits),
         args.threads,
-    )
-    .map_err(CliError::from)?;
+    )?;
 
     if let Some(path) = &args.obj {
         write_export(path, |writer| write_obj(&mesh, writer))?;
@@ -448,10 +442,7 @@ fn render(args: RenderArgs) -> Result<(), CliError> {
     warn_forced(args.limits.force_limits);
     let (_, scene) = load_scene(&args.file, args.limits.force_limits)?;
     let parse_ms = started.elapsed().as_secs_f64() * 1000.0;
-
-    let lod_started = Instant::now();
-    let scene = apply_lod(scene, args.lod)?;
-    let lod_ms = lod_started.elapsed().as_secs_f64() * 1000.0;
+    let lod = parse_lod(&args.lod)?;
 
     let background = parse_background(&args.background)?;
 
@@ -467,15 +458,20 @@ fn render(args: RenderArgs) -> Result<(), CliError> {
     let texture_filter = parse_texture_filter(&args.assets.texture_filter)?;
     let materials = load_materials(&args.assets)?;
 
-    let mesh_started = Instant::now();
-    let snapshot = materials.map(|materials| material_snapshot(&scene, &materials));
-    let mesh = build_scene_mesh(
-        &scene,
-        snapshot.as_ref(),
+    let PreparedScene {
+        scene,
+        mesh,
+        snapshot,
+        factor,
+        lod_ms,
+        mesh_ms,
+    } = prepare_scene(
+        scene,
+        materials.as_ref(),
+        lod,
         &mesh_limits(args.limits.force_limits),
         args.threads,
     )?;
-    let mesh_ms = mesh_started.elapsed().as_secs_f64() * 1000.0;
 
     let mut results = Vec::with_capacity(view_count);
     for yaw in views {
@@ -559,8 +555,8 @@ fn render(args: RenderArgs) -> Result<(), CliError> {
             println!("render: {render_ms:.1} ms, png: {png_ms:.1} ms");
         }
         println!("timings: parse {parse_ms:.1} ms, mesh {mesh_ms:.1} ms, total {total_ms:.1} ms");
-        if args.lod > 1 {
-            println!("lod: {lod_ms:.1} ms (factor {})", args.lod);
+        if factor > 1 || matches!(lod, LodMode::Auto) {
+            println!("lod: {lod_ms:.1} ms (factor {factor})");
         }
         if let Some(snapshot) = &snapshot {
             let diagnostics = snapshot.diagnostics();
@@ -853,20 +849,22 @@ fn bench(args: BenchArgs) -> Result<(), CliError> {
     let parse_started = Instant::now();
     let (_, scene) = load_scene(&args.file, args.limits.force_limits)?;
     let parse_ms = parse_started.elapsed().as_secs_f64() * 1000.0;
+    let lod = parse_lod(&args.lod)?;
 
-    let lod_started = Instant::now();
-    let scene = apply_lod(scene, args.lod)?;
-    let lod_ms = lod_started.elapsed().as_secs_f64() * 1000.0;
-
-    let mesh_started = Instant::now();
-    let snapshot = materials.map(|materials| material_snapshot(&scene, &materials));
-    let mesh = build_scene_mesh(
-        &scene,
-        snapshot.as_ref(),
+    let PreparedScene {
+        scene,
+        mesh,
+        snapshot,
+        factor,
+        lod_ms,
+        mesh_ms,
+    } = prepare_scene(
+        scene,
+        materials.as_ref(),
+        lod,
         &mesh_limits(args.limits.force_limits),
         args.threads,
     )?;
-    let mesh_ms = mesh_started.elapsed().as_secs_f64() * 1000.0;
 
     let mut options = RenderOptions {
         width: args.width,
@@ -927,7 +925,7 @@ fn bench(args: BenchArgs) -> Result<(), CliError> {
             "height": options.height,
             "supersample": options.supersample,
             "threads": options.threads,
-            "lod": args.lod,
+            "lod": factor,
             "parseMs": parse_ms,
             "lodMs": lod_ms,
             "meshMs": mesh_ms,
@@ -958,8 +956,8 @@ fn bench(args: BenchArgs) -> Result<(), CliError> {
             }
         );
         println!("parse: {parse_ms:.2} ms");
-        if args.lod > 1 {
-            println!("lod: {lod_ms:.2} ms (factor {})", args.lod);
+        if factor > 1 || matches!(lod, LodMode::Auto) {
+            println!("lod: {lod_ms:.2} ms (factor {factor})");
         }
         println!("mesh: {mesh_ms:.2} ms");
         print_timing("render", &render);
@@ -1057,6 +1055,136 @@ fn print_mesh_stats(statistics: &MeshStatistics) {
         "layers: opaque {} cutout {} translucent {}",
         statistics.opaque_quads, statistics.cutout_quads, statistics.translucent_quads
     );
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LodMode {
+    Fixed(u32),
+    Auto,
+}
+
+fn parse_lod(value: &str) -> Result<LodMode, CliError> {
+    if value.eq_ignore_ascii_case("auto") {
+        return Ok(LodMode::Auto);
+    }
+
+    let factor = value.parse::<u32>().map_err(|_| {
+        CliError::input(format!(
+            "INVALID_RENDER_OPTIONS: invalid lod '{value}', expected 1-16 or auto"
+        ))
+    })?;
+    if !(1..=16).contains(&factor) {
+        return Err(CliError::input(
+            "INVALID_RENDER_OPTIONS: lod must be between 1 and 16, or auto",
+        ));
+    }
+    Ok(LodMode::Fixed(factor))
+}
+
+struct PreparedScene {
+    scene: Scene,
+    mesh: Mesh,
+    snapshot: Option<MaterialSnapshot>,
+    factor: u32,
+    lod_ms: f64,
+    mesh_ms: f64,
+}
+
+fn prepare_scene(
+    scene: Scene,
+    materials: Option<&MaterialSet>,
+    lod: LodMode,
+    limits: &MeshLimits,
+    threads: u32,
+) -> Result<PreparedScene, CliError> {
+    match lod {
+        LodMode::Fixed(factor) => {
+            let lod_started = Instant::now();
+            let scene = apply_lod(scene, factor)?;
+            let lod_ms = lod_started.elapsed().as_secs_f64() * 1000.0;
+
+            let mesh_started = Instant::now();
+            let snapshot = materials.map(|materials| material_snapshot(&scene, materials));
+            let mesh = build_scene_mesh(&scene, snapshot.as_ref(), limits, threads)?;
+            let mesh_ms = mesh_started.elapsed().as_secs_f64() * 1000.0;
+
+            Ok(PreparedScene {
+                scene,
+                mesh,
+                snapshot,
+                factor,
+                lod_ms,
+                mesh_ms,
+            })
+        }
+        LodMode::Auto => prepare_auto(scene, materials, limits, threads),
+    }
+}
+
+fn prepare_auto(
+    scene: Scene,
+    materials: Option<&MaterialSet>,
+    base_limits: &MeshLimits,
+    threads: u32,
+) -> Result<PreparedScene, CliError> {
+    // Mesh plus triangle table cost roughly 600 bytes per quad. Keep 20 percent
+    // of available memory for everything else.
+    let capacity = capacity::Capacity::detect();
+    let budget_bytes = capacity.memory_available_bytes as f64 * 0.8;
+    let budget_quads = ((budget_bytes / 600.0) as usize).max(1_000_000);
+    let limits = MeshLimits {
+        max_quads: budget_quads,
+        max_vertices: budget_quads.saturating_mul(4),
+        max_pages: base_limits.max_pages,
+    };
+
+    let mut lod_total = 0.0;
+    let mut mesh_total = 0.0;
+    let mut last_error = None;
+
+    for factor in [1u32, 2, 4, 8, 16] {
+        let lod_started = Instant::now();
+        let aggregated = if factor == 1 {
+            None
+        } else {
+            Some(aggregate(&scene, factor).map_err(CliError::from)?)
+        };
+        lod_total += lod_started.elapsed().as_secs_f64() * 1000.0;
+
+        let attempt = {
+            let candidate = aggregated.as_ref().unwrap_or(&scene);
+            let snapshot = materials.map(|materials| material_snapshot(candidate, materials));
+            let mesh_started = Instant::now();
+            let result = build_scene_mesh(candidate, snapshot.as_ref(), &limits, threads);
+            mesh_total += mesh_started.elapsed().as_secs_f64() * 1000.0;
+            result.map(|mesh| (mesh, snapshot))
+        };
+
+        match attempt {
+            Ok((mesh, snapshot)) => {
+                let scene = aggregated.unwrap_or(scene);
+                return Ok(PreparedScene {
+                    scene,
+                    mesh,
+                    snapshot,
+                    factor,
+                    lod_ms: lod_total,
+                    mesh_ms: mesh_total,
+                });
+            }
+            Err(error) if is_mesh_limit_error(&error) => last_error = Some(error),
+            Err(error) => return Err(error),
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| {
+        CliError::input("MESH_LIMIT_EXCEEDED: no LOD factor fits the memory budget")
+    }))
+}
+
+fn is_mesh_limit_error(error: &CliError) -> bool {
+    error.message.starts_with("MESH_LIMIT_EXCEEDED")
+        || error.message.starts_with("PAGE_LIMIT_EXCEEDED")
 }
 
 fn apply_lod(scene: Scene, lod: u32) -> Result<Scene, CliError> {

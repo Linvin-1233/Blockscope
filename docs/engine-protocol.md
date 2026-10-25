@@ -77,7 +77,7 @@ data from the command line.
 | `format` | string | `png` | `png` only in v1 |
 | `outputDir` | string | required | Absolute directory; created if missing |
 | `threads` | integer | `0` | Mesh and rasterizer threads; `0` uses all cores |
-| `lod` | integer | `1` | `1` disables; `2..=16` aggregates cells before meshing |
+| `lod` | integer or `"auto"` | `1` | `1` disables; `2..=16` is a fixed factor; `auto` picks the smallest factor that fits the memory budget |
 | `elevation` | number | `30` | Degrees, `-89.9..=89.9` |
 
 Paths must be absolute. The supervisor resolves them before sending; relative
@@ -150,7 +150,8 @@ rasterizer mid-tile.
   same `inputHash` **and** `lod`; `parseMs`, `lodMs`, and `meshMs` are then `0`.
 - `sceneHash` describes the scene that was rendered. With `lod > 1` it is the
   aggregated scene, not the original projection.
-- `lod` echoes the effective factor.
+- `lod` echoes the effective factor. With `"lod": "auto"` the worker reports the
+  factor it chose, and the cache key stays `auto`.
 - `timings` are wall-clock aggregates for the whole job.
 - `statistics` is advisory; consumers must not depend on fields beyond
   `triangles`.

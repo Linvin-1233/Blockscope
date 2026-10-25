@@ -1,8 +1,5 @@
 use crate::capacity::Capacity;
-use crate::{
-    AssetArgs, CliError, build_scene_mesh, load_materials, material_snapshot, parse_background,
-    parse_texture_filter,
-};
+use crate::{AssetArgs, CliError, load_materials, parse_background, parse_texture_filter};
 use clap::Args;
 use litematic_core::LitematicFile;
 use litematic_material::{MaterialSet, MaterialSnapshot};
@@ -42,6 +39,7 @@ pub struct ServeArgs {
 #[derive(Clone)]
 struct CachedScene {
     hash: String,
+    lod_key: String,
     lod: u32,
     scene: Arc<Scene>,
     mesh: Arc<Mesh>,
@@ -53,6 +51,13 @@ struct CachedScene {
 enum Message {
     Render(Box<RenderRequest>),
     Shutdown,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum LodRequest {
+    Factor(u32),
+    Text(String),
 }
 
 #[derive(Debug, Deserialize)]
@@ -81,7 +86,7 @@ struct RenderRequest {
     #[serde(default)]
     threads: Option<u32>,
     #[serde(default)]
-    lod: Option<u32>,
+    lod: Option<LodRequest>,
     output_dir: PathBuf,
 }
 
@@ -241,25 +246,41 @@ fn process(
         )));
     }
 
-    let lod = request.lod.unwrap_or(1);
-    if !(1..=16).contains(&lod) {
-        return Err(CliError::input(
-            "INVALID_RENDER_OPTIONS: lod must be between 1 and 16",
-        ));
-    }
+    let lod_mode = match request.lod.as_ref() {
+        None => crate::LodMode::Fixed(1),
+        Some(LodRequest::Factor(factor)) => {
+            if !(1..=16).contains(factor) {
+                return Err(CliError::input(
+                    "INVALID_RENDER_OPTIONS: lod must be between 1 and 16, or auto",
+                ));
+            }
+            crate::LodMode::Fixed(*factor)
+        }
+        Some(LodRequest::Text(text)) if text.eq_ignore_ascii_case("auto") => crate::LodMode::Auto,
+        Some(LodRequest::Text(text)) => {
+            return Err(CliError::input(format!(
+                "INVALID_RENDER_OPTIONS: invalid lod '{text}', expected 1-16 or auto"
+            )));
+        }
+    };
+    let lod_key = match lod_mode {
+        crate::LodMode::Fixed(factor) => factor.to_string(),
+        crate::LodMode::Auto => "auto".to_string(),
+    };
 
     let cached = cache
         .iter()
-        .position(|entry| entry.hash == input_hash && entry.lod == lod)
+        .position(|entry| entry.hash == input_hash && entry.lod_key == lod_key)
         .map(|index| cache.remove(index));
 
-    let (scene, mesh, snapshot, parse_ms, lod_ms, mesh_ms, cache_hit) = match cached {
+    let (scene, mesh, snapshot, factor, parse_ms, lod_ms, mesh_ms, cache_hit) = match cached {
         Some(entry) => {
             let scene = Arc::clone(&entry.scene);
             let mesh = Arc::clone(&entry.mesh);
             let snapshot = entry.snapshot.clone();
+            let factor = entry.lod;
             cache.insert(0, entry);
-            (scene, mesh, snapshot, 0.0, 0.0, 0.0, true)
+            (scene, mesh, snapshot, factor, 0.0, 0.0, 0.0, true)
         }
         None => {
             let parse_started = Instant::now();
@@ -272,24 +293,29 @@ fn process(
             let scene = file.into_scene().map_err(CliError::from)?;
             let parse_ms = parse_started.elapsed().as_secs_f64() * 1000.0;
 
-            let lod_started = Instant::now();
-            let scene = Arc::new(crate::apply_lod(scene, lod)?);
-            let lod_ms = lod_started.elapsed().as_secs_f64() * 1000.0;
-
-            let mesh_started = Instant::now();
-            let snapshot =
-                materials.map(|materials| Arc::new(material_snapshot(&scene, materials)));
-            let mesh = Arc::new(build_scene_mesh(
-                &scene,
-                snapshot.as_deref(),
+            let prepared = crate::prepare_scene(
+                scene,
+                materials,
+                lod_mode,
                 &crate::mesh_limits(force_limits),
                 request.threads.unwrap_or(default_threads),
-            )?);
-            let mesh_ms = mesh_started.elapsed().as_secs_f64() * 1000.0;
+            )?;
+            let crate::PreparedScene {
+                scene,
+                mesh,
+                snapshot,
+                factor,
+                lod_ms,
+                mesh_ms,
+            } = prepared;
 
+            let scene = Arc::new(scene);
+            let mesh = Arc::new(mesh);
+            let snapshot = snapshot.map(Arc::new);
             let entry = CachedScene {
                 hash: input_hash.clone(),
-                lod,
+                lod_key,
+                lod: factor,
                 scene: Arc::clone(&scene),
                 mesh: Arc::clone(&mesh),
                 snapshot: snapshot.clone(),
@@ -299,7 +325,9 @@ fn process(
                 cache.truncate(cache_limit);
             }
 
-            (scene, mesh, snapshot, parse_ms, lod_ms, mesh_ms, false)
+            (
+                scene, mesh, snapshot, factor, parse_ms, lod_ms, mesh_ms, false,
+            )
         }
     };
 
@@ -404,7 +432,7 @@ fn process(
         "ok": true,
         "inputHash": input_hash,
         "sceneHash": scene.scene_hash().to_hex(),
-        "lod": lod,
+        "lod": factor,
         "cacheHit": cache_hit,
         "outputs": outputs,
         "timings": {

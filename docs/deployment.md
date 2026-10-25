@@ -54,9 +54,13 @@ For an oversized schematic on a large host:
 
 ```bash
 renderd render huge.litematic --output huge.png \
-  --lod 4 --force-limits --threads 0 \
+  --lod auto --force-limits --threads 0 \
   --client-jar /assets/client.jar
 ```
+
+`--lod auto` keeps the exact mesh when it fits and only degrades when the
+memory budget requires it. Use a fixed `--lod 2`/`4` when the output must be
+reproducible across hosts with different memory.
 
 Under the supervisor, raise the per-worker ceiling to match the chosen LOD:
 

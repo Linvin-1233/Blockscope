@@ -243,6 +243,12 @@ Measured on the 9.4M-block stress fixture (211x211x211, 1024x1024, supersample
 For oversized schematics, LOD 4 is the practical default; LOD 2 keeps more
 detail at a large memory cost.
 
+`--lod auto` starts with an exact mesh and falls back to 2, 4, 8, or 16 only
+when the quad budget does not fit. The budget is 80 percent of available memory
+divided by roughly 600 bytes per quad, so a file that can be rendered exactly
+is never degraded. On the 48 GB test host, `000003` (solid, 67M blocks) renders
+exactly in 7.5 s, while the porous `000001` falls back to LOD 2 in 12.9 s.
+
 ## Known Limitations
 
 - Multi-view output writes separate PNGs; it does not compose a contact sheet.
