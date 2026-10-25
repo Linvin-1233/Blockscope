@@ -420,5 +420,6 @@ were fixed in 0.1.2.
 - [x] `npx js-yaml` parses both workflows; `installer/blockscope.wxs` is
       well-formed XML.
 - [x] The CI `installer` job builds the MSI successfully.
-- [ ] CI verifies `ALLUSERS=2` / `MSIINSTALLPERUSER=1` and runs install,
-      `blockscope --version`, uninstall entry, `PATH`, and uninstall cleanup.
+- [x] CI verifies `ALLUSERS=2` / `MSIINSTALLPERUSER=1`, the per-user product
+      registration, and runs install, `blockscope --version`, uninstall entry,
+      `PATH`, and uninstall cleanup.
