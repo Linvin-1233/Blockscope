@@ -324,12 +324,11 @@ fn peak_rss_bytes() -> Option<u64> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos"))]
 mod tests {
     use super::*;
 
     #[test]
-    #[cfg(target_os = "macos")]
     fn peak_rss_on_macos_is_nonzero() {
         let rss = peak_rss_bytes();
         assert!(rss.is_some());
