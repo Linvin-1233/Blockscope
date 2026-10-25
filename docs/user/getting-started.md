@@ -20,6 +20,8 @@
 | Linux x86_64 | `x86_64-unknown-linux-musl` | `.tar.gz` |
 | Linux aarch64 | `aarch64-unknown-linux-musl` | `.tar.gz` |
 | Windows x86_64 | `x86_64-pc-windows-msvc` | `.msi` / `.zip` |
+| macOS aarch64 | `aarch64-apple-darwin` | `.tar.gz` |
+| macOS x86_64 | `x86_64-apple-darwin` | `.tar.gz` |
 
 文件名形如 `blockscope-v0.1.2-x86_64-unknown-linux-musl.tar.gz`，旁边有去掉扩展名
 的 `.sha256` 校验文件（如 `blockscope-v0.1.2-x86_64-unknown-linux-musl.sha256`）。
@@ -33,6 +35,18 @@ curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.1.2/bloc
 sha256sum -c blockscope-v0.1.2-x86_64-unknown-linux-musl.sha256
 tar -xzf blockscope-v0.1.2-x86_64-unknown-linux-musl.tar.gz
 ./blockscope-v0.1.2-x86_64-unknown-linux-musl/blockscope --version
+```
+
+### macOS
+
+Apple Silicon（M 系列）选择 `aarch64-apple-darwin`，Intel Mac 选择 `x86_64-apple-darwin`：
+
+```bash
+curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.1.2/blockscope-v0.1.2-aarch64-apple-darwin.tar.gz
+curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.1.2/blockscope-v0.1.2-aarch64-apple-darwin.sha256
+shasum -a 256 -c blockscope-v0.1.2-aarch64-apple-darwin.sha256
+tar -xzf blockscope-v0.1.2-aarch64-apple-darwin.tar.gz
+./blockscope-v0.1.2-aarch64-apple-darwin/blockscope --version
 ```
 
 ### Windows：MSI 安装（推荐）

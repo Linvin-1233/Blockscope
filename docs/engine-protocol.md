@@ -15,7 +15,7 @@ Windows, with a single job in flight per process.
 - `stdout` carries protocol messages only. Logs and diagnostics go to `stderr`.
 - Standard input is read as raw bytes and decoded as UTF-8; do not route it
   through a console code page.
-- v1 uses no sockets. stdio is identical on both platforms and needs no port
+- v1 uses no sockets. stdio is identical across supported platforms and needs no port
   allocation, firewall rule, or named-pipe path.
 
 ## Lifecycle
@@ -228,17 +228,17 @@ to a fresh directory or overwritten in place, and no state survives a job.
 
 ## Cross-platform rules
 
-| Concern | Linux | Windows |
-|---|---|---|
-| Protocol I/O | pipe bytes | pipe bytes |
-| Graceful stop | stdin EOF or `shutdown`, then `SIGTERM` | stdin EOF or `shutdown`, then `TerminateProcess` |
-| Kill policy | `SIGKILL` after a 10 s grace | `TerminateProcess` after a 10 s grace |
-| Child cleanup | process group (`setsid`) | Job Object with kill-on-close |
-| Peak RSS | `/proc/self/status` `VmHWM` | not reported in v1 |
-| Temp directory | `$TMPDIR` | `%TEMP%` |
-| Path separator | `/` | `/` or `\`; absolute drive paths required |
-| Non-UTF-8 paths | rejected | not possible; all paths are UTF-16, sent as UTF-8 |
-| Atomic file replace | rename | delete then rename, or `ReplaceFile` |
+| Concern | Linux | Windows | macOS |
+|---|---|---|---|
+| Protocol I/O | pipe bytes | pipe bytes | pipe bytes |
+| Graceful stop | stdin EOF or `shutdown`, then `SIGTERM` | stdin EOF or `shutdown`, then `TerminateProcess` | stdin EOF or `shutdown`, then `SIGTERM` |
+| Kill policy | `SIGKILL` after a 10 s grace | `TerminateProcess` after a 10 s grace | `SIGKILL` after a 10 s grace |
+| Child cleanup | process group (`setsid`) | Job Object with kill-on-close | process group (`setsid`) |
+| Peak RSS | `/proc/self/status` `VmHWM` | not reported in v1 | `getrusage` `ru_maxrss` |
+| Temp directory | `$TMPDIR` | `%TEMP%` | `$TMPDIR` |
+| Path separator | `/` | `/` or `\`; absolute drive paths required | `/` |
+| Non-UTF-8 paths | rejected | not possible; all paths are UTF-16, sent as UTF-8 | rejected |
+| Atomic file replace | rename | delete then rename, or `ReplaceFile` | rename |
 
 Chinese and other non-ASCII file names are supported because every path crosses
 the pipe as UTF-8. Supervisors on Windows must read the pipe as UTF-8, not
