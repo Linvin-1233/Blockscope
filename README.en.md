@@ -67,6 +67,4 @@ private `.litematic` files, or resource packs.
 
 ## License
 
-This repository does not currently contain a `LICENSE` file. Until the
-maintainer adds one, the code is all rights reserved; contact the maintainer
-before reusing it in another project.
+MIT
