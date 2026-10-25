@@ -134,11 +134,54 @@ docker-smoke tag="blockscope:local":
     docker run --rm --cpus=1 --memory=1g {{ tag }} capacity --json
     powershell -NoProfile -Command "'{`"type`":`"shutdown`"}' | docker run --rm -i --cpus=1 --memory=1g {{ tag }} serve"
 
+# Build release CLI binary with static CRT (Windows: +crt-static)
+[unix]
+build-static:
+    RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --locked -p blockscope-cli --bin blockscope
+
+# Build release CLI binary with static CRT (Windows: +crt-static)
+[windows]
+build-static:
+    powershell -NoProfile -Command "$env:RUSTFLAGS='-C target-feature=+crt-static'; cargo build --release --locked -p blockscope-cli --bin blockscope"
+
 # Build Windows MSI installer package (Windows only)
 [windows]
-msi version output="out/blockscope.msi" bin_dir="target/release":
-    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-msi.ps1 -Version {{ version }} -Output {{ output }} -BinDir {{ bin_dir }}
+build-msi out="out/blockscope-msi-check.msi" bin_dir="target/release" version="":
+    @powershell -NoProfile -ExecutionPolicy Bypass -Command "\
+        $ver = '{{ version }}'; \
+        if (-not $ver) { \
+            $ver = (Select-String -Path Cargo.toml -Pattern '^version = \"(.+)\"$').Matches[0].Groups[1].Value; \
+        }; \
+        ./scripts/build-msi.ps1 -Version $ver -BinDir '{{ bin_dir }}' -Output '{{ out }}'"
 
+# Test MSI installer lifecycle: install, verify, uninstall, cleanup (Windows only)
+[windows]
+test-msi msi="out/blockscope-msi-check.msi" log_dir="out":
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-msi.ps1 -Msi "{{ msi }}" -LogDir "{{ log_dir }}"
+
+# Verify that a git tag matches the version in Cargo.toml
+[unix]
+verify-tag tag:
+    @tag="{{ tag }}"; \
+    tag="${tag#v}"; \
+    ver=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1); \
+    if [ -z "$ver" ]; then echo "Cannot read version from Cargo.toml"; exit 1; fi; \
+    if [ "$tag" != "$ver" ]; then echo "Tag {{ tag }} does not match workspace version $ver"; exit 1; fi; \
+    echo "Tag {{ tag }} matches workspace version $ver"
+
+[windows]
+verify-tag tag:
+    @powershell -NoProfile -Command "\
+        $tag = '{{ tag }}'.TrimStart('v'); \
+        $ver = (Select-String -Path Cargo.toml -Pattern '^version = \"(.+)\"$').Matches[0].Groups[1].Value; \
+        if (-not $ver) { throw 'Cannot read version from Cargo.toml' }; \
+        if ($tag -ne $ver) { throw \"Tag {{ tag }} does not match workspace version $ver\" }; \
+        Write-Host \"Tag {{ tag }} matches workspace version $ver\""
+
+# Package and upload MSI release asset to GitHub Release (Windows only)
+[windows]
+release-msi tag:
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-msi.ps1 -Tag "{{ tag }}"
 # Remove target build artifacts
 clean:
     cargo clean
