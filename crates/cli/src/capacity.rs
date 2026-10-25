@@ -5,7 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 
 const MIB: u64 = 1024 * 1024;
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+#[cfg(test)]
 const GIB: u64 = 1024 * MIB;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 const UNLIMITED_FLOOR: u64 = 1 << 60;
@@ -154,7 +154,7 @@ fn platform_limits() -> Limits {
     };
 
     let cpu_quota_milli =
-        read_first(&cpu_paths("cpu.max"), parse_cpu_max).or_else(|| read_v1_cpu_quota());
+        read_first(&cpu_paths("cpu.max"), parse_cpu_max).or_else(read_v1_cpu_quota);
 
     Limits {
         memory_limit,
