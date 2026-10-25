@@ -59,6 +59,10 @@ pwsh ./scripts/check.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/check.ps1
 ```
 
+On Windows, `check.ps1` also runs clippy against the `x86_64-unknown-linux-gnu`
+target so Linux-only code is linted locally; the first run installs that target
+and needs network access.
+
 CI runs the same checks on Ubuntu and Windows. Do not skip tests, remove
 assertions, add `#[ignore]`, or weaken lints just to get a green run. If a rule
 really needs to change, explain why in the pull request.

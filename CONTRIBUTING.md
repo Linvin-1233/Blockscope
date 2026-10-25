@@ -58,6 +58,9 @@ pwsh ./scripts/check.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/check.ps1
 ```
 
+`check.ps1` 在 Windows 上还会用 `x86_64-unknown-linux-gnu` 目标再跑一遍 clippy，
+用来捕获只在 Linux 编译的代码；首次运行会自动安装该 target，需要联网。
+
 CI 会在 Ubuntu 和 Windows 上运行同样的检查。不要通过跳过测试、删除断言、
 添加 `#[ignore]` 或放宽 lint 来让检查通过；如果确实需要调整规则，请在 PR
 中说明原因。
