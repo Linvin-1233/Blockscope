@@ -5,7 +5,7 @@
 本文件记录面向用户的变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.2.0] - 2026-10-25
 
 ### Added
 
@@ -14,6 +14,7 @@
 - 多进程 supervisor 在 macOS 上通过 `proc_pidinfo` 监控子进程实际物理内存（RSS）并执行内存上限保护。
 - `bench` 命令在 macOS 上通过 `getrusage` 报告峰值物理内存（peak RSS）。
 - CI 测试矩阵和 release 工作流增加 macOS 构建目标与产物打包。
+- `render` 支持在终端中直接显示图像：Kitty、iTerm2、Sixel 与半块字符协议，可通过 `--terminal` 使用并自动检测协议。
 
 ### Changed
 
@@ -22,6 +23,15 @@
   的渲染耗时：`DenseNonSolid` 271 ms → 147 ms，`Atrium` 77 ms → 40 ms，
   `Valkyrie` 73 ms → 30 ms。PNG 输出保持逐字节一致；`pixelsTested` 改为统计行裁剪后
   实际测试的片段数。
+- 多线程渲染进一步优化：SSAA 降采样、网格页投影、LOD 聚合和并行网格构建按核数扩展，
+  大场景与扁平结构的多核利用率更高。
+- 网格内存占用下降：`Vertex` 从 36 字节降到 16 字节，`Quad` 从 148 字节降到 88 字节
+  （约 -40% 几何内存）；`normal`、`color`、`texture`、`shade`、`ao` 从顶点移到四边形。
+  这是一次公开 API 变更，外部代码需要改读 `Quad` 上的对应字段。
+
+### Fixed
+
+- supervisor 在检查内存上限前先采样 worker RSS，避免延迟一个采样周期才触发内存保护。
 
 ## [0.1.2] - 2026-10-25
 

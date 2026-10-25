@@ -488,3 +488,18 @@ were fixed in 0.1.2.
 - [x] Support Windows (PowerShell, Windows Terminal, conhost) with `ENABLE_VIRTUAL_TERMINAL_PROCESSING` console mode initialization and buffer info queries.
 - [x] CLI flags added to `blockscope render`: `--terminal` (`-t`), `--terminal-protocol`, `--terminal-width`, `--terminal-height`, and `--no-file`.
 - [x] CLI aliases `preview` and `term` added for intuitive terminal previewing.
+
+## Release 0.2.0
+
+**Status:** Prepared, waiting for the tag.
+
+**Acceptance criteria:**
+
+- [x] Bump the workspace version from 0.1.2 to 0.2.0.
+- [x] Move changelog entries to `[0.2.0]` and add terminal rendering, parallel
+      rendering, mesh memory, and supervisor fixes.
+- [x] Update README and user-guide version references and download links to v0.2.0.
+- [x] Update golden manifest parser versions to 0.2.0.
+- [x] `cargo fmt --all --check`, workspace clippy, and workspace tests pass.
+- [ ] Run the release workflow dry-run for the macOS targets.
+- [ ] Tag `v0.2.0` and publish the release assets.

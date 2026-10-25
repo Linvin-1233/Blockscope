@@ -5,7 +5,8 @@
 User-facing changes are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
-## [Unreleased]
+
+## [0.2.0] - 2026-10-25
 
 ### Added
 
@@ -14,6 +15,7 @@ User-facing changes are recorded here. The format follows
 - Supervisor process RSS monitoring on macOS via `proc_pidinfo` for memory limit enforcement.
 - `bench` peak RSS reporting on macOS via `getrusage`.
 - CI test matrix and release distribution workflow expanded to include macOS runner and targets.
+- Terminal image rendering for `render`: Kitty, iTerm2, Sixel, and half-block protocols via `--terminal`, with automatic protocol detection.
 
 ### Changed
 
@@ -24,6 +26,19 @@ User-facing changes are recorded here. The format follows
   (`DenseNonSolid`), 77 ms to 40 ms (`Atrium`), and 73 ms to 30 ms
   (`Valkyrie`). PNG output stays byte-identical; `pixelsTested` now reports the
   span fragments actually tested after row clipping.
+- Parallel rendering now scales across SSAA downsampling, mesh page projection,
+  LOD aggregation, and the parallel mesh builder, improving core utilization on
+  large and flat scenes.
+- Mesh memory use is reduced: `Vertex` shrinks from 36 to 16 bytes and `Quad`
+  from 148 to 88 bytes (about 40% less geometry memory); `normal`, `color`,
+  `texture`, `shade`, and `ao` move from the vertex to the quad. This is a
+  public API change: code that constructs `Vertex` or reads those fields must
+  read them from `Quad` instead.
+
+### Fixed
+
+- The supervisor samples worker RSS before enforcing the memory ceiling, so a
+  worker is stopped in the same sampling cycle instead of one cycle later.
 
 ## [0.1.2] - 2026-10-25
 
