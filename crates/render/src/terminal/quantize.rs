@@ -273,7 +273,7 @@ mod tests {
         assert!(quantized.palette.len() <= SIXEL_MAX_COLORS);
         assert_eq!(quantized.pixels.len(), 300);
     }
-    
+
     #[test]
     fn quantize_is_deterministic_for_median_cut() {
         let mut rgba = Vec::new();
