@@ -181,8 +181,7 @@ pub(super) fn push_page_quads(
     translucent: &mut Vec<Triangle>,
 ) {
     for quad in &page.quads {
-        let first = &quad.vertices[0];
-        let normal = first.normal;
+        let normal = quad.normal;
         if dot3(
             [
                 f64::from(normal[0]),
@@ -206,30 +205,15 @@ pub(super) fn push_page_quads(
             projected[index] = camera.project(world);
         }
 
-        // The mesh builder emits one material and light tuple per quad: all
-        // four vertices share color, normal, texture, and shade.
-        debug_assert!(
-            quad.vertices
-                .iter()
-                .all(|vertex| vertex.color == first.color
-                    && vertex.normal == first.normal
-                    && vertex.texture == first.texture
-                    && vertex.shade == first.shade)
-        );
-        let shade = if first.shade {
-            options.lighting.face_shade(first.normal)
+        let shade = if quad.shade {
+            options.lighting.face_shade(quad.normal)
         } else {
             1.0
         };
-        let color = first.color;
+        let color = quad.color;
         let ao = match options.lighting {
             LightingProfile::FlatV1 => [3u8; 4],
-            LightingProfile::SimpleAoV1 => [
-                quad.vertices[0].ao,
-                quad.vertices[1].ao,
-                quad.vertices[2].ao,
-                quad.vertices[3].ao,
-            ],
+            LightingProfile::SimpleAoV1 => quad.ao,
         };
         let uvs = [
             quad.vertices[0].uv,
@@ -237,7 +221,7 @@ pub(super) fn push_page_quads(
             quad.vertices[2].uv,
             quad.vertices[3].uv,
         ];
-        let texture = first.texture;
+        let texture = quad.texture;
         let layer = quad.layer;
         let mut keep = false;
 

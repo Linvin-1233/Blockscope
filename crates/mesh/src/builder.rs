@@ -246,7 +246,14 @@ fn build_page<C: BlockCatalog + ?Sized>(
                         } else {
                             model_quad.tint
                         };
-                        let ambient_occlusion = block.model.ambient_occlusion;
+                        let ao = if block.model.ambient_occlusion {
+                            std::array::from_fn(|index| {
+                                let corner = model_quad.vertices[index];
+                                vertex_ao(view, catalog, world, model_quad, corner)
+                            })
+                        } else {
+                            [3, 3, 3, 3]
+                        };
                         let vertices = std::array::from_fn(|index| {
                             let corner = model_quad.vertices[index];
                             Vertex {
@@ -255,20 +262,19 @@ fn build_page<C: BlockCatalog + ?Sized>(
                                     local[1] + corner[1] / 16.0,
                                     local[2] + corner[2] / 16.0,
                                 ],
-                                normal: model_quad.normal,
-                                color: color.to_array(),
                                 uv: encode_uv(model_quad.uv[index]),
-                                texture: model_quad.texture,
-                                shade: model_quad.shade,
-                                ao: if ambient_occlusion {
-                                    vertex_ao(view, catalog, world, model_quad, corner)
-                                } else {
-                                    3
-                                },
                             }
                         });
 
-                        page.quads.push(Quad { vertices, layer });
+                        page.quads.push(Quad {
+                            vertices,
+                            normal: model_quad.normal,
+                            color: color.to_array(),
+                            ao,
+                            texture: model_quad.texture,
+                            layer,
+                            shade: model_quad.shade,
+                        });
                     }
                 }
             }

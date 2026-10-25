@@ -38,19 +38,13 @@ pub fn ambient_occlusion_level(level: u8) -> f32 {
 
 /// A mesh vertex in page-local coordinates.
 ///
-/// Color, normal, texture, and shade are uniform across a quad. Texture
-/// coordinates use Q12 fixed point and ambient occlusion uses one of the four
-/// levels in [`AO_LEVELS`], which keeps the vertex compact while reconstructing
-/// the exact previous float values.
+/// Texture coordinates use Q12 fixed point. Quad-uniform attributes (normal,
+/// color, texture, layer, shade, and ambient-occlusion levels) are stored once
+/// on [`Quad`], keeping vertex storage tight at 16 bytes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Vertex {
     pub position: [f32; 3],
-    pub normal: [f32; 3],
-    pub color: [u8; 4],
     pub uv: [i16; 2],
-    pub texture: u16,
-    pub shade: bool,
-    pub ao: u8,
 }
 
 impl Vertex {
@@ -58,19 +52,25 @@ impl Vertex {
     pub fn texture_coords(&self) -> [f32; 2] {
         decode_uv(self.uv)
     }
-
-    /// Ambient-occlusion factor in the float domain.
-    pub fn ambient_occlusion(&self) -> f32 {
-        ambient_occlusion_level(self.ao)
-    }
 }
 
-/// A renderable quad with its material layer. The builder emits the same
-/// color, normal, texture, and shade on all four vertices.
+/// A renderable quad with its vertices and uniform material and lighting attributes.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Quad {
     pub vertices: [Vertex; 4],
+    pub normal: [f32; 3],
+    pub color: [u8; 4],
+    pub ao: [u8; 4],
+    pub texture: u16,
     pub layer: RenderLayer,
+    pub shade: bool,
+}
+
+impl Quad {
+    /// Ambient-occlusion factor for vertex `index` in the float domain.
+    pub fn ambient_occlusion(&self, index: usize) -> f32 {
+        ambient_occlusion_level(self.ao[index])
+    }
 }
 
 /// A 16x16x16 mesh page. Vertex positions are local to `origin`.
