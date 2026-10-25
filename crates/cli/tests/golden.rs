@@ -125,6 +125,9 @@ fn golden_manifests_match() {
 
         let expected = fs::read_to_string(&path)
             .unwrap_or_else(|_| panic!("missing golden file {}", path.display()));
+        // Line endings are not part of the manifest contract, and a Windows
+        // checkout may still hand us CRLF when core.autocrlf rewrites files.
+        let expected = expected.replace("\r\n", "\n");
         assert_eq!(json, expected, "golden mismatch for {name}");
     }
 }

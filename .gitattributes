@@ -1,0 +1,3 @@
+# Golden manifests are compared byte-for-byte with generated JSON.
+# Pin LF so Windows checkouts with core.autocrlf=true stay comparable.
+*.json text eol=lf
