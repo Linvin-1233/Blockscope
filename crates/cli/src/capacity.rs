@@ -327,7 +327,116 @@ fn platform_limits() -> Limits {
     }
 }
 
-#[cfg(not(any(target_os = "linux", windows)))]
+#[cfg(target_os = "macos")]
+fn platform_limits() -> Limits {
+    #[repr(C)]
+    struct VmStatistics64 {
+        free_count: u32,
+        active_count: u32,
+        inactive_count: u32,
+        wire_count: u32,
+        zero_fill_count: u64,
+        reactivations: u64,
+        pageins: u64,
+        pageouts: u64,
+        faults: u64,
+        cow_faults: u64,
+        lookups: u64,
+        hits: u64,
+        purges: u64,
+        purgeable_count: u32,
+        speculative_count: u32,
+        decompressions: u64,
+        compressions: u64,
+        swapins: u64,
+        swapouts: u64,
+        compressor_page_count: u32,
+        throttled_count: u32,
+        external_page_count: u32,
+        internal_page_count: u32,
+        total_uncompressed_pages_in_compressor: u64,
+    }
+
+    const HOST_VM_INFO64: i32 = 4;
+    const HOST_VM_INFO64_COUNT: u32 =
+        (std::mem::size_of::<VmStatistics64>() / std::mem::size_of::<i32>()) as u32;
+
+    unsafe extern "C" {
+        fn sysctlbyname(
+            name: *const std::ffi::c_char,
+            oldp: *mut std::ffi::c_void,
+            oldlenp: *mut usize,
+            newp: *mut std::ffi::c_void,
+            newlen: usize,
+        ) -> i32;
+        fn mach_host_self() -> u32;
+        fn host_statistics64(
+            host_priv: u32,
+            flavor: i32,
+            host_info_out: *mut std::ffi::c_void,
+            host_info_out_cnt: *mut u32,
+        ) -> i32;
+    }
+
+    let mut memsize: u64 = 0;
+    let mut len = std::mem::size_of::<u64>();
+    let ok = unsafe {
+        sysctlbyname(
+            c"hw.memsize".as_ptr(),
+            &mut memsize as *mut _ as *mut std::ffi::c_void,
+            &mut len,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if ok != 0 || memsize == 0 {
+        return Limits::default();
+    }
+
+    let mut pagesize: u64 = 0;
+    let mut ps_len = std::mem::size_of::<u64>();
+    let ps_ok = unsafe {
+        sysctlbyname(
+            c"hw.pagesize".as_ptr(),
+            &mut pagesize as *mut _ as *mut std::ffi::c_void,
+            &mut ps_len,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    let page_size = if ps_ok == 0 && pagesize > 0 {
+        pagesize
+    } else {
+        4096
+    };
+
+    let mut vm_stat: VmStatistics64 = unsafe { std::mem::zeroed() };
+    let mut count = HOST_VM_INFO64_COUNT;
+    let host = unsafe { mach_host_self() };
+    let stat_ok = unsafe {
+        host_statistics64(
+            host,
+            HOST_VM_INFO64,
+            &mut vm_stat as *mut _ as *mut std::ffi::c_void,
+            &mut count,
+        )
+    };
+
+    let memory_available = if stat_ok == 0 {
+        let free_pages = vm_stat.free_count as u64 + vm_stat.inactive_count as u64;
+        (free_pages * page_size).min(memsize)
+    } else {
+        memsize
+    };
+
+    Limits {
+        memory_limit: memsize,
+        memory_available,
+        cpu_quota_milli: None,
+    }
+}
+
+#[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
 fn platform_limits() -> Limits {
     Limits::default()
 }
@@ -406,5 +515,18 @@ mod tests {
 
         // Tiny containers still get a usable minimum.
         assert_eq!(quad_budget(256 * MIB), 1_000_000);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn detects_macos_capacity() {
+        let capacity = Capacity::detect();
+        assert_eq!(capacity.platform, "macos");
+        assert!(capacity.cores >= 1);
+        assert!(capacity.memory_limit_bytes > 0);
+        assert!(capacity.memory_available_bytes > 0);
+        assert!(capacity.memory_available_bytes <= capacity.memory_limit_bytes);
+        assert!(capacity.suggested_workers >= 1);
+        assert!(capacity.suggested_threads >= 1);
     }
 }

@@ -260,8 +260,8 @@ fn print_timing(name: &str, summary: &TimingSummary) {
     );
 }
 
-/// Peak resident set size. Linux exposes it through `/proc`; other platforms
-/// report nothing rather than guessing.
+/// Peak resident set size. Linux exposes it through `/proc`; macOS exposes it
+/// through `getrusage`; other platforms report nothing rather than guessing.
 fn peak_rss_bytes() -> Option<u64> {
     #[cfg(target_os = "linux")]
     {
@@ -280,8 +280,59 @@ fn peak_rss_bytes() -> Option<u64> {
         }
         None
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
+    {
+        #[repr(C)]
+        struct TimeVal {
+            tv_sec: usize,
+            tv_usec: i32,
+        }
+        #[repr(C)]
+        struct RUsage {
+            ru_utime: TimeVal,
+            ru_stime: TimeVal,
+            ru_maxrss: i64,
+            ru_ixrss: i64,
+            ru_idrss: i64,
+            ru_isrss: i64,
+            ru_minflt: i64,
+            ru_majflt: i64,
+            ru_nswap: i64,
+            ru_inblock: i64,
+            ru_oublock: i64,
+            ru_msgsnd: i64,
+            ru_msgrcv: i64,
+            ru_nsignals: i64,
+            ru_nvcsw: i64,
+            ru_nivcsw: i64,
+        }
+        const RUSAGE_SELF: i32 = 0;
+        unsafe extern "C" {
+            fn getrusage(who: i32, usage: *mut RUsage) -> i32;
+        }
+        let mut usage: RUsage = unsafe { std::mem::zeroed() };
+        let ret = unsafe { getrusage(RUSAGE_SELF, &mut usage) };
+        if ret == 0 && usage.ru_maxrss > 0 {
+            Some(usage.ru_maxrss as u64)
+        } else {
+            None
+        }
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn peak_rss_on_macos_is_nonzero() {
+        let rss = peak_rss_bytes();
+        assert!(rss.is_some());
+        assert!(rss.unwrap() > 0);
     }
 }
