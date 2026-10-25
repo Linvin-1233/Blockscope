@@ -1,7 +1,7 @@
 # Phase 5 Plan: Huge Structures
 
-**Status:** Planned. Phase 4 shipped (snapshot, capacity, serve, supervise,
-timeouts). This plan covers the extreme fixtures.
+**Status:** C1 and C3 implemented; C2 and C4 pending. This plan covers the
+extreme fixtures.
 
 ## Measured baseline
 
@@ -89,19 +89,34 @@ Replace it with either compact triangles or direct quad rasterization:
 **Acceptance:** peak memory per quad drops by at least 30 percent at the same
 output bytes; render time regresses by no more than 10 percent.
 
-### C3: Level of detail (required for the extreme fixtures)
+### C3: Level of detail (implemented)
 
 `000001` emits 77.6M quads, so exact rendering needs more than 13 GB before the
-triangle table. `--lod 2` or `--lod 4` merges cells before meshing:
+triangle table. `litematic_scene::aggregate` merges cells in a pure data layer,
+and `--lod N` (2..=16) applies it after parsing:
 
-- Aggregate rule: keep the highest-priority non-air state per LOD cell
-  (opaque before cutout before translucent), majority wins ties.
-- LOD is off by default and changes output; it is an explicit opt-in for
-  extreme schematics.
-- Target: LOD 4 should cut `000001` to well under 5M quads and fit in a few GB.
+- Each cell keeps the most frequent non-air state; ties use canonical order.
+- Later regions win overlaps, matching the mesh builder.
+- Output is an ordinary `Scene`, so the mesh builder and renderer are unchanged.
+- Block entities, entities, and pending ticks are dropped.
+- Off by default; opt-in for extreme schematics.
 
-**Acceptance:** `000001` renders at LOD 4 within 2 GB of mesh memory and inside
-the 10 minute budget.
+Wiring: `render`, `bench`, and `mesh` take `--lod`; the serve protocol carries
+`lod` and keys its cache by `(inputHash, lod)`; `sceneHash` in the result is the
+aggregated scene.
+
+Measured with the client jar at 1024x1024, supersample 2, 12 threads:
+
+| LOD | Quads | Triangles | Wall | Peak working set |
+|---|---|---|---|---|
+| 1 | 77.6M | - | mesh only: 27.1 s | 13.5 GB mesh |
+| 2 | 10.5M | 14.6M | 9.4 s | 5.5 GB |
+| 4 | 1.3M | 1.55M | 4.0 s | 683 MB |
+
+LOD 4 meets the 10 minute budget with a large margin. LOD 2 is viable on a
+16 GB host but not on a small VPS. The render for LOD 4 reports 18 missing
+models and 4 missing textures out of 9,190 resolved states; no magenta blocks
+appear in the output.
 
 ### C4: Capacity-aware admission
 
@@ -116,8 +131,9 @@ the same job succeeds with `--force-limits` and `--lod` on a larger machine.
 
 ## Order
 
-C1 is done. Next C2, then C3, then C4. C3 is no longer optional: `000001` cannot
-meet the 10 minute budget exactly on any realistic host.
+C1 is done. C3 is done. Remaining: C2 (lower per-quad render memory) and C4
+(capacity-aware admission). C3 already meets the 10 minute budget at LOD 4, so
+C2 is an optimisation rather than a blocker.
 
 ## Risks
 

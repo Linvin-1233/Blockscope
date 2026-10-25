@@ -50,6 +50,24 @@ thread; raising `--workers` there only splits one core and doubles memory.
 - `--force-limits`: disables parser, mesh, and render caps for every worker.
   A warning is printed once at supervisor startup and once per worker.
 
+For an oversized schematic on a large host:
+
+```bash
+renderd render huge.litematic --output huge.png \
+  --lod 4 --force-limits --threads 0 \
+  --client-jar /assets/client.jar
+```
+
+Under the supervisor, raise the per-worker ceiling to match the chosen LOD:
+
+```bash
+renderd supervise --workers 1 --threads 12 --memory 8000 \
+  --force-limits --client-jar /assets/client.jar
+```
+
+The client sends `"lod": 4` in each render request; the worker cache separates
+LOD levels, so switching LOD reparses and remeshes once.
+
 The container image never ships Minecraft assets. Mount the jar or an extracted
 `assets/` directory at runtime.
 

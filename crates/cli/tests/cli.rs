@@ -487,6 +487,54 @@ fn missing_file_exits_with_input_error() {
 }
 
 #[test]
+fn lod_reduces_the_mesh() {
+    let region = support::region_with_palette(
+        "main",
+        [0, 0, 0],
+        [4, 4, 4],
+        None,
+        &[
+            palette_entry("minecraft:air"),
+            palette_entry("minecraft:stone"),
+        ],
+        &[0x5555_5555_5555_5555, 0x5555_5555_5555_5555],
+    );
+    let bytes = litematic(
+        7,
+        None,
+        3700,
+        &metadata("lod", [4, 4, 4], 1, 64, 64),
+        &[region],
+    );
+    let fixture = write_fixture(&bytes);
+    let path = fixture.path().to_str().unwrap();
+
+    let plain_output = run(&["mesh", path, "--json"]);
+    assert!(
+        plain_output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&plain_output.stderr)
+    );
+    let plain: MeshStatistics = serde_json::from_slice(&plain_output.stdout).unwrap();
+
+    let lod_output = run(&["mesh", path, "--json", "--lod", "2"]);
+    assert!(
+        lod_output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&lod_output.stderr)
+    );
+    let lod: MeshStatistics = serde_json::from_slice(&lod_output.stdout).unwrap();
+
+    assert!(plain.quads > 0);
+    assert!(
+        lod.quads < plain.quads,
+        "lod quads {} should be below {}",
+        lod.quads,
+        plain.quads
+    );
+}
+
+#[test]
 fn force_limits_prints_a_warning() {
     let fixture = write_fixture(&basic_fixture());
     let path = fixture.path().to_str().unwrap();

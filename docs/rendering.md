@@ -221,6 +221,28 @@ cube, stairs, cutout, glass, and chest live in `fixtures/golden/render/`.
 Regenerate them with `UPDATE_GOLDEN=1` after an intentional renderer change.
 Textured goldens use project-owned synthetic assets only.
 
+## Level of Detail
+
+`--lod N` (N in 2..=16) aggregates the parsed scene into N-sized cells before
+meshing. Each cell keeps the most frequent non-air state; ties use canonical
+state order and overlapping regions keep the later region. The result is an
+ordinary scene in LOD units, so meshing and rendering are unchanged.
+
+LOD is an approximation: block entities, entities, and pending ticks are
+dropped, and small details disappear. It is opt-in and off by default.
+
+Measured on the 9.4M-block stress fixture (211x211x211, 1024x1024, supersample
+2, 12 threads, client jar):
+
+| LOD | Quads | Triangles | Wall | Peak working set |
+|---|---|---|---|---|
+| 1 (exact) | 77.6M | - | mesh only: 27.1 s | 13.5 GB mesh |
+| 2 | 10.5M | 14.6M | 9.4 s | 5.5 GB |
+| 4 | 1.3M | 1.55M | 4.0 s | 683 MB |
+
+For oversized schematics, LOD 4 is the practical default; LOD 2 keeps more
+detail at a large memory cost.
+
 ## Known Limitations
 
 - Multi-view output writes separate PNGs; it does not compose a contact sheet.

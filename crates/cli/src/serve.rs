@@ -42,6 +42,7 @@ pub struct ServeArgs {
 #[derive(Clone)]
 struct CachedScene {
     hash: String,
+    lod: u32,
     scene: Arc<Scene>,
     mesh: Arc<Mesh>,
     snapshot: Option<Arc<MaterialSnapshot>>,
@@ -79,6 +80,8 @@ struct RenderRequest {
     format: Option<String>,
     #[serde(default)]
     threads: Option<u32>,
+    #[serde(default)]
+    lod: Option<u32>,
     output_dir: PathBuf,
 }
 
@@ -150,6 +153,7 @@ fn hello(capacity: &Capacity) -> Value {
         "memoryAvailableBytes": capacity.memory_available_bytes,
         "suggestedWorkers": capacity.suggested_workers,
         "suggestedThreads": capacity.suggested_threads,
+        "defaultLod": 1,
         "defaultTier": {
             "width": capacity.default_width,
             "height": capacity.default_height,
@@ -237,18 +241,25 @@ fn process(
         )));
     }
 
+    let lod = request.lod.unwrap_or(1);
+    if !(1..=16).contains(&lod) {
+        return Err(CliError::input(
+            "INVALID_RENDER_OPTIONS: lod must be between 1 and 16",
+        ));
+    }
+
     let cached = cache
         .iter()
-        .position(|entry| entry.hash == input_hash)
+        .position(|entry| entry.hash == input_hash && entry.lod == lod)
         .map(|index| cache.remove(index));
 
-    let (scene, mesh, snapshot, parse_ms, mesh_ms, cache_hit) = match cached {
+    let (scene, mesh, snapshot, parse_ms, lod_ms, mesh_ms, cache_hit) = match cached {
         Some(entry) => {
             let scene = Arc::clone(&entry.scene);
             let mesh = Arc::clone(&entry.mesh);
             let snapshot = entry.snapshot.clone();
             cache.insert(0, entry);
-            (scene, mesh, snapshot, 0.0, 0.0, true)
+            (scene, mesh, snapshot, 0.0, 0.0, 0.0, true)
         }
         None => {
             let parse_started = Instant::now();
@@ -258,8 +269,12 @@ fn process(
                 &crate::scene_limits(force_limits),
             )
             .map_err(CliError::from)?;
-            let scene = Arc::new(file.into_scene().map_err(CliError::from)?);
+            let scene = file.into_scene().map_err(CliError::from)?;
             let parse_ms = parse_started.elapsed().as_secs_f64() * 1000.0;
+
+            let lod_started = Instant::now();
+            let scene = Arc::new(crate::apply_lod(scene, lod)?);
+            let lod_ms = lod_started.elapsed().as_secs_f64() * 1000.0;
 
             let mesh_started = Instant::now();
             let snapshot =
@@ -274,6 +289,7 @@ fn process(
 
             let entry = CachedScene {
                 hash: input_hash.clone(),
+                lod,
                 scene: Arc::clone(&scene),
                 mesh: Arc::clone(&mesh),
                 snapshot: snapshot.clone(),
@@ -283,7 +299,7 @@ fn process(
                 cache.truncate(cache_limit);
             }
 
-            (scene, mesh, snapshot, parse_ms, mesh_ms, false)
+            (scene, mesh, snapshot, parse_ms, lod_ms, mesh_ms, false)
         }
     };
 
@@ -388,10 +404,12 @@ fn process(
         "ok": true,
         "inputHash": input_hash,
         "sceneHash": scene.scene_hash().to_hex(),
+        "lod": lod,
         "cacheHit": cache_hit,
         "outputs": outputs,
         "timings": {
             "parseMs": parse_ms,
+            "lodMs": lod_ms,
             "meshMs": mesh_ms,
             "renderMs": render_total,
             "pngMs": png_total,

@@ -77,6 +77,7 @@ data from the command line.
 | `format` | string | `png` | `png` only in v1 |
 | `outputDir` | string | required | Absolute directory; created if missing |
 | `threads` | integer | `0` | Mesh and rasterizer threads; `0` uses all cores |
+| `lod` | integer | `1` | `1` disables; `2..=16` aggregates cells before meshing |
 | `elevation` | number | `30` | Degrees, `-89.9..=89.9` |
 
 Paths must be absolute. The supervisor resolves them before sending; relative
@@ -113,6 +114,8 @@ rasterizer mid-tile.
   "ok": true,
   "inputHash": "578cffa3...",
   "sceneHash": "fc8e1419...",
+  "lod": 1,
+  "cacheHit": false,
   "outputs": [
     {
       "path": "/tmp/jobs/0f8f/a-45.png",
@@ -126,6 +129,7 @@ rasterizer mid-tile.
   ],
   "timings": {
     "parseMs": 24.1,
+    "lodMs": 0.0,
     "meshMs": 148.2,
     "renderMs": 409.0,
     "pngMs": 10.4,
@@ -143,7 +147,10 @@ rasterizer mid-tile.
 - Output files are `{id}.png` for a single view and `{id}-{yaw}.png` for
   multiple views. The engine never overwrites a result from another job.
 - `cacheHit` is `true` when the worker reused a parsed scene and mesh for the
-  same `inputHash`; `parseMs` and `meshMs` are then `0`.
+  same `inputHash` **and** `lod`; `parseMs`, `lodMs`, and `meshMs` are then `0`.
+- `sceneHash` describes the scene that was rendered. With `lod > 1` it is the
+  aggregated scene, not the original projection.
+- `lod` echoes the effective factor.
 - `timings` are wall-clock aggregates for the whole job.
 - `statistics` is advisory; consumers must not depend on fields beyond
   `triangles`.

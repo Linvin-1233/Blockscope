@@ -9,7 +9,7 @@ use litematic_render::{
     Background, LightingProfile, RenderError, RenderOptions, RenderStatistics, render_mesh,
     render_mesh_with_textures, write_png,
 };
-use litematic_scene::{Manifest, Scene, sha256};
+use litematic_scene::{Manifest, Scene, SceneError, aggregate, sha256};
 use std::fmt;
 use std::fs;
 use std::fs::File;
@@ -111,6 +111,9 @@ struct MeshArgs {
     /// Mesh worker threads; 0 selects available parallelism.
     #[arg(long, default_value_t = 0)]
     threads: u32,
+    /// Level of detail factor; 1 disables it.
+    #[arg(long, default_value_t = 1)]
+    lod: u32,
     #[command(flatten)]
     limits: LimitArgs,
 }
@@ -182,6 +185,9 @@ struct RenderArgs {
     /// Rasterizer worker threads; 0 selects available parallelism.
     #[arg(long, default_value_t = 0)]
     threads: u32,
+    /// Level of detail factor; 1 disables it.
+    #[arg(long, default_value_t = 1)]
+    lod: u32,
     /// Comma-separated yaw angles, for example 45,225.
     #[arg(long)]
     views: Option<String>,
@@ -212,6 +218,9 @@ struct BenchArgs {
     /// Rasterizer worker threads; 0 selects available parallelism.
     #[arg(long, default_value_t = 0)]
     threads: u32,
+    /// Level of detail factor; 1 disables it.
+    #[arg(long, default_value_t = 1)]
+    lod: u32,
     /// Number of render iterations.
     #[arg(long, default_value_t = 3)]
     iterations: u32,
@@ -400,6 +409,7 @@ fn stats(args: StatsArgs) -> Result<(), CliError> {
 fn mesh(args: MeshArgs) -> Result<(), CliError> {
     warn_forced(args.limits.force_limits);
     let (_, scene) = load_scene(&args.file, args.limits.force_limits)?;
+    let scene = apply_lod(scene, args.lod)?;
     let catalog = ColorBlockCatalog::new().map_err(CliError::internal)?;
     let states = scene
         .regions
@@ -438,6 +448,10 @@ fn render(args: RenderArgs) -> Result<(), CliError> {
     warn_forced(args.limits.force_limits);
     let (_, scene) = load_scene(&args.file, args.limits.force_limits)?;
     let parse_ms = started.elapsed().as_secs_f64() * 1000.0;
+
+    let lod_started = Instant::now();
+    let scene = apply_lod(scene, args.lod)?;
+    let lod_ms = lod_started.elapsed().as_secs_f64() * 1000.0;
 
     let background = parse_background(&args.background)?;
 
@@ -545,6 +559,9 @@ fn render(args: RenderArgs) -> Result<(), CliError> {
             println!("render: {render_ms:.1} ms, png: {png_ms:.1} ms");
         }
         println!("timings: parse {parse_ms:.1} ms, mesh {mesh_ms:.1} ms, total {total_ms:.1} ms");
+        if args.lod > 1 {
+            println!("lod: {lod_ms:.1} ms (factor {})", args.lod);
+        }
         if let Some(snapshot) = &snapshot {
             let diagnostics = snapshot.diagnostics();
             println!(
@@ -837,6 +854,10 @@ fn bench(args: BenchArgs) -> Result<(), CliError> {
     let (_, scene) = load_scene(&args.file, args.limits.force_limits)?;
     let parse_ms = parse_started.elapsed().as_secs_f64() * 1000.0;
 
+    let lod_started = Instant::now();
+    let scene = apply_lod(scene, args.lod)?;
+    let lod_ms = lod_started.elapsed().as_secs_f64() * 1000.0;
+
     let mesh_started = Instant::now();
     let snapshot = materials.map(|materials| material_snapshot(&scene, &materials));
     let mesh = build_scene_mesh(
@@ -906,7 +927,9 @@ fn bench(args: BenchArgs) -> Result<(), CliError> {
             "height": options.height,
             "supersample": options.supersample,
             "threads": options.threads,
+            "lod": args.lod,
             "parseMs": parse_ms,
+            "lodMs": lod_ms,
             "meshMs": mesh_ms,
             "renderMs": timing_json(&render),
             "pngMs": timing_json(&png),
@@ -935,6 +958,9 @@ fn bench(args: BenchArgs) -> Result<(), CliError> {
             }
         );
         println!("parse: {parse_ms:.2} ms");
+        if args.lod > 1 {
+            println!("lod: {lod_ms:.2} ms (factor {})", args.lod);
+        }
         println!("mesh: {mesh_ms:.2} ms");
         print_timing("render", &render);
         print_timing("png", &png);
@@ -1033,6 +1059,13 @@ fn print_mesh_stats(statistics: &MeshStatistics) {
     );
 }
 
+fn apply_lod(scene: Scene, lod: u32) -> Result<Scene, CliError> {
+    if lod <= 1 {
+        return Ok(scene);
+    }
+    aggregate(&scene, lod).map_err(CliError::from)
+}
+
 fn load_scene(path: &Path, force_limits: bool) -> Result<(Vec<u8>, Scene), CliError> {
     let input = fs::read(path)
         .map_err(|error| CliError::input(format!("IO_ERROR: {}: {error}", path.display())))?;
@@ -1126,6 +1159,12 @@ impl From<RenderError> for CliError {
 
 impl From<litematic_material::MaterialError> for CliError {
     fn from(error: litematic_material::MaterialError) -> Self {
+        Self::input(error.to_string())
+    }
+}
+
+impl From<SceneError> for CliError {
+    fn from(error: SceneError) -> Self {
         Self::input(error.to_string())
     }
 }

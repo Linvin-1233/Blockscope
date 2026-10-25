@@ -155,6 +155,7 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
             "threadsPerWorker": threads,
             "queueLimit": queue_limit,
             "cacheEntries": spec.cache,
+            "defaultLod": 1,
             "timeoutSeconds": timeout.map(|value| value.as_secs()),
             "memoryLimitPerWorkerBytes": memory_limit,
             "defaultTier": {
@@ -563,9 +564,10 @@ fn read_stdin(tx: Sender<Event>) {
                     .and_then(Value::as_str)
                     .map(file_hash)
                     .unwrap_or_default();
+                let lod = value.get("lod").and_then(Value::as_u64).unwrap_or(1);
                 let _ = tx.send(Event::Request(Job {
                     id,
-                    hash,
+                    hash: format!("{hash}:{lod}"),
                     line: line.to_string(),
                     attempts: 0,
                 }));
