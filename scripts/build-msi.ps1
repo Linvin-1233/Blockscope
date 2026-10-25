@@ -5,7 +5,12 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$env:Path = "$env:USERPROFILE\.cargo\bin;$env:USERPROFILE\.dotnet\tools;$env:Path"
+$env:Path = "$env:USERPROFILE\.cargo\bin;$env:USERPROFILE\.dotnet;$env:USERPROFILE\.dotnet\tools;$env:Path"
+# A user-scoped SDK lives outside the default location, so the WiX apphost needs
+# DOTNET_ROOT to locate the runtime.
+if (-not $env:DOTNET_ROOT -and (Test-Path "$env:USERPROFILE\.dotnet\dotnet.exe")) {
+    $env:DOTNET_ROOT = "$env:USERPROFILE\.dotnet"
+}
 
 # Windows Installer versions are numeric; pre-release suffixes cannot be encoded.
 if ($Version -match '-') {
