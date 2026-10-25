@@ -11,7 +11,7 @@ It is not a Minecraft client screenshot tool: the engine parses `.litematic`
 directly and renders deterministic PNGs on the CPU without a graphical
 environment.
 
-- Version: `0.1.1`
+- Version: `0.1.2`
 - Platforms: Windows x86_64, Linux x86_64 / aarch64
 - Download: prebuilt binaries on [GitHub Releases](https://github.com/Linvin-1233/Blockscope/releases)
 - 中文: [README.md](README.md)

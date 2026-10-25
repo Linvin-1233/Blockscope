@@ -6,6 +6,16 @@ User-facing changes are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.2] - 2026-10-25
+
+### Fixed
+
+- The MSI now sets `ALLUSERS=2` and `MSIINSTALLPERUSER=1`, so it installs per
+  user even when started from an elevated shell; the uninstall entry and `PATH`
+  both belong to the current user and are removed on uninstall.
+- CI now runs an MSI install/uninstall smoke test covering the install
+  directory, uninstall entry, `PATH` entry, and file cleanup.
+
 ## [0.1.1] - 2026-10-25
 
 ### Added

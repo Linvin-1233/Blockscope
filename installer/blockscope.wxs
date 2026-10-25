@@ -17,6 +17,11 @@
     <MajorUpgrade DowngradeErrorMessage="A newer version of Blockscope is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
+    <!-- Force the per-user context even when setup runs from an elevated shell;
+         without these the same MSI can register per-machine. -->
+    <Property Id="ALLUSERS" Value="2" />
+    <Property Id="MSIINSTALLPERUSER" Value="1" />
+
     <StandardDirectory Id="LocalAppDataFolder">
       <Directory Id="ProgramsFolder" Name="Programs">
         <Directory Id="INSTALLFOLDER" Name="Blockscope" />

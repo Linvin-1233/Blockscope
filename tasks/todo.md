@@ -403,7 +403,8 @@ v1.
 
 ## Release distribution: Windows MSI
 
-**Status:** Shipped in 0.1.1. The portable zip stays available.
+**Status:** Shipped in 0.1.1; per-user scope and the install/uninstall lifecycle
+were fixed in 0.1.2.
 
 **Acceptance criteria:**
 
@@ -419,4 +420,5 @@ v1.
 - [x] `npx js-yaml` parses both workflows; `installer/blockscope.wxs` is
       well-formed XML.
 - [x] The CI `installer` job builds the MSI successfully.
-- [ ] Install, `blockscope --version`, and uninstall verified on a Windows host.
+- [ ] CI verifies `ALLUSERS=2` / `MSIINSTALLPERUSER=1` and runs install,
+      `blockscope --version`, uninstall entry, `PATH`, and uninstall cleanup.

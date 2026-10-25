@@ -5,6 +5,14 @@
 本文件记录面向用户的变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.1.2] - 2026-10-25
+
+### Fixed
+
+- MSI 显式设置 `ALLUSERS=2` 和 `MSIINSTALLPERUSER=1`：即使安装程序从管理员终端
+  启动，也按用户安装，卸载项和 `PATH` 都写入当前用户，卸载后不残留。
+- CI 增加 MSI 安装/卸载冒烟测试，验证安装目录、卸载项、`PATH` 条目和文件清理。
+
 ## [0.1.1] - 2026-10-25
 
 ### Added
