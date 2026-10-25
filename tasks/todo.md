@@ -461,7 +461,7 @@ were fixed in 0.1.2.
 - [x] `npx js-yaml .github/workflows/ci.yml` and `release.yml` pass validation.
 - [x] `bash scripts/check.sh` passes format, clippy with `-D warnings`, and test suite.
 
-## Documentation: Mintlify site setup
+## Feature: Terminal image rendering protocols
 
 **Status:** Done.
 
@@ -480,24 +480,11 @@ were fixed in 0.1.2.
 - [x] `mint broken-links` passes with zero broken links.
 - [x] `mint dev --no-open` starts local preview server successfully.
 - [x] `bash scripts/check.sh` passes format, clippy, and full test suite.
-
-## Documentation: Deduplicate redundant content
-
-**Status:** Done.
-
-**Acceptance criteria:**
-
-- [x] Identify repetitive and redundant sections across `@docs/`.
-- [x] Prune copy-pasted prebuilt binary tables and Docker command sequences from `docs/deployment.md`, linking to canonical user guides.
-- [x] Prune duplicated CLI invocation code blocks from technical specs (`docs/rendering.md`, `docs/mesh-geometry.md`, `docs/textures.md`).
-- [x] Prune internal repository layout tables from user guides (`docs/user/features.md`, `docs/user/en/features.md`).
-- [x] Prune redundant developer CI quality-gate commands from user installation guides (`docs/user/getting-started.md`, `docs/user/en/getting-started.md`).
-- [x] Restructure flat link lists in user index landing pages (`docs/user/index.md`, `docs/user/en/index.md`) into thematic overview summaries.
-
-**Verification:**
-
-- [x] `mint validate` passes with strict validation.
-- [x] `mint broken-links` passes with zero broken links.
-- [x] `cargo fmt --all --check` passes.
-- [x] `cargo clippy --workspace --all-targets -- -D warnings` passes with zero warnings.
-- [x] `cargo test --workspace` passes all 223 tests.
+- [x] Implement Kitty graphics protocol encoder (`a=T,f=100`, chunking, dimension constraints, quiet mode).
+- [x] Implement iTerm2 inline image protocol encoder (`OSC 1337;File=inline=1`, size, aspect ratio, width/height).
+- [x] Implement DEC Sixel graphics protocol encoder with color quantization, palette generation, and RLE compression.
+- [x] Implement universal Halfblocks (Unicode ▀ + ANSI 24-bit Truecolor) raster text renderer with color caching.
+- [x] Support automatic terminal protocol and dimension detection across Linux, macOS, and Windows.
+- [x] Support Windows (PowerShell, Windows Terminal, conhost) with `ENABLE_VIRTUAL_TERMINAL_PROCESSING` console mode initialization and buffer info queries.
+- [x] CLI flags added to `blockscope render`: `--terminal` (`-t`), `--terminal-protocol`, `--terminal-width`, `--terminal-height`, and `--no-file`.
+- [x] CLI aliases `preview` and `term` added for intuitive terminal previewing.

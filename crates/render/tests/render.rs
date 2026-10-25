@@ -203,6 +203,45 @@ fn parallel_tiles_match_single_thread() {
     assert_eq!(single.rgba, parallel.rgba);
     assert_eq!(single.statistics, parallel.statistics);
 }
+#[test]
+fn multi_page_parallel_render_matches_single_thread() {
+    let mut values = vec![0u32; 34 * 34];
+    for (i, v) in values.iter_mut().enumerate() {
+        if i % 3 == 0 {
+            *v = 1;
+        }
+    }
+    let scene = scene(vec![region(
+        "main",
+        [0, 0, 0],
+        [34, 34, 1],
+        &["minecraft:air", "minecraft:stone"],
+        &values,
+    )]);
+
+    let single = render(
+        &scene,
+        &RenderOptions {
+            width: 128,
+            height: 128,
+            threads: 1,
+            ..Default::default()
+        },
+    );
+    for threads in [2, 4, 8] {
+        let parallel = render(
+            &scene,
+            &RenderOptions {
+                width: 128,
+                height: 128,
+                threads,
+                ..Default::default()
+            },
+        );
+        assert_eq!(single.rgba, parallel.rgba, "threads={threads}");
+        assert_eq!(single.statistics, parallel.statistics, "threads={threads}");
+    }
+}
 
 #[test]
 fn supersampling_changes_edge_pixels() {

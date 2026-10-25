@@ -104,8 +104,8 @@ expressions as before, so rendered output is bit-identical.
 
 | Structure | Before | After |
 |---|---|---|
-| `Vertex` | 44 B | 36 B |
-| `Quad` | 180 B | 148 B |
+| `Vertex` | 36 B | 16 B |
+| `Quad` | 148 B | 88 B |
 | projected quad table entry | 200 B | 128 B |
 | translucent triangle | 160 B | 112 B |
 

@@ -81,18 +81,9 @@ fn render_mesh_internal(
     let rgba = if streaming {
         rasterize_streaming(mesh, &camera, options, &mut statistics, textures)
     } else {
-        let mut quads = Vec::new();
-        let mut translucent = Vec::new();
-        for page in &mesh.pages {
-            push_page_quads(
-                page,
-                &camera,
-                options,
-                &mut statistics,
-                &mut quads,
-                &mut translucent,
-            );
-        }
+        let threads = worker_count(options.threads, mesh.pages.len());
+        let (quads, translucent) =
+            project_mesh_pages(mesh, &camera, options, &mut statistics, threads);
         rasterize(&quads, &translucent, options, &mut statistics, textures)
     };
     Ok(RenderOutput {
@@ -101,6 +92,84 @@ fn render_mesh_internal(
         rgba,
         statistics,
     })
+}
+fn project_mesh_pages(
+    mesh: &Mesh,
+    camera: &Camera,
+    options: &RenderOptions,
+    statistics: &mut RenderStatistics,
+    threads: usize,
+) -> (Vec<QuadRender>, Vec<Triangle>) {
+    if threads <= 1 || mesh.pages.len() <= 1 {
+        let mut quads = Vec::new();
+        let mut translucent = Vec::new();
+        for page in &mesh.pages {
+            push_page_quads(
+                page,
+                camera,
+                options,
+                statistics,
+                &mut quads,
+                &mut translucent,
+            );
+        }
+        return (quads, translucent);
+    }
+
+    let workers = threads.clamp(1, mesh.pages.len());
+    let chunk_size = mesh.pages.len().div_ceil(workers);
+    let chunk_results: Vec<(Vec<QuadRender>, Vec<Triangle>, RenderStatistics)> =
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = mesh
+                .pages
+                .chunks(chunk_size)
+                .map(|chunk| {
+                    scope.spawn(move || {
+                        let mut local_quads = Vec::new();
+                        let mut local_translucent = Vec::new();
+                        let mut local_stats = RenderStatistics::default();
+                        for page in chunk {
+                            push_page_quads(
+                                page,
+                                camera,
+                                options,
+                                &mut local_stats,
+                                &mut local_quads,
+                                &mut local_translucent,
+                            );
+                        }
+                        (local_quads, local_translucent, local_stats)
+                    })
+                })
+                .collect();
+
+            handles
+                .into_iter()
+                .map(|handle| handle.join().expect("page projection worker panicked"))
+                .collect()
+        });
+
+    let total_quads: usize = chunk_results.iter().map(|(q, _, _)| q.len()).sum();
+    let total_translucent: usize = chunk_results.iter().map(|(_, t, _)| t.len()).sum();
+    let mut quads = Vec::with_capacity(total_quads);
+    let mut translucent = Vec::with_capacity(total_translucent);
+
+    for (chunk_quads, chunk_translucent, chunk_stats) in chunk_results {
+        quads.extend(chunk_quads);
+        translucent.extend(chunk_translucent);
+        merge_page_statistics(statistics, &chunk_stats);
+    }
+
+    (quads, translucent)
+}
+
+fn merge_page_statistics(target: &mut RenderStatistics, source: &RenderStatistics) {
+    target.culled_backfaces += source.culled_backfaces;
+    target.triangles += source.triangles;
+    target.opaque_triangles += source.opaque_triangles;
+    target.cutout_triangles += source.cutout_triangles;
+    target.translucent_triangles += source.translucent_triangles;
+    target.textured_triangles += source.textured_triangles;
 }
 
 pub(super) fn push_page_quads(
@@ -112,8 +181,7 @@ pub(super) fn push_page_quads(
     translucent: &mut Vec<Triangle>,
 ) {
     for quad in &page.quads {
-        let first = &quad.vertices[0];
-        let normal = first.normal;
+        let normal = quad.normal;
         if dot3(
             [
                 f64::from(normal[0]),
@@ -137,30 +205,15 @@ pub(super) fn push_page_quads(
             projected[index] = camera.project(world);
         }
 
-        // The mesh builder emits one material and light tuple per quad: all
-        // four vertices share color, normal, texture, and shade.
-        debug_assert!(
-            quad.vertices
-                .iter()
-                .all(|vertex| vertex.color == first.color
-                    && vertex.normal == first.normal
-                    && vertex.texture == first.texture
-                    && vertex.shade == first.shade)
-        );
-        let shade = if first.shade {
-            options.lighting.face_shade(first.normal)
+        let shade = if quad.shade {
+            options.lighting.face_shade(quad.normal)
         } else {
             1.0
         };
-        let color = first.color;
+        let color = quad.color;
         let ao = match options.lighting {
             LightingProfile::FlatV1 => [3u8; 4],
-            LightingProfile::SimpleAoV1 => [
-                quad.vertices[0].ao,
-                quad.vertices[1].ao,
-                quad.vertices[2].ao,
-                quad.vertices[3].ao,
-            ],
+            LightingProfile::SimpleAoV1 => quad.ao,
         };
         let uvs = [
             quad.vertices[0].uv,
@@ -168,7 +221,7 @@ pub(super) fn push_page_quads(
             quad.vertices[2].uv,
             quad.vertices[3].uv,
         ];
-        let texture = first.texture;
+        let texture = quad.texture;
         let layer = quad.layer;
         let mut keep = false;
 
@@ -349,6 +402,7 @@ fn rasterize(
             options.width,
             options.height,
             options.supersample,
+            threads,
         )
     } else {
         output

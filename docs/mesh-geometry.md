@@ -29,14 +29,17 @@ Scene
 ```text
 Vertex {
   position: [f32; 3],   // page-local
-  normal:   [f32; 3],
-  color:    [u8; 4],    // straight alpha
-  uv:       [f32; 2],   // [0,0] for color blocks
+  uv:       [i16; 2],   // Q12 fixed point
 }
 
 Quad {
   vertices: [Vertex; 4],
+  normal:   [f32; 3],
+  color:    [u8; 4],    // straight alpha
+  ao:       [u8; 4],    // 2-bit levels
+  texture:  u16,
   layer:    opaque | cutout | translucent,
+  shade:    bool,
 }
 
 Mesh {
