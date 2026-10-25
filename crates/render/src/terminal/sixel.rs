@@ -83,9 +83,11 @@ pub fn encode_sixel(
         let y0 = band * 6;
         let mut first_color_in_band = true;
 
-        for color_idx in 0..palette.len() as u8 {
-            // Check if this color is used in this 6-row band
-            let mut color_used = false;
+        // Check if this color is used in this 6-row band
+        let mut color_used = false;
+
+        for color_idx in 0..palette.len() {
+            let color_idx = color_idx as u8;
             for row in 0..6 {
                 let y = y0 + row;
                 if y >= target_h {
