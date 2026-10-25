@@ -16,12 +16,23 @@ pub fn build_mesh(
     limits: &MeshLimits,
 ) -> Result<Mesh, MeshError> {
     let view = SceneBlockView::new(scene, limits)?;
+    let keys = view.page_keys().collect::<Vec<_>>();
+    build_mesh_with_view(scene, &view, catalog, &keys, limits)
+}
+
+fn build_mesh_with_view<C: BlockCatalog + ?Sized>(
+    scene: &Scene,
+    view: &SceneBlockView<'_>,
+    catalog: &C,
+    keys: &[[i32; 3]],
+    limits: &MeshLimits,
+) -> Result<Mesh, MeshError> {
     let mut pages: BTreeMap<[i32; 3], Vec<Quad>> = BTreeMap::new();
     let mut statistics = MeshStatistics::default();
 
-    for coord in view.page_keys().collect::<Vec<_>>() {
+    for &coord in keys {
         let origin = page_origin_of(coord)?;
-        let page = build_page(scene, &view, catalog, origin)?;
+        let page = build_page(scene, view, catalog, origin)?;
         add_page(&mut pages, &mut statistics, page, limits)?;
     }
 
@@ -52,7 +63,7 @@ where
     let keys = view.page_keys().collect::<Vec<_>>();
     let workers = worker_count(threads, keys.len());
     if workers <= 1 {
-        return build_mesh(scene, catalog, limits);
+        return build_mesh_with_view(scene, &view, catalog, &keys, limits);
     }
 
     let cursor = AtomicUsize::new(0);
@@ -61,11 +72,12 @@ where
     let vertices = AtomicU64::new(0);
     let page_count = AtomicU64::new(0);
 
-    let results: Result<Vec<PageBuild>, MeshError> = thread::scope(|scope| {
+    let results: Result<Vec<WorkerBuild>, MeshError> = thread::scope(|scope| {
         let handles: Vec<_> = (0..workers)
             .map(|_| {
-                scope.spawn(|| -> Result<Vec<PageBuild>, MeshError> {
-                    let mut local = Vec::new();
+                scope.spawn(|| -> Result<WorkerBuild, MeshError> {
+                    let mut local_pages = Vec::new();
+                    let mut local_stats = MeshStatistics::default();
                     loop {
                         if abort.load(Ordering::Relaxed) {
                             break;
@@ -75,8 +87,23 @@ where
                             break;
                         };
 
-                        let origin = page_origin_of(coord)?;
-                        let page = build_page(scene, &view, catalog, origin)?;
+                        let origin = match page_origin_of(coord) {
+                            Ok(origin) => origin,
+                            Err(error) => {
+                                abort.store(true, Ordering::Relaxed);
+                                return Err(error);
+                            }
+                        };
+                        let page = match build_page(scene, &view, catalog, origin) {
+                            Ok(page) => page,
+                            Err(error) => {
+                                abort.store(true, Ordering::Relaxed);
+                                return Err(error);
+                            }
+                        };
+
+                        accumulate_statistics(&mut local_stats, &page.statistics);
+
                         if !page.quads.is_empty() {
                             let count = page.quads.len() as u64;
                             let total_quads = quads.fetch_add(count, Ordering::Relaxed) + count;
@@ -89,21 +116,25 @@ where
                             {
                                 abort.store(true, Ordering::Relaxed);
                             }
+                            local_pages.push((page.origin, page.quads));
                         }
-                        local.push(page);
                     }
-                    Ok(local)
+                    Ok(WorkerBuild {
+                        pages: local_pages,
+                        statistics: local_stats,
+                    })
                 })
             })
             .collect();
 
         let mut all = Vec::new();
         for handle in handles {
-            all.extend(handle.join().expect("mesh worker panicked")?);
+            all.push(handle.join().expect("mesh worker panicked")?);
         }
         Ok(all)
     });
 
+    let worker_results = results?;
     if abort.load(Ordering::Relaxed) {
         return Err(limit_error(
             quads.load(Ordering::Relaxed),
@@ -113,16 +144,21 @@ where
         ));
     }
 
-    let mut all = results?;
-    all.sort_by_key(|page| page.origin);
-
     let mut pages = BTreeMap::new();
     let mut statistics = MeshStatistics::default();
-    for page in all {
-        merge_page(&mut pages, &mut statistics, page);
+    for worker_build in worker_results {
+        for (origin, page_quads) in worker_build.pages {
+            pages.insert(origin, page_quads);
+        }
+        accumulate_statistics(&mut statistics, &worker_build.statistics);
     }
 
     Ok(finish(pages, statistics))
+}
+
+struct WorkerBuild {
+    pages: Vec<([i32; 3], Vec<Quad>)>,
+    statistics: MeshStatistics,
 }
 
 struct PageBuild {
@@ -282,15 +318,7 @@ fn merge_page(
     statistics: &mut MeshStatistics,
     page: PageBuild,
 ) {
-    statistics.blocks_visited += page.statistics.blocks_visited;
-    statistics.blocks_rendered += page.statistics.blocks_rendered;
-    statistics.unknown_blocks += page.statistics.unknown_blocks;
-    statistics.quads += page.statistics.quads;
-    statistics.vertices += page.statistics.vertices;
-    statistics.opaque_quads += page.statistics.opaque_quads;
-    statistics.cutout_quads += page.statistics.cutout_quads;
-    statistics.translucent_quads += page.statistics.translucent_quads;
-
+    accumulate_statistics(statistics, &page.statistics);
     if !page.quads.is_empty() {
         pages.insert(page.origin, page.quads);
     }
@@ -303,6 +331,16 @@ fn finish(pages: BTreeMap<[i32; 3], Vec<Quad>>, mut statistics: MeshStatistics) 
         .map(|(origin, quads)| MeshPage { origin, quads })
         .collect();
     Mesh { pages, statistics }
+}
+fn accumulate_statistics(target: &mut MeshStatistics, source: &MeshStatistics) {
+    target.blocks_visited += source.blocks_visited;
+    target.blocks_rendered += source.blocks_rendered;
+    target.unknown_blocks += source.unknown_blocks;
+    target.quads += source.quads;
+    target.vertices += source.vertices;
+    target.opaque_quads += source.opaque_quads;
+    target.cutout_quads += source.cutout_quads;
+    target.translucent_quads += source.translucent_quads;
 }
 
 fn limit_error(quads: u64, vertices: u64, pages: u64, limits: &MeshLimits) -> MeshError {
