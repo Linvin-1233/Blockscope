@@ -43,7 +43,8 @@ enum Command {
     Stats(StatsArgs),
     /// Build a color-block mesh and optionally export it.
     Mesh(commands::mesh::MeshArgs),
-    /// Render a color-block mesh to PNG.
+    /// Render a color-block mesh to PNG or directly to terminal graphics.
+    #[command(alias = "preview", alias = "term")]
     Render(commands::render::RenderArgs),
     /// Measure parse, mesh, render, and PNG timings.
     Bench(commands::bench::BenchArgs),

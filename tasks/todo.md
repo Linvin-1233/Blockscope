@@ -460,3 +460,26 @@ were fixed in 0.1.2.
 - [x] `cargo build --target x86_64-apple-darwin --bin blockscope` builds x86_64 binary on macOS.
 - [x] `npx js-yaml .github/workflows/ci.yml` and `release.yml` pass validation.
 - [x] `bash scripts/check.sh` passes format, clippy with `-D warnings`, and test suite.
+
+## Feature: Terminal image rendering protocols
+
+**Status:** Done.
+
+**Acceptance criteria:**
+
+- [x] Implement Kitty graphics protocol encoder (`a=T,f=100`, chunking, dimension constraints, quiet mode).
+- [x] Implement iTerm2 inline image protocol encoder (`OSC 1337;File=inline=1`, size, aspect ratio, width/height).
+- [x] Implement DEC Sixel graphics protocol encoder with color quantization, palette generation, and RLE compression.
+- [x] Implement universal Halfblocks (Unicode ▀ + ANSI 24-bit Truecolor) raster text renderer with color caching.
+- [x] Support automatic terminal protocol and dimension detection across Linux, macOS, and Windows.
+- [x] Support Windows (PowerShell, Windows Terminal, conhost) with `ENABLE_VIRTUAL_TERMINAL_PROCESSING` console mode initialization and buffer info queries.
+- [x] CLI flags added to `blockscope render`: `--terminal` (`-t`), `--terminal-protocol`, `--terminal-width`, `--terminal-height`, and `--no-file`.
+- [x] CLI aliases `preview` and `term` added for intuitive terminal previewing.
+
+**Verification:**
+
+- [x] `cargo test --workspace` passes 262 tests.
+- [x] Unit and integration tests cover all protocols in `crates/render/tests/terminal.rs` and `crates/cli/tests/cli.rs`.
+- [x] `cargo fmt --all --check` passes without diffs.
+- [x] `cargo clippy --workspace --all-targets -- -D warnings` passes without warnings.
+- [x] `bash scripts/check.sh` passes full validation suite.

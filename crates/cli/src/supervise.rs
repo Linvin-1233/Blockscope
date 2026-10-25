@@ -293,16 +293,6 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
         }
 
         if shutdown_at.is_none() {
-            enforce_limits(
-                &mut pool,
-                &mut queue,
-                &mut sticky,
-                &spec,
-                &tx,
-                &mut generation,
-                &mut out,
-            )?;
-
             if last_sample.elapsed() >= Duration::from_millis(500) {
                 last_sample = Instant::now();
                 for worker in &mut pool {
@@ -313,6 +303,16 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
                     };
                 }
             }
+
+            enforce_limits(
+                &mut pool,
+                &mut queue,
+                &mut sticky,
+                &spec,
+                &tx,
+                &mut generation,
+                &mut out,
+            )?;
         }
 
         if let Some(deadline) = shutdown_at {
