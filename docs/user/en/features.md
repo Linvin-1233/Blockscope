@@ -57,7 +57,7 @@ stdio service. It does not contain a chat-platform or bot adapter.
 
 ## Next
 
-- [Installation and Quick Start](getting-started.md)
-- [CLI Reference](cli.md)
-- [Limits and Security](limits.md)
+- [Installation and Quick Start](./getting-started.md)
+- [CLI Reference](./cli.md)
+- [Limits and Security](./limits.md)
 - [中文](../features.md)

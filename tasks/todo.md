@@ -467,6 +467,19 @@ were fixed in 0.1.2.
 
 **Acceptance criteria:**
 
+- [x] Refactor `docs/` as a Mintlify documentation site with `docs.json`.
+- [x] Configure navigation tabs for User Guide (EN), 用户指南 (中文), and Technical Specs.
+- [x] Add site landing page `docs/index.mdx` with quickstart cards and core capabilities.
+- [x] Add brand assets (`docs/favicon.svg`, `docs/logo/light.svg`, `docs/logo/dark.svg`, `docs/.mintignore`).
+- [x] Fix intra-doc relative links to satisfy `mint broken-links`.
+- [x] Update root README navigation and add local preview instructions.
+
+**Verification:**
+
+- [x] `mint validate` passes with strict validation.
+- [x] `mint broken-links` passes with zero broken links.
+- [x] `mint dev --no-open` starts local preview server successfully.
+- [x] `bash scripts/check.sh` passes format, clippy, and full test suite.
 - [x] Implement Kitty graphics protocol encoder (`a=T,f=100`, chunking, dimension constraints, quiet mode).
 - [x] Implement iTerm2 inline image protocol encoder (`OSC 1337;File=inline=1`, size, aspect ratio, width/height).
 - [x] Implement DEC Sixel graphics protocol encoder with color quantization, palette generation, and RLE compression.
@@ -475,11 +488,3 @@ were fixed in 0.1.2.
 - [x] Support Windows (PowerShell, Windows Terminal, conhost) with `ENABLE_VIRTUAL_TERMINAL_PROCESSING` console mode initialization and buffer info queries.
 - [x] CLI flags added to `blockscope render`: `--terminal` (`-t`), `--terminal-protocol`, `--terminal-width`, `--terminal-height`, and `--no-file`.
 - [x] CLI aliases `preview` and `term` added for intuitive terminal previewing.
-
-**Verification:**
-
-- [x] `cargo test --workspace` passes 262 tests.
-- [x] Unit and integration tests cover all protocols in `crates/render/tests/terminal.rs` and `crates/cli/tests/cli.rs`.
-- [x] `cargo fmt --all --check` passes without diffs.
-- [x] `cargo clippy --workspace --all-targets -- -D warnings` passes without warnings.
-- [x] `bash scripts/check.sh` passes full validation suite.

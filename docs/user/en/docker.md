@@ -57,6 +57,6 @@ See [Deployment](../../deployment.md) for the full deployment guide.
 
 ## See Also
 
-- [Service Mode](service.md)
-- [Limits and Security](limits.md)
+- [Service Mode](./service.md)
+- [Limits and Security](./limits.md)
 - [中文](../docker.md)

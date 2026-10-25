@@ -1,6 +1,6 @@
 # CLI Reference
 
-See [Installation and Quick Start](getting-started.md) for building
+See [Installation and Quick Start](./getting-started.md) for building
 `blockscope` and locating the binary.
 
 ## Commands
@@ -93,8 +93,8 @@ containers.
 
 ## See Also
 
-- [Materials and Resource Packs](materials.md)
-- [LOD and Large Structures](lod.md)
-- [Limits and Security](limits.md)
-- [Service Mode](service.md)
+- [Materials and Resource Packs](./materials.md)
+- [LOD and Large Structures](./lod.md)
+- [Limits and Security](./limits.md)
+- [Service Mode](./service.md)
 - [中文](../cli.md)
