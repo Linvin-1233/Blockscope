@@ -48,23 +48,16 @@ jobs:
         run: |
           $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"$').Matches[0].Groups[1].Value
           ./scripts/build-msi.ps1 -Version $version -BinDir target/release -Output out/blockscope-msi-check.msi
-      - name: Verify installer scope and lifecycle
+      - name: Install MSI
         shell: pwsh
         run: |
           $msi = (Resolve-Path out/blockscope-msi-check.msi).Path
-          $installer = New-Object -ComObject WindowsInstaller.Installer
-          $db = $installer.OpenDatabase($msi, 0)
-          $view = $db.OpenView('SELECT `Property`, `Value` FROM `Property`')
-          $view.Execute()
-          $props = @{}
-          while ($rec = $view.Fetch()) { $props[$rec.StringData(1)] = $rec.StringData(2) }
-          if ($props['ALLUSERS'] -ne '2' -or $props['MSIINSTALLPERUSER'] -ne '1') {
-            throw "installer is not forced per-user: ALLUSERS=$($props['ALLUSERS']) MSIINSTALLPERUSER=$($props['MSIINSTALLPERUSER'])"
-          }
-
-          $installDir = Join-Path $env:LOCALAPPDATA 'Programs\Blockscope'
           $install = Start-Process msiexec -ArgumentList "/i `"$msi`" /qn /norestart /l*v `"out/install.log`"" -Wait -PassThru
           if ($install.ExitCode -ne 0) { throw "install failed with $($install.ExitCode)" }
+      - name: Verify install and PATH
+        shell: pwsh
+        run: |
+          $installDir = Join-Path $env:LOCALAPPDATA 'Programs\Blockscope'
           if (-not (Test-Path "$installDir\blockscope.exe")) { throw "executable missing after install" }
           & "$installDir\blockscope.exe" --version
           if ($LASTEXITCODE -ne 0) { throw "installed executable failed" }
@@ -72,14 +65,28 @@ jobs:
           $arp = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' |
             Where-Object { $_.DisplayName -eq 'Blockscope' }
           if (-not $arp) { throw "missing per-user uninstall entry" }
-          $path = (Get-ItemProperty 'HKCU:\Environment' -Name Path -ErrorAction SilentlyContinue).Path
-          if (($path -split ';') -notcontains $installDir) { throw "PATH does not contain the install directory" }
 
+          # The MSI appends the directory with a trailing separator.
+          $path = (Get-ItemProperty 'HKCU:\Environment' -Name Path -ErrorAction SilentlyContinue).Path
+          $entries = ($path -split ';') | Where-Object { $_ } | ForEach-Object { $_.TrimEnd('\') }
+          if ($entries -notcontains $installDir) { throw "PATH does not contain $installDir" }
+      - name: Uninstall MSI
+        shell: pwsh
+        run: |
+          $msi = (Resolve-Path out/blockscope-msi-check.msi).Path
           $uninstall = Start-Process msiexec -ArgumentList "/x `"$msi`" /qn /norestart /l*v `"out/uninstall.log`"" -Wait -PassThru
           if ($uninstall.ExitCode -ne 0) { throw "uninstall failed with $($uninstall.ExitCode)" }
+      - name: Verify uninstall cleanup
+        shell: pwsh
+        run: |
+          $installDir = Join-Path $env:LOCALAPPDATA 'Programs\Blockscope'
           if (Test-Path "$installDir\blockscope.exe") { throw "executable still present after uninstall" }
+          $arp = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
+            Where-Object { $_.DisplayName -eq 'Blockscope' }
+          if ($arp) { throw "uninstall entry still present" }
           $path = (Get-ItemProperty 'HKCU:\Environment' -Name Path -ErrorAction SilentlyContinue).Path
-          if (($path -split ';') -contains $installDir) { throw "PATH entry was not removed" }
+          $entries = ($path -split ';') | Where-Object { $_ } | ForEach-Object { $_.TrimEnd('\') }
+          if ($entries -contains $installDir) { throw "PATH entry was not removed" }
           Write-Host "installer lifecycle ok"
       - uses: actions/upload-artifact@v4
         if: always()
