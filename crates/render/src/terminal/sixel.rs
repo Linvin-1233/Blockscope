@@ -83,11 +83,12 @@ pub fn encode_sixel(
         let y0 = band * 6;
         let mut first_color_in_band = true;
 
-        // Check if this color is used in this 6-row band
-        let mut color_used = false;
-
         for color_idx in 0..palette.len() {
             let color_idx = color_idx as u8;
+
+            // Check if this color is used in this 6-row band
+            let mut color_used = false;
+
             for row in 0..6 {
                 let y = y0 + row;
                 if y >= target_h {
@@ -171,6 +172,7 @@ pub fn encode_sixel(
 mod tests {
     use super::*;
     use crate::RenderStatistics;
+    use crate::terminal::quantize::{SIXEL_MAX_COLORS, quantize_rgba};
 
     #[test]
     fn sixel_encodes_basic_image() {
@@ -189,5 +191,40 @@ mod tests {
         assert!(s.starts_with("\x1bPq"));
         assert!(s.contains("#0;2;"));
         assert!(s.ends_with("\x1b\\\n"));
+    }
+
+    #[test]
+    fn sixel_emits_pixels_with_full_palette() {
+        let width = 20;
+        let height = 15;
+        let mut rgba = Vec::with_capacity(width * height * 4);
+        for i in 0..(width * height) {
+            // 300 distinct colors; the median cut fills all 256 palette slots.
+            rgba.extend_from_slice(&[
+                (i % 256) as u8,
+                ((i / 256) * 85) as u8,
+                ((i * 37) % 256) as u8,
+                255,
+            ]);
+        }
+
+        let output = RenderOutput {
+            width: width as u32,
+            height: height as u32,
+            rgba: rgba.clone(),
+            statistics: RenderStatistics::default(),
+        };
+
+        let quantized = quantize_rgba(&rgba);
+        assert_eq!(quantized.palette.len(), SIXEL_MAX_COLORS);
+
+        let encoded = encode_sixel(&output, &TerminalOptions::default()).unwrap();
+        let s = std::str::from_utf8(&encoded).unwrap();
+
+        // 256 '#' are palette definitions; extra ones come from pixel data.
+        assert!(
+            s.matches('#').count() > SIXEL_MAX_COLORS,
+            "sixel must emit pixel data when the palette is full"
+        );
     }
 }
