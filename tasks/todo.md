@@ -423,3 +423,19 @@ were fixed in 0.1.2.
 - [x] CI verifies `ALLUSERS=2` / `MSIINSTALLPERUSER=1`, the per-user product
       registration, and runs install, `blockscope --version`, uninstall entry,
       `PATH`, and uninstall cleanup.
+
+## Developer tooling: Justfile automation
+
+**Status:** Completed
+
+**Acceptance criteria:**
+
+- [x] Root `Justfile` provides recipes for formatting (`fmt`, `fmt-check`), linting (`clippy`, `clippy-fix`, `check-linux`), testing (`test`, `test-pkg`, `test-ignored`, `test-real-*`), running quality gates (`check`, `check-all`), building (`build`, `build-release`), executing commands (`run`, `serve`, `capacity`, `bench`, `bench-tile`), updating goldens (`golden-update`), Docker container testing (`docker-build`, `docker-smoke`), and packaging (`msi`).
+- [x] Cross-platform support for Unix and Windows shells.
+- [x] `just --fmt --check` passes cleanly.
+- [x] Documented in `AGENTS.md` and `CONTRIBUTING.md`.
+
+**Verification:**
+
+- [x] `just --list` prints all recipes and descriptions.
+- [x] `just fmt-check`, `just clippy`, `just check-linux`, `just build`, `just build-release`, `just golden-update`, and `just capacity` verified.

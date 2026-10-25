@@ -45,9 +45,12 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-或直接运行仓库脚本：
+或直接运行仓库脚本或 `just`：
 
 ```bash
+# 使用 just
+just check
+
 # Linux
 bash ./scripts/check.sh
 
@@ -57,7 +60,6 @@ pwsh ./scripts/check.ps1
 # Windows PowerShell 5.1
 powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/check.ps1
 ```
-
 `check.ps1` 在 Windows 上还会用 `x86_64-unknown-linux-gnu` 目标再跑一遍 clippy，
 用来捕获只在 Linux 编译的代码；首次运行会自动安装该 target，需要联网。
 
