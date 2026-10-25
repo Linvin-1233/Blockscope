@@ -115,7 +115,7 @@ pub fn quantize_rgba(rgba: &[u8]) -> QuantizedImage {
     let pixel_count = rgba.len() / 4;
     let mut color_histogram: HashMap<[u8; 3], u64> = HashMap::new();
 
-    for chunk in rgba.chunks_exact(4) {
+    for chunk in rgba.as_chunks::<4>().0 {
         if chunk[3] >= 128 {
             *color_histogram
                 .entry([chunk[0], chunk[1], chunk[2]])
@@ -143,7 +143,9 @@ pub fn quantize_rgba(rgba: &[u8]) -> QuantizedImage {
             .collect();
 
         let pixels = rgba
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|chunk| {
                 if chunk[3] >= 128 {
                     color_to_idx.get(&[chunk[0], chunk[1], chunk[2]]).copied()
@@ -199,7 +201,9 @@ pub fn quantize_rgba(rgba: &[u8]) -> QuantizedImage {
 
     // Map each pixel to closest palette color
     let pixels = rgba
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|chunk| {
             if chunk[3] >= 128 {
                 let rgb = [chunk[0], chunk[1], chunk[2]];
