@@ -10,7 +10,11 @@ use litematic_mesh::{Mesh, MeshPage};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Barrier, Mutex, OnceLock};
 
-const STREAM_PAGES_PER_CHUNK: usize = 64;
+/// Chunk pages by projected geometry size rather than page count: page sizes
+/// vary by two orders of magnitude between meshes, and a fixed page count
+/// spawns dozens of worker scopes (and idle barriers) for fine-grained pages
+/// while a byte-sized budget keeps the transient quad table bounded.
+const STREAM_QUADS_PER_CHUNK: usize = 600_000;
 
 pub(super) fn rasterize_streaming(
     mesh: &Mesh,
@@ -35,7 +39,9 @@ pub(super) fn rasterize_streaming(
 
     let mut translucent = Vec::new();
 
-    for pages in mesh.pages.chunks(STREAM_PAGES_PER_CHUNK) {
+    for range in chunk_ranges(&mesh.pages) {
+        let pages = &mesh.pages[range];
+
         // Each worker projects a contiguous run of pages, so merging the parts
         // in worker order keeps the draw order identical to the serial path.
         let slices = page_slices(pages, threads);
@@ -142,6 +148,27 @@ fn page_slices(pages: &[MeshPage], threads: usize) -> Vec<(usize, usize)> {
     }
     slices.push((start, pages.len()));
     slices
+}
+
+fn chunk_ranges(pages: &[MeshPage]) -> Vec<std::ops::Range<usize>> {
+    let mut ranges = Vec::new();
+    let mut start = 0;
+    let mut quads = 0;
+
+    for (index, page) in pages.iter().enumerate() {
+        quads += page.quads.len();
+        if quads >= STREAM_QUADS_PER_CHUNK {
+            ranges.push(start..index + 1);
+            start = index + 1;
+            quads = 0;
+        }
+    }
+
+    if start < pages.len() {
+        ranges.push(start..pages.len());
+    }
+
+    ranges
 }
 
 struct StreamTile {

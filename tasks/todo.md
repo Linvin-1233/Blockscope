@@ -460,3 +460,21 @@ were fixed in 0.1.2.
 - [x] `cargo build --target x86_64-apple-darwin --bin blockscope` builds x86_64 binary on macOS.
 - [x] `npx js-yaml .github/workflows/ci.yml` and `release.yml` pass validation.
 - [x] `bash scripts/check.sh` passes format, clippy with `-D warnings`, and test suite.
+
+## Renderer CPU throughput
+
+**Status:** Done.
+
+**Acceptance criteria:**
+
+- [x] Triangles rasterize only the pixels inside their per-row span instead of the bounding box.
+- [x] Streamed chunks project, bin, and rasterize on one scoped worker pool.
+- [x] Chunk size follows projected quad count so fine-grained pages do not spawn a worker scope each.
+- [x] Rendered PNGs stay byte-identical on golden scenes and the four large fixtures.
+
+**Verification:**
+
+- [x] `cargo test --workspace --release` passes; the two supervisor tests that fail on this host fail identically on `perf/mem`.
+- [x] `cargo clippy --workspace --all-targets --release -- -D warnings` and `cargo fmt --all --check` pass.
+- [x] 1024x1024, supersample 2: `DenseNonSolid` 271 → 147 ms, `Atrium` 77 → 40 ms, `Valkyrie` 73 → 30 ms.
+- [x] `cmp` reports identical PNGs for all four large fixtures at 512x512 and 1024x1024.

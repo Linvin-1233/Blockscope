@@ -140,10 +140,13 @@ pages, bins them to the tiles they touch, renders those tiles into buffers that
 stay resident for the whole image, and drops the chunk. Only one chunk of
 geometry is alive at a time. Output is byte-identical to the table path.
 
-Within a chunk the same scoped workers project contiguous page slices, bin the
-result, and rasterize the touched tiles, so projection no longer serializes the
-main thread while the workers wait. Slice and part order follow page order,
-which keeps the draw order and therefore the output deterministic.
+Chunks are sized by projected quad count rather than page count, because page
+sizes differ by orders of magnitude between meshes; a page-count cap would spawn
+a worker scope per handful of fine-grained pages. Within a chunk the same
+scoped workers project contiguous page slices, bin the result, and rasterize the
+touched tiles, so projection no longer serializes the main thread while the
+workers wait. Slice and part order follow page order, which keeps the draw order
+and therefore the output deterministic.
 
 Measured on the test host at 1024x1024 and supersample 2:
 
