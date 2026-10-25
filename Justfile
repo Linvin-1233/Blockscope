@@ -34,15 +34,7 @@ check-linux:
 
 [windows]
 check-linux:
-    @powershell -NoProfile -ExecutionPolicy Bypass -Command "\
-        $target = 'x86_64-unknown-linux-gnu'; \
-        if (Get-Command rustup -ErrorAction SilentlyContinue) { \
-            if ((rustup target list --installed) -notcontains $target) { \
-                Write-Host 'Installing x86_64-unknown-linux-gnu target...'; \
-                rustup target add $target; \
-            }; \
-        }; \
-        cargo clippy --workspace --all-targets --target $target -- -D warnings"
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-linux.ps1
 
 # Run tests across all workspace crates
 test *args:
@@ -63,7 +55,7 @@ test-real-litematic dir=env_var_or_default("LITEMATIC_FIXTURES_DIR", "") *args:
 
 [windows]
 test-real-litematic dir=env_var_or_default("LITEMATIC_FIXTURES_DIR", "") *args:
-    powershell -NoProfile -Command "$env:LITEMATIC_FIXTURES_DIR='{{ dir }}'; cargo test -p litematic-core --test real_files -- --ignored {{ args }}"
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-real.ps1 -Type litematic -Path "{{ dir }}" -Args "{{ args }}"
 
 # Run real client JAR texture extraction tests (requires MINECRAFT_CLIENT_JAR env var or jar path argument)
 [unix]
@@ -73,7 +65,7 @@ test-real-jar jar=env_var_or_default("MINECRAFT_CLIENT_JAR", "") *args:
 
 [windows]
 test-real-jar jar=env_var_or_default("MINECRAFT_CLIENT_JAR", "") *args:
-    powershell -NoProfile -Command "$env:MINECRAFT_CLIENT_JAR='{{ jar }}'; cargo test -p litematic-material --test real_jar -- --ignored {{ args }}; cargo test -p litematic-render --test real_materials -- --ignored {{ args }}"
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-real.ps1 -Type jar -Path "{{ jar }}" -Args "{{ args }}"
 
 # Run standard quality gate: format check, clippy, and tests (matches scripts/check.sh)
 check: fmt-check clippy test
@@ -117,7 +109,7 @@ golden-update:
 
 [windows]
 golden-update:
-    powershell -NoProfile -Command "$env:UPDATE_GOLDEN = '1'; cargo test -p blockscope-cli --test golden; cargo test -p litematic-render --test golden_png"
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/golden-update.ps1
 
 # Build local Docker container image
 docker-build tag="blockscope:local":
@@ -131,8 +123,7 @@ docker-smoke tag="blockscope:local":
 
 [windows]
 docker-smoke tag="blockscope:local":
-    docker run --rm --cpus=1 --memory=1g {{ tag }} capacity --json
-    powershell -NoProfile -Command "'{`"type`":`"shutdown`"}' | docker run --rm -i --cpus=1 --memory=1g {{ tag }} serve"
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/docker-smoke.ps1 -Tag "{{ tag }}"
 
 # Build release CLI binary with static CRT (Windows: +crt-static)
 [unix]
@@ -142,17 +133,12 @@ build-static:
 # Build release CLI binary with static CRT (Windows: +crt-static)
 [windows]
 build-static:
-    powershell -NoProfile -Command "$env:RUSTFLAGS='-C target-feature=+crt-static'; cargo build --release --locked -p blockscope-cli --bin blockscope"
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-static.ps1
 
 # Build Windows MSI installer package (Windows only)
 [windows]
 build-msi out="out/blockscope-msi-check.msi" bin_dir="target/release" version="":
-    @powershell -NoProfile -ExecutionPolicy Bypass -Command "\
-        $ver = '{{ version }}'; \
-        if (-not $ver) { \
-            $ver = (Select-String -Path Cargo.toml -Pattern '^version = \"(.+)\"$').Matches[0].Groups[1].Value; \
-        }; \
-        ./scripts/build-msi.ps1 -Version $ver -BinDir '{{ bin_dir }}' -Output '{{ out }}'"
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-msi.ps1 -Output "{{ out }}" -BinDir "{{ bin_dir }}" -Version "{{ version }}"
 
 # Test MSI installer lifecycle: install, verify, uninstall, cleanup (Windows only)
 [windows]
@@ -171,12 +157,7 @@ verify-tag tag:
 
 [windows]
 verify-tag tag:
-    @powershell -NoProfile -Command "\
-        $tag = '{{ tag }}'.TrimStart('v'); \
-        $ver = (Select-String -Path Cargo.toml -Pattern '^version = \"(.+)\"$').Matches[0].Groups[1].Value; \
-        if (-not $ver) { throw 'Cannot read version from Cargo.toml' }; \
-        if ($tag -ne $ver) { throw \"Tag {{ tag }} does not match workspace version $ver\" }; \
-        Write-Host \"Tag {{ tag }} matches workspace version $ver\""
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-tag.ps1 -Tag "{{ tag }}"
 
 # Package and upload MSI release asset to GitHub Release (Windows only)
 [windows]

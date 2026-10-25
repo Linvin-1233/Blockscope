@@ -1,10 +1,19 @@
 param(
-    [Parameter(Mandatory = $true)][string]$Version,
+    [string]$Version,
     [Parameter(Mandatory = $true)][string]$Output,
     [string]$BinDir = "target/release"
 )
 
 $ErrorActionPreference = "Stop"
+
+if (-not $Version) {
+    $match = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"$').Matches
+    if (-not $match) {
+        throw "Cannot read [workspace.package] version from Cargo.toml"
+    }
+    $Version = $match[0].Groups[1].Value
+}
+
 $env:Path = "$env:USERPROFILE\.cargo\bin;$env:USERPROFILE\.dotnet;$env:USERPROFILE\.dotnet\tools;$env:Path"
 # A user-scoped SDK lives outside the default location, so the WiX apphost needs
 # DOTNET_ROOT to locate the runtime.
