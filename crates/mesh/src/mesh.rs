@@ -16,6 +16,7 @@ pub const AO_LEVELS: [f32; 4] = [
 ];
 
 /// Decode a Q12 texture coordinate back to its float form.
+#[inline]
 pub fn decode_uv(uv: [i16; 2]) -> [f32; 2] {
     [f32::from(uv[0]) / UV_SCALE, f32::from(uv[1]) / UV_SCALE]
 }
@@ -32,6 +33,7 @@ fn encode_uv_component(value: f32) -> i16 {
 
 /// Decode an ambient-occlusion level. Values outside 0..=3 are treated as the
 /// fully lit level.
+#[inline]
 pub fn ambient_occlusion_level(level: u8) -> f32 {
     AO_LEVELS[usize::from(level).min(AO_LEVELS.len() - 1)]
 }
