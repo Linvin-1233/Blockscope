@@ -46,9 +46,12 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-Or run the repository script:
+Or run the repository script or `just`:
 
 ```bash
+# Using just
+just check
+
 # Linux
 bash ./scripts/check.sh
 
