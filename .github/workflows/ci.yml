@@ -17,21 +17,20 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo fmt --all --check
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - run: just check
 
   container:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -t blockscope:ci .
-      - name: capacity inside a 1 CPU / 1 GiB container
-        run: docker run --rm --cpus=1 --memory=1g blockscope:ci capacity --json
-      - name: protocol smoke test
-        run: |
-          printf '%s\n' '{"type":"shutdown"}' |
-            docker run --rm -i --cpus=1 --memory=1g blockscope:ci serve
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+      - run: just docker-build blockscope:ci
+      - run: just docker-smoke blockscope:ci
 
   installer:
     runs-on: windows-latest
@@ -39,72 +38,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
       - name: Build release binary
-        env:
-          RUSTFLAGS: -C target-feature=+crt-static
-        run: cargo build --release --locked -p blockscope-cli --bin blockscope
+        run: just build-static
       - name: Build MSI
-        shell: pwsh
-        run: |
-          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"$').Matches[0].Groups[1].Value
-          ./scripts/build-msi.ps1 -Version $version -BinDir target/release -Output out/blockscope-msi-check.msi
-      - name: Install MSI
-        shell: pwsh
-        run: |
-          $msi = (Resolve-Path out/blockscope-msi-check.msi).Path
-          $install = Start-Process msiexec -ArgumentList "/i `"$msi`" /qn /norestart /l*v `"out/install.log`"" -Wait -PassThru
-          if ($install.ExitCode -ne 0) { throw "install failed with $($install.ExitCode)" }
-      - name: Verify install and PATH
-        shell: pwsh
-        run: |
-          $installDir = Join-Path $env:LOCALAPPDATA 'Programs\Blockscope'
-          if (-not (Test-Path "$installDir\blockscope.exe")) { throw "executable missing after install" }
-          & "$installDir\blockscope.exe" --version
-          if ($LASTEXITCODE -ne 0) { throw "installed executable failed" }
-
-          # Windows Installer registers per-user products under HKCU and may
-          # still write the Add/Remove entry to HKLM, so accept either location.
-          $arp = @(
-            Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
-              Where-Object { $_.DisplayName -eq 'Blockscope' }
-            Get-ItemProperty 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
-              Where-Object { $_.DisplayName -eq 'Blockscope' }
-          )
-          if (-not $arp) { throw "missing uninstall entry" }
-
-          $perUser = @(
-            Get-ChildItem 'HKCU:\Software\Microsoft\Installer\Products' -ErrorAction SilentlyContinue |
-              ForEach-Object { Get-ItemProperty $_.PSPath } |
-              Where-Object { $_.ProductName -eq 'Blockscope' }
-          )
-          if (-not $perUser) { throw "product is not registered per user" }
-
-          # The MSI appends the directory with a trailing separator.
-          $path = (Get-ItemProperty 'HKCU:\Environment' -Name Path -ErrorAction SilentlyContinue).Path
-          $entries = ($path -split ';') | Where-Object { $_ } | ForEach-Object { $_.TrimEnd('\') }
-          if ($entries -notcontains $installDir) { throw "PATH does not contain $installDir" }
-      - name: Uninstall MSI
-        shell: pwsh
-        run: |
-          $msi = (Resolve-Path out/blockscope-msi-check.msi).Path
-          $uninstall = Start-Process msiexec -ArgumentList "/x `"$msi`" /qn /norestart /l*v `"out/uninstall.log`"" -Wait -PassThru
-          if ($uninstall.ExitCode -ne 0) { throw "uninstall failed with $($uninstall.ExitCode)" }
-      - name: Verify uninstall cleanup
-        shell: pwsh
-        run: |
-          $installDir = Join-Path $env:LOCALAPPDATA 'Programs\Blockscope'
-          if (Test-Path "$installDir\blockscope.exe") { throw "executable still present after uninstall" }
-          $arp = @(
-            Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
-              Where-Object { $_.DisplayName -eq 'Blockscope' }
-            Get-ItemProperty 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue |
-              Where-Object { $_.DisplayName -eq 'Blockscope' }
-          )
-          if ($arp) { throw "uninstall entry still present" }
-          $path = (Get-ItemProperty 'HKCU:\Environment' -Name Path -ErrorAction SilentlyContinue).Path
-          $entries = ($path -split ';') | Where-Object { $_ } | ForEach-Object { $_.TrimEnd('\') }
-          if ($entries -contains $installDir) { throw "PATH entry was not removed" }
-          Write-Host "installer lifecycle ok"
+        run: just build-msi
+      - name: Test installer lifecycle
+        run: just test-msi
       - uses: actions/upload-artifact@v4
         if: always()
         with:

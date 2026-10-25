@@ -20,20 +20,11 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
       - name: Verify tag matches the workspace version
-        shell: bash
-        run: |
-          tag="${GITHUB_REF_NAME#v}"
-          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
-          if [[ -z "${version}" ]]; then
-            echo "::error::Cannot read [workspace.package] version from Cargo.toml"
-            exit 1
-          fi
-          if [[ "${tag}" != "${version}" ]]; then
-            echo "::error::Tag ${GITHUB_REF_NAME} does not match workspace version ${version}"
-            exit 1
-          fi
-          echo "Tag ${GITHUB_REF_NAME} matches workspace version ${version}"
+        run: just verify-tag "${{ github.ref_name }}"
       # Fails when CHANGELOG.md has no section for this version, so a release
       # always carries curated notes instead of an empty body.
       - uses: taiki-e/create-gh-release-action@v1
@@ -81,20 +72,12 @@ jobs:
           RUSTFLAGS: ${{ matrix.rustflags }}
       # The upload action already built the binary for this target, so the MSI
       # packages the same executable that ships in the zip.
+      - uses: taiki-e/install-action@v2
+        if: matrix.target == 'x86_64-pc-windows-msvc' && github.event_name == 'push'
+        with:
+          tool: just
       - name: Build and upload MSI
         if: matrix.target == 'x86_64-pc-windows-msvc' && github.event_name == 'push'
-        shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          $tag = ${env:GITHUB_REF_NAME}
-          $version = $tag.TrimStart('v')
-          $triple = "x86_64-pc-windows-msvc"
-          $msi = "blockscope-$tag-$triple.msi"
-          ./scripts/build-msi.ps1 -Version $version -BinDir "target/$triple/release" -Output $msi
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $hash = (Get-FileHash $msi -Algorithm SHA256).Hash.ToLower()
-          "$hash  $msi" | Out-File -Encoding ascii "$msi.sha256"
-          gh release upload $tag $msi "$msi.sha256" --clobber
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
+        run: just release-msi "${{ github.ref_name }}"
