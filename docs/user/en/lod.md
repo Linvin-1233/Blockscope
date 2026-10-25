@@ -44,6 +44,6 @@ implementation details.
 
 ## See Also
 
-- [CLI Reference](cli.md)
-- [Limits and Security](limits.md)
+- [CLI Reference](./cli.md)
+- [Limits and Security](./limits.md)
 - [中文](../lod.md)

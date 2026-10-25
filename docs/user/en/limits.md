@@ -59,7 +59,7 @@ table and retryability. Common errors:
 
 ## See Also
 
-- [CLI Reference](cli.md)
-- [Service Mode](service.md)
-- [Troubleshooting](troubleshooting.md)
+- [CLI Reference](./cli.md)
+- [Service Mode](./service.md)
+- [Troubleshooting](./troubleshooting.md)
 - [中文](../limits.md)

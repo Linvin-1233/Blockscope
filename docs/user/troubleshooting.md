@@ -42,6 +42,6 @@ tick 等问题。`validate` 适合先确认文件能否解析。
 
 ## 相关文档
 
-- [限制与安全](limits.md)
-- [服务模式](service.md)
-- [English](en/troubleshooting.md)
+- [限制与安全](./limits.md)
+- [服务模式](./service.md)
+- [English](./en/troubleshooting.md)

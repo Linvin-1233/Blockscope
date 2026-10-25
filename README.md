@@ -16,9 +16,11 @@ Blockscope 是一个把 Minecraft `.litematic` 投影文件渲染成 PNG 的
 
 ## 文档导航
 
+文档位于 `docs/` 并配置为 [Mintlify](https://mintlify.com) 站点，本地可通过 `cd docs && mint dev` 启动实时预览。
+
 ### 用户文档
 
-- [用户文档总览](docs/user/README.md)
+- [用户文档总览](docs/user/index.md)
 - [功能与限制](docs/user/features.md)
 - [安装与快速开始](docs/user/getting-started.md)
 - [CLI 命令](docs/user/cli.md)

@@ -38,6 +38,6 @@ LOD 场景会丢弃：
 
 ## 相关文档
 
-- [CLI 命令](cli.md)
-- [限制与安全](limits.md)
-- [English](en/lod.md)
+- [CLI 命令](./cli.md)
+- [限制与安全](./limits.md)
+- [English](./en/lod.md)

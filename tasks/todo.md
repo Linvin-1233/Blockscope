@@ -461,20 +461,30 @@ were fixed in 0.1.2.
 - [x] `npx js-yaml .github/workflows/ci.yml` and `release.yml` pass validation.
 - [x] `bash scripts/check.sh` passes format, clippy with `-D warnings`, and test suite.
 
-## Renderer CPU throughput
+## Feature: Terminal image rendering protocols
 
 **Status:** Done.
 
 **Acceptance criteria:**
 
-- [x] Triangles rasterize only the pixels inside their per-row span instead of the bounding box.
-- [x] Streamed chunks project, bin, and rasterize on one scoped worker pool.
-- [x] Chunk size follows projected quad count so fine-grained pages do not spawn a worker scope each.
-- [x] Rendered PNGs stay byte-identical on golden scenes and the four large fixtures.
+- [x] Refactor `docs/` as a Mintlify documentation site with `docs.json`.
+- [x] Configure navigation tabs for User Guide (EN), 用户指南 (中文), and Technical Specs.
+- [x] Add site landing page `docs/index.mdx` with quickstart cards and core capabilities.
+- [x] Add brand assets (`docs/favicon.svg`, `docs/logo/light.svg`, `docs/logo/dark.svg`, `docs/.mintignore`).
+- [x] Fix intra-doc relative links to satisfy `mint broken-links`.
+- [x] Update root README navigation and add local preview instructions.
 
 **Verification:**
 
-- [x] `cargo test --workspace --release` passes; the two supervisor tests that fail on this host fail identically on `perf/mem`.
-- [x] `cargo clippy --workspace --all-targets --release -- -D warnings` and `cargo fmt --all --check` pass.
-- [x] 1024x1024, supersample 2: `DenseNonSolid` 271 → 147 ms, `Atrium` 77 → 40 ms, `Valkyrie` 73 → 30 ms.
-- [x] `cmp` reports identical PNGs for all four large fixtures at 512x512 and 1024x1024.
+- [x] `mint validate` passes with strict validation.
+- [x] `mint broken-links` passes with zero broken links.
+- [x] `mint dev --no-open` starts local preview server successfully.
+- [x] `bash scripts/check.sh` passes format, clippy, and full test suite.
+- [x] Implement Kitty graphics protocol encoder (`a=T,f=100`, chunking, dimension constraints, quiet mode).
+- [x] Implement iTerm2 inline image protocol encoder (`OSC 1337;File=inline=1`, size, aspect ratio, width/height).
+- [x] Implement DEC Sixel graphics protocol encoder with color quantization, palette generation, and RLE compression.
+- [x] Implement universal Halfblocks (Unicode ▀ + ANSI 24-bit Truecolor) raster text renderer with color caching.
+- [x] Support automatic terminal protocol and dimension detection across Linux, macOS, and Windows.
+- [x] Support Windows (PowerShell, Windows Terminal, conhost) with `ENABLE_VIRTUAL_TERMINAL_PROCESSING` console mode initialization and buffer info queries.
+- [x] CLI flags added to `blockscope render`: `--terminal` (`-t`), `--terminal-protocol`, `--terminal-width`, `--terminal-height`, and `--no-file`.
+- [x] CLI aliases `preview` and `term` added for intuitive terminal previewing.

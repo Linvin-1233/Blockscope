@@ -55,6 +55,6 @@ printf '%s\n' '{"type":"shutdown"}' |
 
 ## 相关文档
 
-- [服务模式](service.md)
-- [限制与安全](limits.md)
-- [English](en/docker.md)
+- [服务模式](./service.md)
+- [限制与安全](./limits.md)
+- [English](./en/docker.md)
