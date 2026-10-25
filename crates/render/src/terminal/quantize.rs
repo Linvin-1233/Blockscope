@@ -158,11 +158,13 @@ pub fn quantize_rgba(rgba: &[u8]) -> QuantizedImage {
         return QuantizedImage { palette, pixels };
     }
 
-    // Median Cut algorithm
-    let counts: Vec<ColorCount> = color_histogram
+    // Median Cut algorithm. Sort so the box order and split points do not
+    // depend on HashMap iteration order.
+    let mut counts: Vec<ColorCount> = color_histogram
         .into_iter()
         .map(|(rgb, count)| ColorCount { rgb, count })
         .collect();
+    counts.sort_by_key(|c| c.rgb);
 
     let mut boxes = vec![BoundingBox::from_colors(counts)];
 
@@ -270,5 +272,27 @@ mod tests {
         let quantized = quantize_rgba(&rgba);
         assert!(quantized.palette.len() <= SIXEL_MAX_COLORS);
         assert_eq!(quantized.pixels.len(), 300);
+    }
+    
+    #[test]
+    fn quantize_is_deterministic_for_median_cut() {
+        let mut rgba = Vec::new();
+        for i in 0..300u32 {
+            rgba.extend_from_slice(&[
+                (i % 256) as u8,
+                ((i / 256) * 85) as u8,
+                ((i * 37) % 256) as u8,
+                255,
+            ]);
+        }
+
+        let first = quantize_rgba(&rgba);
+        assert_eq!(first.palette.len(), SIXEL_MAX_COLORS);
+
+        for _ in 0..8 {
+            let next = quantize_rgba(&rgba);
+            assert_eq!(first.palette, next.palette);
+            assert_eq!(first.pixels, next.pixels);
+        }
     }
 }
