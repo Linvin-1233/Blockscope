@@ -349,6 +349,7 @@ fn rasterize(
             options.width,
             options.height,
             options.supersample,
+            threads,
         )
     } else {
         output

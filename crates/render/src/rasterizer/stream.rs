@@ -101,6 +101,7 @@ pub(super) fn rasterize_streaming(
             options.width,
             options.height,
             options.supersample,
+            threads,
         )
     } else {
         output
