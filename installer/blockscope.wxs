@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <!--
+    Per-user MSI: installs under %LOCALAPPDATA%\Programs\Blockscope, appends the
+    directory to the user PATH, and removes both on uninstall. No admin rights
+    are required. Version and binary directory come from build-msi.ps1.
+  -->
+  <Package
+      Name="Blockscope"
+      Manufacturer="Blockscope"
+      Version="$(var.Version)"
+      Language="1033"
+      UpgradeCode="8ff5a71c-54b1-4203-a677-1cfbe421b946"
+      Scope="perUser"
+      Compressed="yes">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Blockscope is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="Blockscope" />
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="Blockscope" Level="1">
+      <ComponentGroupRef Id="ProductComponents" />
+    </Feature>
+
+    <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+      <Component Id="BlockscopeExe" Guid="5e0e70f2-f8d8-4b7c-8904-80c2d7a247d7">
+        <File Id="BlockscopeExeFile" Source="$(var.BinDir)\blockscope.exe" KeyPath="yes" />
+        <Environment Id="PathEntry" Name="PATH" Value="[INSTALLFOLDER]" Part="last" Action="set" System="no" />
+      </Component>
+    </ComponentGroup>
+  </Package>
+</Wix>

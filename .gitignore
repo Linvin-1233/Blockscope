@@ -5,6 +5,7 @@
 /.idea/
 /target/
 **/target/
+/out/
 
 # Local resource packs and fixtures (never commit Minecraft assets).
 /resourcepacks/

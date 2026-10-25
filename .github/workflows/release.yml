@@ -79,3 +79,22 @@ jobs:
           dry-run: ${{ github.event_name == 'workflow_dispatch' }}
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
+      # The upload action already built the binary for this target, so the MSI
+      # packages the same executable that ships in the zip.
+      - name: Build and upload MSI
+        if: matrix.target == 'x86_64-pc-windows-msvc' && github.event_name == 'push'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = ${env:GITHUB_REF_NAME}
+          $version = $tag.TrimStart('v')
+          $triple = "x86_64-pc-windows-msvc"
+          $msi = "blockscope-$tag-$triple.msi"
+          ./scripts/build-msi.ps1 -Version $version -BinDir "target/$triple/release" -Output $msi
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $hash = (Get-FileHash $msi -Algorithm SHA256).Hash.ToLower()
+          "$hash  $msi" | Out-File -Encoding ascii "$msi.sha256"
+          gh release upload $tag $msi "$msi.sha256" --clobber
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+

@@ -33,3 +33,23 @@ jobs:
           printf '%s\n' '{"type":"shutdown"}' |
             docker run --rm -i --cpus=1 --memory=1g blockscope:ci serve
 
+  installer:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build release binary
+        env:
+          RUSTFLAGS: -C target-feature=+crt-static
+        run: cargo build --release --locked -p blockscope-cli --bin blockscope
+      - name: Build MSI
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"$').Matches[0].Groups[1].Value
+          ./scripts/build-msi.ps1 -Version $version -BinDir target/release -Output out/blockscope-msi-check.msi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: blockscope-msi
+          path: out/blockscope-msi-check.msi
+
