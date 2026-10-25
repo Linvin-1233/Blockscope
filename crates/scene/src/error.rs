@@ -6,6 +6,8 @@ pub enum SceneErrorCode {
     EmptyScene,
     BoundsOverflow,
     StatisticsOverflow,
+    InvalidLodFactor,
+    LodAggregationFailed,
 }
 
 impl SceneErrorCode {
@@ -14,6 +16,8 @@ impl SceneErrorCode {
             Self::EmptyScene => "EMPTY_SCENE",
             Self::BoundsOverflow => "BOUNDS_OVERFLOW",
             Self::StatisticsOverflow => "STATISTICS_OVERFLOW",
+            Self::InvalidLodFactor => "INVALID_LOD_FACTOR",
+            Self::LodAggregationFailed => "LOD_AGGREGATION_FAILED",
         }
     }
 }
