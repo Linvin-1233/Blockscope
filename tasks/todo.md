@@ -439,3 +439,24 @@ were fixed in 0.1.2.
 
 - [x] `just --list` prints all recipes and descriptions.
 - [x] `just fmt-check`, `just clippy`, `just check-linux`, `just build`, `just build-release`, `just golden-update`, and `just capacity` verified.
+## Platform support: macOS
+
+**Status:** Done.
+
+**Acceptance criteria:**
+
+- [x] Process RSS detection implemented for macOS via `proc_pidinfo` in `crates/cli/src/supervise.rs`.
+- [x] Memory limit and capacity detection implemented for macOS via `sysctl` and Mach VM statistics in `crates/cli/src/capacity.rs`.
+- [x] Peak RSS detection implemented for macOS via `getrusage` in `crates/cli/src/commands/bench.rs`.
+- [x] Full test suite passes on macOS, including `supervisor_enforces_the_memory_ceiling`.
+- [x] CI workflow tests on `macos-latest`.
+- [x] Release workflow packages `aarch64-apple-darwin` and `x86_64-apple-darwin` tarballs with checksums.
+- [x] User and technical documentation updated for macOS.
+
+**Verification:**
+
+- [x] `cargo test --workspace` passes 221 tests on macOS.
+- [x] `cargo run -q --bin blockscope -- capacity --json` outputs `platform: macos` with real memory metrics.
+- [x] `cargo build --target x86_64-apple-darwin --bin blockscope` builds x86_64 binary on macOS.
+- [x] `npx js-yaml .github/workflows/ci.yml` and `release.yml` pass validation.
+- [x] `bash scripts/check.sh` passes format, clippy with `-D warnings`, and test suite.

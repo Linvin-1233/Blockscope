@@ -5,6 +5,16 @@
 本文件记录面向用户的变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### Added
+
+- 支持 macOS 平台（Apple Silicon `aarch64-apple-darwin` 与 Intel `x86_64-apple-darwin`）。
+- CLI 在 macOS 上通过 `sysctl` 和 Mach VM statistics 自动检测物理内存与可用内存容量。
+- 多进程 supervisor 在 macOS 上通过 `proc_pidinfo` 监控子进程实际物理内存（RSS）并执行内存上限保护。
+- `bench` 命令在 macOS 上通过 `getrusage` 报告峰值物理内存（peak RSS）。
+- CI 测试矩阵和 release 工作流增加 macOS 构建目标与产物打包。
+
 ## [0.1.2] - 2026-10-25
 
 ### Fixed

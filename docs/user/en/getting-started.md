@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Windows x86_64, Linux x86_64, or Linux aarch64
+- Windows x86_64, Linux x86_64 / aarch64, or macOS aarch64 / x86_64
 - No Rust toolchain is needed when using prebuilt binaries
 - Rust stable (edition 2024; Rust 1.85 or newer recommended) when building from
   source
@@ -22,6 +22,8 @@ Download the installer or archive for your platform from
 | Linux x86_64 | `x86_64-unknown-linux-musl` | `.tar.gz` |
 | Linux aarch64 | `aarch64-unknown-linux-musl` | `.tar.gz` |
 | Windows x86_64 | `x86_64-pc-windows-msvc` | `.msi` / `.zip` |
+| macOS aarch64 | `aarch64-apple-darwin` | `.tar.gz` |
+| macOS x86_64 | `x86_64-apple-darwin` | `.tar.gz` |
 
 Names look like `blockscope-v0.1.2-x86_64-unknown-linux-musl.tar.gz`, and each
 file has a `.sha256` next to it with the extension removed
@@ -37,6 +39,18 @@ curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.1.2/bloc
 sha256sum -c blockscope-v0.1.2-x86_64-unknown-linux-musl.sha256
 tar -xzf blockscope-v0.1.2-x86_64-unknown-linux-musl.tar.gz
 ./blockscope-v0.1.2-x86_64-unknown-linux-musl/blockscope --version
+```
+
+### macOS
+
+Use `aarch64-apple-darwin` for Apple Silicon (M-series) or `x86_64-apple-darwin` for Intel Macs:
+
+```bash
+curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.1.2/blockscope-v0.1.2-aarch64-apple-darwin.tar.gz
+curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.1.2/blockscope-v0.1.2-aarch64-apple-darwin.sha256
+shasum -a 256 -c blockscope-v0.1.2-aarch64-apple-darwin.sha256
+tar -xzf blockscope-v0.1.2-aarch64-apple-darwin.tar.gz
+./blockscope-v0.1.2-aarch64-apple-darwin/blockscope --version
 ```
 
 ### Windows: MSI installer (recommended)

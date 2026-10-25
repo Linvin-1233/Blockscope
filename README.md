@@ -10,7 +10,7 @@ Blockscope 是一个把 Minecraft `.litematic` 投影文件渲染成 PNG 的
 确定性 PNG，并可在服务端无图形环境中运行。
 
 - 当前版本：`0.1.2`
-- 支持平台：Windows x86_64、Linux x86_64 / aarch64
+- 支持平台：Windows x86_64、Linux x86_64 / aarch64、macOS aarch64 / x86_64
 - 下载：预编译二进制见 [GitHub Releases](https://github.com/Linvin-1233/Blockscope/releases)
 - English: [README.en.md](README.en.md)
 
