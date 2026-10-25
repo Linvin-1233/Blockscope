@@ -174,7 +174,7 @@ fn decode_png(bytes: &[u8], animated: bool) -> Option<(u32, u32, Vec<u8>)> {
         return None;
     }
 
-    let mut buffer = vec![0u8; reader.output_buffer_size()];
+    let mut buffer = vec![0u8; reader.output_buffer_size()?];
     let info = reader.next_frame(&mut buffer).ok()?;
     let source = &buffer[..info.buffer_size()];
     let rgba = convert_to_rgba(source, width, source_height, info.color_type)?;
