@@ -231,9 +231,9 @@ to a fresh directory or overwritten in place, and no state survives a job.
 | Concern | Linux | Windows | macOS |
 |---|---|---|---|
 | Protocol I/O | pipe bytes | pipe bytes | pipe bytes |
-| Graceful stop | stdin EOF or `shutdown`, then `SIGTERM` | stdin EOF or `shutdown`, then `TerminateProcess` | stdin EOF or `shutdown`, then `SIGTERM` |
+| Graceful stop | stdin EOF or `shutdown` | stdin EOF or `shutdown` | stdin EOF or `shutdown` |
 | Kill policy | `SIGKILL` after a 10 s grace | `TerminateProcess` after a 10 s grace | `SIGKILL` after a 10 s grace |
-| Child cleanup | process group (`setsid`) | Job Object with kill-on-close | process group (`setsid`) |
+| Child cleanup | reaped by supervisor; exit on pipe close | reaped by supervisor; exit on pipe close | reaped by supervisor; exit on pipe close |
 | Peak RSS | `/proc/self/status` `VmHWM` | not reported in v1 | `getrusage` `ru_maxrss` |
 | Temp directory | `$TMPDIR` | `%TEMP%` | `$TMPDIR` |
 | Path separator | `/` | `/` or `\`; absolute drive paths required | `/` |

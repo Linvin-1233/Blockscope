@@ -15,7 +15,6 @@ User-facing changes are recorded here. The format follows
 - `bench` peak RSS reporting on macOS via `getrusage`.
 - CI test matrix and release distribution workflow expanded to include macOS runner and targets.
 
-
 ## [0.1.2] - 2026-10-25
 
 ### Fixed
