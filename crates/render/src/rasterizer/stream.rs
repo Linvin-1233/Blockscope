@@ -8,7 +8,7 @@ use crate::{Background, Camera, RenderOptions};
 use litematic_material::TextureSet;
 use litematic_mesh::Mesh;
 
-const STREAM_PAGES_PER_CHUNK: usize = 8;
+const STREAM_PAGES_PER_CHUNK: usize = 64;
 
 pub(super) fn rasterize_streaming(
     mesh: &Mesh,
@@ -255,7 +255,8 @@ fn run_parallel<F>(indices: &[usize], threads: usize, work: F)
 where
     F: Fn(usize) + Sync,
 {
-    if threads <= 1 || indices.len() <= 1 {
+    let workers = threads.min(indices.len());
+    if workers <= 1 {
         for &index in indices {
             work(index);
         }
@@ -264,7 +265,7 @@ where
 
     let cursor = std::sync::atomic::AtomicUsize::new(0);
     std::thread::scope(|scope| {
-        for _ in 0..threads {
+        for _ in 0..workers {
             let cursor = &cursor;
             let work = &work;
             scope.spawn(move || {
