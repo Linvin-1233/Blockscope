@@ -83,6 +83,16 @@ cull.
 - Final RGBA8 conversion clamps and rounds; fully transparent pixels are written
   as zero RGB.
 
+### Block entity NBT
+
+The renderer never reads block entity contents, so `mesh`, `bench`, and `render`
+skip the `TileEntities` payload while decoding. `inspect`, `validate`, and
+`stats` keep it by default; pass `--ignore-block-entity-nbt` to skip it there
+too. Skipping does not allocate the payload, and if the NBT stream ends inside
+`TileEntities`, the block data parsed before it is kept and the missing block
+entities become an empty list. This makes container-heavy schematics renderable
+without decompressing gigabytes of book text.
+
 ### Compact mesh attributes
 
 The mesh stores fixed-point attributes instead of full floats. Texture

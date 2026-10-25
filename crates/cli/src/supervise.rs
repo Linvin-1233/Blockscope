@@ -63,6 +63,7 @@ struct Spec {
     timeout: Option<Duration>,
     memory_limit: Option<u64>,
     force_limits: bool,
+    ignore_block_entity_nbt: bool,
 }
 
 enum Event {
@@ -119,6 +120,7 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
         timeout,
         memory_limit,
         force_limits: args.limits.force_limits,
+        ignore_block_entity_nbt: args.limits.ignore_block_entity_nbt,
     };
 
     if workers.saturating_mul(threads) > capacity.cores {
@@ -477,6 +479,9 @@ fn spawn_worker(
         .stderr(Stdio::inherit());
     if spec.force_limits {
         command.arg("--force-limits");
+    }
+    if spec.ignore_block_entity_nbt {
+        command.arg("--ignore-block-entity-nbt");
     }
 
     let mut child = command

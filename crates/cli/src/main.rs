@@ -64,6 +64,11 @@ pub(crate) struct LimitArgs {
     /// Disable parser, mesh, and render size limits. Can exhaust memory.
     #[arg(long)]
     force_limits: bool,
+    /// Skip TileEntities payloads. Rendering does not use container contents;
+    /// block data before a truncated block-entity list is kept. Always on for
+    /// mesh, bench, and render.
+    #[arg(long)]
+    ignore_block_entity_nbt: bool,
 }
 
 #[derive(Debug, Args)]
@@ -323,7 +328,11 @@ fn format_megabytes(bytes: u64) -> String {
 
 fn inspect(args: InspectArgs) -> Result<(), CliError> {
     warn_forced(args.limits.force_limits);
-    let (input, scene) = load_scene(&args.file, args.limits.force_limits)?;
+    let (input, scene) = load_scene(
+        &args.file,
+        args.limits.force_limits,
+        args.limits.ignore_block_entity_nbt,
+    )?;
     let manifest = Manifest::from_scene(&scene, sha256(&input), env!("CARGO_PKG_VERSION"));
 
     if args.json || args.compact {
@@ -343,7 +352,11 @@ fn inspect(args: InspectArgs) -> Result<(), CliError> {
 
 fn validate(args: ValidateArgs) -> Result<(), CliError> {
     warn_forced(args.limits.force_limits);
-    let (_, scene) = load_scene(&args.file, args.limits.force_limits)?;
+    let (_, scene) = load_scene(
+        &args.file,
+        args.limits.force_limits,
+        args.limits.ignore_block_entity_nbt,
+    )?;
 
     println!("OK: {}", args.file.display());
     println!(
@@ -374,7 +387,11 @@ fn validate(args: ValidateArgs) -> Result<(), CliError> {
 
 fn stats(args: StatsArgs) -> Result<(), CliError> {
     warn_forced(args.limits.force_limits);
-    let (input, scene) = load_scene(&args.file, args.limits.force_limits)?;
+    let (input, scene) = load_scene(
+        &args.file,
+        args.limits.force_limits,
+        args.limits.ignore_block_entity_nbt,
+    )?;
 
     if args.json {
         let manifest = Manifest::from_scene(&scene, sha256(&input), env!("CARGO_PKG_VERSION"));
@@ -409,7 +426,11 @@ fn stats(args: StatsArgs) -> Result<(), CliError> {
 
 fn mesh(args: MeshArgs) -> Result<(), CliError> {
     warn_forced(args.limits.force_limits);
-    let (_, scene) = load_scene(&args.file, args.limits.force_limits)?;
+    let (_, scene) = load_scene(
+        &args.file,
+        args.limits.force_limits,
+        GEOMETRY_IGNORES_BLOCK_ENTITY_NBT,
+    )?;
     let lod = parse_lod(&args.lod)?;
     let PreparedScene { mesh, .. } = prepare_scene(
         scene,
@@ -441,7 +462,11 @@ fn mesh(args: MeshArgs) -> Result<(), CliError> {
 fn render(args: RenderArgs) -> Result<(), CliError> {
     let started = Instant::now();
     warn_forced(args.limits.force_limits);
-    let (_, scene) = load_scene(&args.file, args.limits.force_limits)?;
+    let (_, scene) = load_scene(
+        &args.file,
+        args.limits.force_limits,
+        GEOMETRY_IGNORES_BLOCK_ENTITY_NBT,
+    )?;
     let parse_ms = started.elapsed().as_secs_f64() * 1000.0;
     let lod = parse_lod(&args.lod)?;
 
@@ -599,16 +624,20 @@ fn build_scene_mesh(
 
 /// Limits used for parsing and meshing. `--force-limits` removes the caps but
 /// leaves a warning so an operator can see the risk in the logs.
-fn decode_limits(force: bool) -> DecodeLimits {
+fn decode_limits(force: bool, ignore_block_entity_nbt: bool) -> DecodeLimits {
     if force {
         DecodeLimits {
             max_input_bytes: 1 << 40,
             max_decompressed_bytes: 1 << 40,
             max_total_bytes: 1 << 40,
+            ignore_block_entity_nbt,
             ..DecodeLimits::default()
         }
     } else {
-        DecodeLimits::default()
+        DecodeLimits {
+            ignore_block_entity_nbt,
+            ..DecodeLimits::default()
+        }
     }
 }
 
@@ -711,7 +740,11 @@ fn parse_background(value: &str) -> Result<Background, CliError> {
 
 fn materials(args: MaterialsArgs) -> Result<(), CliError> {
     warn_forced(args.limits.force_limits);
-    let (_, scene) = load_scene(&args.file, args.limits.force_limits)?;
+    let (_, scene) = load_scene(
+        &args.file,
+        args.limits.force_limits,
+        args.limits.ignore_block_entity_nbt,
+    )?;
     let materials = load_materials(&args.assets)?.ok_or_else(|| {
         CliError::input("ASSET_SOURCE_REQUIRED: provide --client-jar or --assets")
     })?;
@@ -855,7 +888,11 @@ fn bench(args: BenchArgs) -> Result<(), CliError> {
     let materials = load_materials(&args.assets)?;
 
     let parse_started = Instant::now();
-    let (_, scene) = load_scene(&args.file, args.limits.force_limits)?;
+    let (_, scene) = load_scene(
+        &args.file,
+        args.limits.force_limits,
+        GEOMETRY_IGNORES_BLOCK_ENTITY_NBT,
+    )?;
     let parse_ms = parse_started.elapsed().as_secs_f64() * 1000.0;
     let lod = parse_lod(&args.lod)?;
 
@@ -1199,13 +1236,20 @@ fn apply_lod(scene: Scene, lod: u32, threads: u32) -> Result<Scene, CliError> {
     aggregate_with_threads(&scene, lod, threads).map_err(CliError::from)
 }
 
-fn load_scene(path: &Path, force_limits: bool) -> Result<(Vec<u8>, Scene), CliError> {
+/// Geometry commands never read block entity contents.
+const GEOMETRY_IGNORES_BLOCK_ENTITY_NBT: bool = true;
+
+fn load_scene(
+    path: &Path,
+    force_limits: bool,
+    ignore_block_entity_nbt: bool,
+) -> Result<(Vec<u8>, Scene), CliError> {
     let input = fs::read(path)
         .map_err(|error| CliError::input(format!("IO_ERROR: {}: {error}", path.display())))?;
 
     let file = LitematicFile::parse_bytes(
         &input,
-        &decode_limits(force_limits),
+        &decode_limits(force_limits, ignore_block_entity_nbt),
         &scene_limits(force_limits),
     )
     .map_err(CliError::from)?;
@@ -1309,7 +1353,10 @@ mod tests {
     #[test]
     fn forced_limits_raise_every_cap() {
         assert!(mesh_limits(true).max_quads > mesh_limits(false).max_quads);
-        assert!(decode_limits(true).max_input_bytes > decode_limits(false).max_input_bytes);
+        assert!(
+            decode_limits(true, false).max_input_bytes
+                > decode_limits(false, false).max_input_bytes
+        );
         assert!(scene_limits(true).max_total_volume > scene_limits(false).max_total_volume);
 
         let mut options = RenderOptions::default();

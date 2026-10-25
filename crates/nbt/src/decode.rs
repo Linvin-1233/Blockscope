@@ -44,7 +44,7 @@ pub fn decode(input: &[u8], limits: &DecodeLimits) -> Result<NbtRoot, NbtError> 
     let mut decoder = Decoder::new(data.as_ref(), limits);
     let root = decoder.read_root()?;
 
-    if decoder.pos != data.len() {
+    if !decoder.truncated && decoder.pos != data.len() {
         return Err(NbtError::new(
             NbtErrorCode::TrailingBytes,
             decoder.pos,
@@ -119,6 +119,7 @@ struct Decoder<'a> {
     limits: &'a DecodeLimits,
     tag_count: usize,
     total_bytes: usize,
+    truncated: bool,
 }
 
 impl<'a> Decoder<'a> {
@@ -129,6 +130,7 @@ impl<'a> Decoder<'a> {
             limits,
             tag_count: 0,
             total_bytes: 0,
+            truncated: false,
         }
     }
 
@@ -197,9 +199,26 @@ impl<'a> Decoder<'a> {
             }
 
             let name = self.read_string()?;
-            let value = self.read_payload(tag_type, depth.saturating_add(1))?;
+            let value = if self.limits.ignore_block_entity_nbt
+                && name == "TileEntities"
+                && tag_type == NbtTagType::List
+            {
+                match self.skip_payload(tag_type, depth.saturating_add(1)) {
+                    Ok(()) => NbtValue::List(empty_list()),
+                    Err(error) if error.code == NbtErrorCode::TruncatedInput => {
+                        self.truncated = true;
+                        NbtValue::List(empty_list())
+                    }
+                    Err(error) => return Err(error),
+                }
+            } else {
+                self.read_payload(tag_type, depth.saturating_add(1))?
+            };
             self.add_allocation(64usize.saturating_add(name.len()), self.pos)?;
             compound.insert(name, value);
+            if self.truncated {
+                break;
+            }
         }
 
         Ok(NbtValue::Compound(compound))
@@ -226,9 +245,97 @@ impl<'a> Decoder<'a> {
         let mut values = Vec::with_capacity(len);
         for _ in 0..len {
             values.push(self.read_payload(element_type, depth.saturating_add(1))?);
+            if self.truncated {
+                break;
+            }
         }
 
         Ok(NbtValue::List(NbtList::new(element_type, values)))
+    }
+
+    /// Advance past a tag payload without building it. Used for block entity
+    /// data, which can be orders of magnitude larger than the block array.
+    fn skip_payload(&mut self, tag_type: NbtTagType, depth: usize) -> Result<(), NbtError> {
+        if depth > self.limits.max_depth {
+            return Err(limit_error(
+                self.pos,
+                format!("maximum NBT depth {} exceeded", self.limits.max_depth),
+            ));
+        }
+
+        self.tag_count = self
+            .tag_count
+            .checked_add(1)
+            .ok_or_else(|| limit_error(self.pos, "tag count overflow"))?;
+        if self.tag_count > self.limits.max_tags {
+            return Err(limit_error(
+                self.pos,
+                format!("tag count exceeds limit {}", self.limits.max_tags),
+            ));
+        }
+
+        match tag_type {
+            NbtTagType::End => Err(NbtError::new(
+                NbtErrorCode::InvalidTag,
+                self.pos,
+                "end tag has no payload",
+            )),
+            NbtTagType::Byte => self.skip_bytes(1),
+            NbtTagType::Short => self.skip_bytes(2),
+            NbtTagType::Int | NbtTagType::Float => self.skip_bytes(4),
+            NbtTagType::Long | NbtTagType::Double => self.skip_bytes(8),
+            NbtTagType::ByteArray => {
+                let len = self.read_len(self.limits.max_array_len)?;
+                self.skip_bytes(len)
+            }
+            NbtTagType::String => {
+                let len = usize::from(self.read_u16()?);
+                self.skip_bytes(len)
+            }
+            NbtTagType::List => {
+                let element_type = self.read_tag_type()?;
+                let offset = self.pos;
+                let len = self.read_len(self.limits.max_list_len)?;
+                if element_type == NbtTagType::End && len != 0 {
+                    return Err(NbtError::new(
+                        NbtErrorCode::InvalidTag,
+                        offset,
+                        "non-empty list cannot use end as its element type",
+                    ));
+                }
+                for _ in 0..len {
+                    self.skip_payload(element_type, depth.saturating_add(1))?;
+                }
+                Ok(())
+            }
+            NbtTagType::Compound => loop {
+                let child = self.read_tag_type()?;
+                if child == NbtTagType::End {
+                    break Ok(());
+                }
+                let name_len = usize::from(self.read_u16()?);
+                self.skip_bytes(name_len)?;
+                self.skip_payload(child, depth.saturating_add(1))?;
+            },
+            NbtTagType::IntArray => {
+                let len = self.read_len(self.limits.max_array_len)?;
+                let size = len
+                    .checked_mul(4)
+                    .ok_or_else(|| limit_error(self.pos, "int array size overflow"))?;
+                self.skip_bytes(size)
+            }
+            NbtTagType::LongArray => {
+                let len = self.read_len(self.limits.max_array_len)?;
+                let size = len
+                    .checked_mul(8)
+                    .ok_or_else(|| limit_error(self.pos, "long array size overflow"))?;
+                self.skip_bytes(size)
+            }
+        }
+    }
+
+    fn skip_bytes(&mut self, len: usize) -> Result<(), NbtError> {
+        self.read_exact(len).map(|_| ())
     }
 
     fn read_byte_array(&mut self) -> Result<NbtValue, NbtError> {
@@ -402,6 +509,10 @@ impl<'a> Decoder<'a> {
 
 fn limit_error(offset: usize, message: impl Into<String>) -> NbtError {
     NbtError::new(NbtErrorCode::LimitExceeded, offset, message)
+}
+
+fn empty_list() -> NbtList {
+    NbtList::new(NbtTagType::End, Vec::new())
 }
 
 /// Decode Java's modified UTF-8, also accepting standard four-byte sequences.

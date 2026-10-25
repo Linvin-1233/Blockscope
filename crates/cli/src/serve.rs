@@ -104,6 +104,7 @@ pub fn run(args: ServeArgs) -> Result<(), CliError> {
     let mut cache: Vec<CachedScene> = Vec::new();
     let cache_limit = args.cache as usize;
     let force_limits = args.limits.force_limits;
+    let ignore_block_entity_nbt = args.limits.ignore_block_entity_nbt;
 
     let stdout = std::io::stdout();
     let mut out = BufWriter::new(stdout.lock());
@@ -128,6 +129,7 @@ pub fn run(args: ServeArgs) -> Result<(), CliError> {
                     materials.as_ref(),
                     args.threads,
                     force_limits,
+                    ignore_block_entity_nbt,
                     &mut cache,
                     cache_limit,
                 );
@@ -173,6 +175,7 @@ fn handle(
     materials: Option<&MaterialSet>,
     default_threads: u32,
     force_limits: bool,
+    ignore_block_entity_nbt: bool,
     cache: &mut Vec<CachedScene>,
     cache_limit: usize,
 ) -> Value {
@@ -182,6 +185,7 @@ fn handle(
         materials,
         default_threads,
         force_limits,
+        ignore_block_entity_nbt,
         cache,
         cache_limit,
     ) {
@@ -207,6 +211,7 @@ fn process(
     materials: Option<&MaterialSet>,
     default_threads: u32,
     force_limits: bool,
+    ignore_block_entity_nbt: bool,
     cache: &mut Vec<CachedScene>,
     cache_limit: usize,
 ) -> Result<Value, CliError> {
@@ -287,7 +292,7 @@ fn process(
             let parse_started = Instant::now();
             let file = LitematicFile::parse_bytes(
                 &input,
-                &crate::decode_limits(force_limits),
+                &crate::decode_limits(force_limits, ignore_block_entity_nbt),
                 &crate::scene_limits(force_limits),
             )
             .map_err(CliError::from)?;

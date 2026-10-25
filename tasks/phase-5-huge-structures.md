@@ -1,6 +1,6 @@
 # Phase 5 Plan: Huge Structures
 
-**Status:** C1-C5 implemented. This plan covers the extreme fixtures.
+**Status:** C1-C6 implemented. This plan covers the extreme fixtures.
 
 ## Measured baseline
 
@@ -166,11 +166,26 @@ the same job succeeds with `--force-limits` and `--lod` on a larger machine.
 - PNG SHA-256 is unchanged for `000001` exact, `000002` exact, and `000001`
   auto (LOD 2).
 
+### C6: Container NBT is ignored for geometry (implemented)
+
+The renderer never reads block entity contents. `mesh`, `bench`, and `render`
+now skip the `TileEntities` payload during NBT decoding; `inspect`, `validate`,
+and `stats` keep it unless `--ignore-block-entity-nbt` is passed. The skip does
+not allocate the payload. If the stream ends inside `TileEntities`, the block
+data parsed before it is kept.
+
+`test-No2/12345.litematic` is the `all_ones_nbt_10GB` stress file: a 115x1x1
+region of barrels with written books, stored as 9,538 gzip members and
+10,000,526,997 decompressed bytes. The block data is in the first member. With
+the skip, it parses in 6 ms and renders 462 triangles (115 barrels) in 0.32 s
+with a 22 MB peak, instead of failing with `TRUNCATED_INPUT`.
+
 ## Order
 
-C1, C2, C3, C4, and C5 are implemented. Exact rendering covers scenes that fit
-the budget, streaming keeps memory near the mesh size, compact attributes shrink
-that mesh, and LOD covers the rest.
+C1, C2, C3, C4, C5, and C6 are implemented. Exact rendering covers scenes that
+fit the budget, streaming keeps memory near the mesh size, compact attributes
+shrink that mesh, container NBT is skipped for geometry, and LOD covers the
+rest.
 
 ## Risks
 

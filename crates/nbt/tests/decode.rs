@@ -389,3 +389,66 @@ fn rejects_tag_count_limit() {
     let err = decode(&root(&children), &DecodeLimits::small()).unwrap_err();
     assert_eq!(err.code, NbtErrorCode::LimitExceeded);
 }
+
+#[test]
+fn ignore_block_entity_nbt_skips_the_payload() {
+    let mut barrel = string_tag("id", "minecraft:barrel");
+    barrel.extend(list_tag("Items", 8, &[string_payload(b"1111111111")]));
+    barrel.push(0);
+
+    let mut children = Vec::new();
+    children.extend(long_array_tag("BlockStates", &[1]));
+    children.extend(list_tag("TileEntities", 10, &[barrel]));
+    children.extend(int_tag("After", 7));
+
+    let limits = DecodeLimits {
+        ignore_block_entity_nbt: true,
+        ..DecodeLimits::default()
+    };
+    let decoded = decode(&root(&children), &limits).unwrap();
+    let root_tag = compound(&decoded.value);
+
+    assert_eq!(
+        root_tag.get("BlockStates"),
+        Some(&NbtValue::LongArray(vec![1]))
+    );
+    assert_eq!(root_tag.get("After"), Some(&NbtValue::Int(7)));
+    match root_tag.get("TileEntities") {
+        Some(NbtValue::List(list)) => assert!(list.values.is_empty()),
+        other => panic!("expected empty list, got {other:?}"),
+    }
+}
+
+#[test]
+fn ignore_block_entity_nbt_tolerates_truncation_inside_the_list() {
+    let mut barrel = string_tag("id", "minecraft:barrel");
+    barrel.extend(list_tag("Items", 8, &[string_payload(&[b'1'; 64])]));
+    barrel.push(0);
+
+    let mut children = Vec::new();
+    children.extend(long_array_tag("BlockStates", &[1]));
+    let tile_entities = list_tag("TileEntities", 10, &[barrel]);
+    let cut = children.len() + 1 + 2 + "TileEntities".len() + 1 + 4 + 4;
+    children.extend(tile_entities);
+    let full = root(&children);
+    let truncated = &full[..cut.min(full.len())];
+
+    let without = decode(truncated, &DecodeLimits::default()).unwrap_err();
+    assert_eq!(without.code, NbtErrorCode::TruncatedInput);
+
+    let limits = DecodeLimits {
+        ignore_block_entity_nbt: true,
+        ..DecodeLimits::default()
+    };
+    let decoded = decode(truncated, &limits).unwrap();
+    let root_tag = compound(&decoded.value);
+
+    assert_eq!(
+        root_tag.get("BlockStates"),
+        Some(&NbtValue::LongArray(vec![1]))
+    );
+    match root_tag.get("TileEntities") {
+        Some(NbtValue::List(list)) => assert!(list.values.is_empty()),
+        other => panic!("expected empty list, got {other:?}"),
+    }
+}

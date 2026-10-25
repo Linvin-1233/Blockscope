@@ -9,6 +9,11 @@ pub struct DecodeLimits {
     pub max_list_len: usize,
     pub max_array_len: usize,
     pub max_total_bytes: usize,
+    /// Skip `TileEntities` payloads while decoding. Rendering does not use
+    /// container contents. If the stream ends inside the skipped payload, the
+    /// block data parsed before it is kept and the missing block entities are
+    /// treated as an empty list.
+    pub ignore_block_entity_nbt: bool,
 }
 
 impl Default for DecodeLimits {
@@ -22,6 +27,7 @@ impl Default for DecodeLimits {
             max_list_len: 4_000_000,
             max_array_len: 64_000_000,
             max_total_bytes: 512 * 1024 * 1024,
+            ignore_block_entity_nbt: false,
         }
     }
 }
@@ -38,6 +44,7 @@ impl DecodeLimits {
             max_list_len: 32,
             max_array_len: 64,
             max_total_bytes: 16_384,
+            ignore_block_entity_nbt: false,
         }
     }
 }

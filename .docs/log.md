@@ -135,6 +135,18 @@ y/z/x 顺序重写 palette 索引。palette 顺序和 packed 结果与单线程�
 注意：曾尝试在每页构建后 `shrink_to_fit`，000002 峰值只降 57 MB，却让建网格
 时间从 24.8 s 涨到 31.1 s，因此没有保留。
 
+## C6：容器 NBT 不再参与渲染（当前）
+
+- `mesh` / `bench` / `render` 默认跳过 `TileEntities` 的 NBT，不分配其内容
+- `inspect` / `validate` / `stats` 仍保留；需要跳过时加 `--ignore-block-entity-nbt`
+- 如果 NBT 流在 `TileEntities` 中途结束，保留之前的方块数据，缺失的 block
+  entity 当作空列表
+- `test-No2/12345.litematic` 与 `all_ones_nbt_10GB.litematic` 相同：115 个木桶
+  的书页共 10,000,526,997 字节，分成 9,538 个 gzip member；方块数据在第一个
+  member 内
+- 现在 12345 解析 6 ms、渲染 **0.32 s / 22 MB / 462 三角形**，不再报
+  `TRUNCATED_INPUT`
+
 ## 观察
 
 1. **000003 和 000004 是实心体**，LOD 后基本坍缩成一个盒子：LOD 4 是 73,728
