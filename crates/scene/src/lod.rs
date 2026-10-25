@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 const MIN_FACTOR: u32 = 2;
 const MAX_FACTOR: u32 = 16;
+const MAX_WORKERS: usize = 256;
 const AIR: u32 = u32::MAX;
 
 /// Aggregate a scene into `factor`-sized cells for level-of-detail rendering.
@@ -20,7 +21,8 @@ pub fn aggregate(scene: &Scene, factor: u32) -> Result<Scene, SceneError> {
 }
 
 /// Aggregate with an explicit worker count. `threads == 0` uses the available
-/// parallelism. The result is identical for every worker count.
+/// parallelism; the effective count is capped at 256. The result is identical
+/// for every worker count.
 pub fn aggregate_with_threads(
     scene: &Scene,
     factor: u32,
@@ -59,14 +61,7 @@ pub fn aggregate_with_threads(
     // so the palette order stays identical to the single-threaded path.
     let mut values = vec![AIR; capacity];
 
-    let fallback = if threads == 0 {
-        std::thread::available_parallelism()
-            .map(|value| value.get())
-            .unwrap_or(1)
-    } else {
-        threads as usize
-    };
-    let workers = fallback.clamp(1, size[1].max(1) as usize);
+    let workers = worker_count(threads, size[1]);
     let plane = size[0] as usize * size[2] as usize;
 
     if workers <= 1 || capacity < 8192 || plane == 0 {
@@ -280,6 +275,18 @@ fn resolve_id(scene: &Scene, table: &StateTable<'_>, world: [i64; 3]) -> Option<
     None
 }
 
+fn worker_count(requested: u32, rows: u32) -> usize {
+    let requested = if requested == 0 {
+        std::thread::available_parallelism()
+            .map(|value| value.get())
+            .unwrap_or(1)
+    } else {
+        requested as usize
+    };
+
+    requested.clamp(1, MAX_WORKERS.min(rows.max(1) as usize))
+}
+
 fn ceil_div(value: i64, divisor: i64) -> i64 {
     let quotient = value.div_euclid(divisor);
     if value.rem_euclid(divisor) == 0 {
@@ -294,4 +301,17 @@ fn size_overflow<E: std::fmt::Display>(error: E) -> SceneError {
         SceneErrorCode::BoundsOverflow,
         format!("aggregated scene dimensions do not fit u32: {error}"),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn worker_count_is_capped() {
+        assert_eq!(worker_count(u32::MAX, u32::MAX), MAX_WORKERS);
+        assert_eq!(worker_count(1, 100), 1);
+        assert_eq!(worker_count(0, 1), 1);
+        assert!(worker_count(0, u32::MAX) <= MAX_WORKERS);
+    }
 }

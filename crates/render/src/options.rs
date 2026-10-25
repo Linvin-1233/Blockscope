@@ -56,7 +56,7 @@ impl Background {
     }
 }
 
-/// Renderer options. Defaults match the first QQBot preview profile.
+/// Renderer options. Defaults match the standard preview profile.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RenderOptions {
     pub width: u32,

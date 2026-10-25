@@ -23,5 +23,5 @@ cargo test --workspace -- --ignored
 Or inspect a single file:
 
 ```powershell
-cargo run -p renderd-cli -- inspect .\fixtures\litematic\example.litematic --json
+cargo run -p blockscope-cli -- inspect .\fixtures\litematic\example.litematic --json
 ```

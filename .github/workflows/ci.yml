@@ -25,11 +25,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -t renderd:ci .
+      - run: docker build -t blockscope:ci .
       - name: capacity inside a 1 CPU / 1 GiB container
-        run: docker run --rm --cpus=1 --memory=1g renderd:ci capacity --json
+        run: docker run --rm --cpus=1 --memory=1g blockscope:ci capacity --json
       - name: protocol smoke test
         run: |
           printf '%s\n' '{"type":"shutdown"}' |
-            docker run --rm -i --cpus=1 --memory=1g renderd:ci serve
+            docker run --rm -i --cpus=1 --memory=1g blockscope:ci serve
 

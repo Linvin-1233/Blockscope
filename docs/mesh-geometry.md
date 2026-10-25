@@ -55,13 +55,14 @@ For a face that lies on the block boundary:
 1. If the neighbor position is outside the scene, keep the face.
 2. If the neighbor is air, keep the face.
 3. If the neighbor model fully occludes (full cube + opaque), cull the face.
-4. If the neighbor is the same full-cube state, cull the face. This removes
-   internal faces between adjacent glass, water, ice, or leaves.
+4. If the neighbor is the same canonical block state, including partial
+   shapes, cull the face. This removes internal faces between adjacent glass,
+   water, ice, leaves, and matching partial shapes. The check is state-based,
+   not a per-face coplanarity test.
 5. Otherwise keep the face. Different translucent materials keep their
    interface faces.
 
-Partial models in Phase 2B will use per-face cull directions and voxelized
-model occupancy.
+Partial models use per-face cull directions and voxelized model occupancy.
 
 ## Color Catalog
 
@@ -109,10 +110,10 @@ Both exporters are deterministic: the same mesh produces identical bytes.
 ## CLI
 
 ```powershell
-cargo run -p renderd-cli -- mesh path\to\model.litematic
-cargo run -p renderd-cli -- mesh path\to\model.litematic --json
-cargo run -p renderd-cli -- mesh path\to\model.litematic --obj out.obj
-cargo run -p renderd-cli -- mesh path\to\model.litematic --ply out.ply
+cargo run -p blockscope-cli -- mesh path\to\model.litematic
+cargo run -p blockscope-cli -- mesh path\to\model.litematic --json
+cargo run -p blockscope-cli -- mesh path\to\model.litematic --obj out.obj
+cargo run -p blockscope-cli -- mesh path\to\model.litematic --ply out.ply
 ```
 
 `--json` prints `MeshStatistics` with pages, quads, vertices, visited/rendered
@@ -175,8 +176,10 @@ A boundary face is culled when the neighbor is:
 - a full opaque cube;
 - the same canonical block state, including partial shapes.
 
-The second rule removes the touching sides of adjacent slabs, stairs, fences,
-panes, glass, and water. Different partial states keep their interface faces.
+The second rule removes shared boundary faces of adjacent slabs, stairs,
+fences, panes, glass, and water. It is state-based: stacked partial models can
+lose an exposed face when their geometry does not meet at the same plane.
+Different partial states keep their interface faces.
 
 ## Resource Packs
 

@@ -73,7 +73,7 @@ Scene block state
 ### Slice 6: CLI and coverage
 
 - `--client-jar`, `--assets`, `--resource-pack`, `--texture-filter`.
-- `renderd materials` report.
+- `blockscope materials` report.
 - JSON and human output.
 - Asset errors use exit code 2.
 
@@ -122,7 +122,7 @@ Scene block state
 
 - [x] The local jar opens and resolves stone, stairs, grass, glass, water,
       observer, redstone wire, rail, and fence.
-- [x] `renderd materials` reports coverage for the local fixture.
+- [x] `blockscope materials` reports coverage for the local fixture.
 
 ### Checkpoint M-3: Acceptance
 

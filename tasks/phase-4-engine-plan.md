@@ -91,7 +91,7 @@ so these numbers must be re-measured before they are used as a regression gate.
 
 ### Slice 4: Engine worker
 
-- Long-lived `renderd serve` mode with warm materials.
+- Long-lived `blockscope serve` mode with warm materials.
 - One job at a time per process; rasterizer threads configurable.
 - Request/response protocol documented before implementation.
 
@@ -127,7 +127,7 @@ Two jobs in one worker with the real fixture, 1024x1024 at supersample 2:
 | `two-1` | 412 ms | 22 ms | 147 ms | 222 ms | 14 ms |
 | `two-2` | 394 ms | 22 ms | 131 ms | 226 ms | 6 ms |
 
-No material reload between jobs. `renderd capacity --json` on this host reports
+No material reload between jobs. `blockscope capacity --json` on this host reports
 12 cores, 4 suggested workers, 3 threads, and a 2048 supersample-2 default tier.
 
 ### Linux container verification

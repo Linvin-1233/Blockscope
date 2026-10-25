@@ -1,10 +1,10 @@
 [package]
-name = "renderd-cli"
+name = "blockscope-cli"
 version.workspace = true
 edition.workspace = true
 
 [[bin]]
-name = "renderd"
+name = "blockscope"
 path = "src/main.rs"
 
 [dependencies]

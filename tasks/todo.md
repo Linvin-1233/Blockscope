@@ -26,7 +26,7 @@ Go/Rust/Windows/Linux setup before adding code.
 
 **Verification:**
 
-- [x] `git check-ignore -v .docs/qqbot-litematic-rust-renderer-engineering-design.md`
+- [x] `git check-ignore -v .docs/blockscope-engineering-design.md`
       returns non-zero (not ignored).
 - [x] `git status --short` shows only intended changes.
 - [x] No secrets or private litematic files are staged.
@@ -49,7 +49,7 @@ task will run.
 - [x] `rustfmt.toml` sets `max_width = 100` and edition 2024.
 - [x] Each crate has a minimal `Cargo.toml` and `src/lib.rs` or `src/main.rs`.
 - [x] `scripts/check.ps1` and `scripts/check.sh` run format, clippy, and tests.
-- [x] `cargo run -p renderd-cli -- --help` prints usage.
+- [x] `cargo run -p blockscope-cli -- --help` prints usage.
 - [x] `.github/workflows/ci.yml` runs the same gates on Ubuntu and Windows.
 
 **Verification:**
@@ -267,16 +267,16 @@ statistics.
 `tests/`  
 **Estimated scope:** Small
 
-## Task 10: `renderd` CLI
+## Task 10: `blockscope` CLI
 
-**Description:** Expose the parser through `renderd inspect`, `validate`, and
+**Description:** Expose the parser through `blockscope inspect`, `validate`, and
 `stats`.
 
 **Acceptance criteria:**
 
-- [x] `renderd inspect <file> --json` prints the manifest.
-- [x] `renderd validate <file>` prints a summary or structured error.
-- [x] `renderd stats <file>` prints sorted material counts.
+- [x] `blockscope inspect <file> --json` prints the manifest.
+- [x] `blockscope validate <file>` prints a summary or structured error.
+- [x] `blockscope stats <file>` prints sorted material counts.
 - [x] Exit codes distinguish success, invalid input, and internal error.
 - [x] Errors contain stable codes and no stack traces by default.
 - [x] `--help` documents all commands and limits.
@@ -286,7 +286,7 @@ statistics.
 - [x] CLI runs on every synthetic fixture.
 - [x] CLI integration tests cover JSON and human-readable output.
 - [x] Invalid file returns exit code 2 and a stable error code.
-- [x] `cargo run -p renderd-cli -- inspect --help` works.
+- [x] `cargo run -p blockscope-cli -- inspect --help` works.
 
 **Dependencies:** Task 9  
 **Files likely touched:** `crates/cli/src/main.rs`, `commands.rs`,
@@ -295,9 +295,9 @@ statistics.
 
 ## Checkpoint 3: CLI end-to-end
 
-- [x] `renderd inspect <file> --json` emits a stable manifest.
-- [x] `renderd validate` returns stable error codes.
-- [x] `renderd stats` prints deterministic counts.
+- [x] `blockscope inspect <file> --json` emits a stable manifest.
+- [x] `blockscope validate` returns stable error codes.
+- [x] `blockscope stats` prints deterministic counts.
 - [ ] Review with human before proceeding.
 
 ## Task 11: Fixtures and golden manifests
@@ -362,6 +362,45 @@ property/fuzz coverage.
 - [x] `cargo test --workspace` passes on Windows and in WSL Ubuntu 24.04.
 - [x] No Minecraft assets or private fixtures are committed.
 - [x] `docs/litematic-format.md` records verified v1-v7 behavior.
-- [x] Demo: `renderd inspect`, `renderd validate`, and `renderd stats` on
+- [x] Demo: `blockscope inspect`, `blockscope validate`, and `blockscope stats` on
       synthetic fixtures, covered by CLI integration tests.
 - [ ] Human review and approval to start Phase 2.
+
+## Release distribution: prebuilt binaries
+
+**Status:** Done for prebuilt binaries. crates.io publishing is intentionally
+out of scope while the public Rust API is unstable and the repository has no
+`LICENSE` file; the stable integration surface is the CLI and engine protocol
+v1.
+
+**Acceptance criteria:**
+
+- [x] `.github/workflows/release.yml` creates the GitHub Release from
+      `CHANGELOG.md` on a `v*` tag.
+- [x] A tag that does not match `[workspace.package] version` fails before the
+      release is created.
+- [x] Windows x86_64, Linux x86_64, and Linux aarch64 archives are uploaded with
+      `.sha256` checksums.
+- [x] Windows artifacts link the static CRT; Linux artifacts are static musl.
+- [x] Manual dispatch builds the same targets with `dry-run`, so the workflow
+      can be verified without tagging.
+- [x] Installation docs prefer prebuilt binaries and mark source builds as a
+      development path.
+
+**Verification:**
+
+- [x] `npx js-yaml .github/workflows/release.yml` parses the workflow.
+- [x] `cargo build --release --locked -p blockscope-cli --bin blockscope`
+      passes.
+- [x] The same build passes with `RUSTFLAGS=-C target-feature=+crt-static`, and
+      the resulting executable imports neither `VCRUNTIME140.dll` nor
+      `api-ms-win-crt-*`.
+- [x] `blockscope --version` prints `blockscope 0.1.0`.
+- [x] `parse-changelog CHANGELOG.md 0.1.0` and `parse-changelog CHANGELOG.en.md 0.1.0`
+      both succeed, so the release body is non-empty.
+- [ ] `workflow_dispatch` run is green on GitHub Actions.
+- [ ] The first `v*` tag uploads the three archives and a changelog body.
+
+**Remaining before the first release:** push the `v0.1.0` tag. The workspace
+version and the `CHANGELOG.md` section already match, so the version guard and
+the changelog lookup both pass.

@@ -122,13 +122,13 @@ limits.
 **Dependencies:** P2-4  
 **Estimated scope:** Small
 
-## Task P2-6: `renderd mesh` CLI
+## Task P2-6: `blockscope mesh` CLI
 
 **Description:** Add a mesh command for statistics and export.
 
 **Acceptance criteria:**
 
-- [x] `renderd mesh <file>` prints mesh statistics.
+- [x] `blockscope mesh <file>` prints mesh statistics.
 - [x] `--json` prints statistics as JSON.
 - [x] `--obj <path>` writes OBJ.
 - [x] `--ply <path>` writes PLY.
@@ -139,7 +139,7 @@ limits.
 
 - [x] CLI tests cover stats, JSON, OBJ, and PLY.
 - [x] Missing/invalid file errors are stable.
-- [x] `cargo run -p renderd-cli -- mesh --help` works.
+- [x] `cargo run -p blockscope-cli -- mesh --help` works.
 
 **Dependencies:** P2-4, P2-5  
 **Estimated scope:** Medium
@@ -162,7 +162,7 @@ limits.
 - [x] `cargo fmt --all --check` passes.
 - [x] `cargo clippy --workspace --all-targets -- -D warnings` passes.
 - [x] `cargo test --workspace` passes on Windows and WSL.
-- [x] `renderd mesh` demo succeeds on a synthetic fixture.
+- [x] `blockscope mesh` demo succeeds on a synthetic fixture.
 
 **Dependencies:** P2-4, P2-6  
 **Estimated scope:** Medium

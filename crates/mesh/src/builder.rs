@@ -7,6 +7,8 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::thread;
 
+const MAX_WORKERS: usize = 256;
+
 /// Build a page-local mesh from a scene using the supplied catalog.
 pub fn build_mesh(
     scene: &Scene,
@@ -29,8 +31,9 @@ pub fn build_mesh(
 /// Build the same mesh as [`build_mesh`] with pages spread across threads.
 ///
 /// Pages are merged in origin order, so the result is identical to the serial
-/// builder. The catalog must be `Sync`; use `MaterialSnapshot` or
-/// `ColorSnapshot` rather than the mutable catalogs.
+/// builder. The effective worker count is capped at 256. The catalog must be
+/// `Sync`; use `MaterialSnapshot` or `ColorSnapshot` rather than the mutable
+/// catalogs.
 pub fn build_mesh_parallel<C>(
     scene: &Scene,
     catalog: &C,
@@ -40,21 +43,17 @@ pub fn build_mesh_parallel<C>(
 where
     C: BlockCatalog + Sync,
 {
-    let workers = if threads == 0 {
-        thread::available_parallelism()
-            .map(|value| value.get())
-            .unwrap_or(1) as usize
-    } else {
-        threads as usize
-    };
-
-    if workers <= 1 {
+    // Avoid building the page index twice when the request is effectively serial.
+    if worker_count(threads, usize::MAX) <= 1 {
         return build_mesh(scene, catalog, limits);
     }
 
     let view = SceneBlockView::new(scene, limits)?;
     let keys = view.page_keys().collect::<Vec<_>>();
-    let workers = workers.clamp(1, keys.len().max(1));
+    let workers = worker_count(threads, keys.len());
+    if workers <= 1 {
+        return build_mesh(scene, catalog, limits);
+    }
 
     let cursor = AtomicUsize::new(0);
     let abort = AtomicBool::new(false);
@@ -317,6 +316,18 @@ fn limit_error(quads: u64, vertices: u64, pages: u64, limits: &MeshLimits) -> Me
     }
 }
 
+fn worker_count(requested: u32, page_count: usize) -> usize {
+    let requested = if requested == 0 {
+        thread::available_parallelism()
+            .map(|value| value.get())
+            .unwrap_or(1)
+    } else {
+        requested as usize
+    };
+
+    requested.clamp(1, MAX_WORKERS.min(page_count.max(1)))
+}
+
 fn page_origin_of(coord: [i32; 3]) -> Result<[i32; 3], MeshError> {
     let mut origin = [0i32; 3];
     for (axis, value) in origin.iter_mut().enumerate() {
@@ -423,4 +434,17 @@ fn occludes<C: BlockCatalog + ?Sized>(
         return false;
     }
     catalog.resolve(neighbor.state).occludes()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn worker_count_is_capped() {
+        assert_eq!(worker_count(u32::MAX, usize::MAX), MAX_WORKERS);
+        assert_eq!(worker_count(1, 100), 1);
+        assert_eq!(worker_count(0, 1), 1);
+        assert!(worker_count(0, usize::MAX) <= MAX_WORKERS);
+    }
 }

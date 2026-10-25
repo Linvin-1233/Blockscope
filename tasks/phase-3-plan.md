@@ -3,8 +3,8 @@
 **Status:** Phase 3A-3C implemented; Phase 3D deferred.  
 **Scope:** Render the Phase 2 mesh to a deterministic RGBA PNG with an
 orthographic camera, CPU tile rasterizer, two lighting profiles, transparent or
-solid backgrounds, supersampling, multi-view output, and a `renderd render` /
-`renderd bench` CLI.
+solid backgrounds, supersampling, multi-view output, and a `blockscope render` /
+`blockscope bench` CLI.
 
 ## Overview
 
@@ -97,7 +97,7 @@ assets.
 - Tile rasterizer with depth test, backface culling, cutout, translucent sort.
 - `simple-ao-v1` and `flat-v1`.
 - PNG encoder.
-- `renderd render` CLI with width/height/yaw/elevation/background/lighting.
+- `blockscope render` CLI with width/height/yaw/elevation/background/lighting.
 - Unit and CLI tests.
 
 ## Phase 3B Implemented
@@ -107,7 +107,7 @@ assets.
 - Parallel tile workers with deterministic merge.
 - Triangle binning per tile.
 - Golden PNG corpus for cube, partial shapes, water, negative coordinates, and AO.
-- `renderd bench` with per-stage timings and Linux peak RSS.
+- `blockscope bench` with per-stage timings and Linux peak RSS.
 - Synthetic rasterizer scaling example (`tile_bench`).
 
 ## Phase 3C Implemented
@@ -125,7 +125,7 @@ Resource-pack materials and models are implemented in a separate slice:
 - Shadows, full light propagation, and emissive bloom.
 - SIMD rasterization and mesh-build parallelism.
 - Golden corpus for large real structures and deployment-specific thresholds.
-- CI performance budget based on real QQBot workloads.
+- CI performance budget based on real Litematic workloads.
 - Entity models beyond the built-in chest, and animation playback.
 
 ## Task Index
@@ -136,7 +136,7 @@ Resource-pack materials and models are implemented in a separate slice:
 | P3-2 | Render options and lighting profiles | P3-1 | S |
 | P3-3 | Orthographic camera and fit | P3-2 | M |
 | P3-4 | Tile rasterizer and compositing | P3-3 | L |
-| P3-5 | PNG encoder and `renderd render` CLI | P3-4 | M |
+| P3-5 | PNG encoder and `blockscope render` CLI | P3-4 | M |
 | P3-6 | Renderer tests and documentation | P3-4, P3-5 | M |
 | P3-7 | Golden PNG and performance corpus | P3-6 | M |
 | P3-8 | Parallel tiles and triangle binning | P3-4 | M |
@@ -157,7 +157,7 @@ Detailed acceptance criteria live in `tasks/phase-3-todo.md`.
 - [x] Transparent and solid backgrounds work.
 - [x] Opaque, cutout, and translucent layers render.
 - [x] PNG output is deterministic.
-- [x] `renderd render` writes a valid PNG.
+- [x] `blockscope render` writes a valid PNG.
 
 ### Checkpoint 3-3: Phase 3A/3B acceptance
 

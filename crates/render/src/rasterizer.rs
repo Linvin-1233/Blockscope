@@ -5,6 +5,12 @@ use litematic_mesh::{Mesh, MeshPage, NO_TEXTURE, RenderLayer, ambient_occlusion_
 use litematic_scene::Scene;
 use serde::{Deserialize, Serialize};
 
+mod downsample;
+mod stream;
+
+use downsample::downsample;
+use stream::rasterize_streaming;
+
 /// Render counters and effective output settings.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -97,7 +103,7 @@ fn render_mesh_internal(
     })
 }
 
-fn push_page_quads(
+pub(super) fn push_page_quads(
     page: &MeshPage,
     camera: &Camera,
     options: &RenderOptions,
@@ -221,7 +227,7 @@ fn push_page_quads(
 /// Colors and texture coordinates are stored compactly; the exact float values
 /// are reconstructed when the quad is rasterized into a tile.
 #[derive(Debug, Clone)]
-struct QuadRender {
+pub(super) struct QuadRender {
     points: [[f64; 3]; 4],
     color: [u8; 4],
     shade: f32,
@@ -234,15 +240,15 @@ struct QuadRender {
 /// A translucent triangle. Only translucent geometry needs sorting, so this is
 /// kept separate from the quad table.
 #[derive(Debug, Clone)]
-struct Triangle {
-    points: [[f64; 3]; 3],
+pub(super) struct Triangle {
+    pub(super) points: [[f64; 3]; 3],
     color: [u8; 4],
     shade: f32,
     ao: [u8; 3],
     uvs: [[i16; 2]; 3],
-    texture: u16,
-    layer: RenderLayer,
-    depth_key: f64,
+    pub(super) texture: u16,
+    pub(super) layer: RenderLayer,
+    pub(super) depth_key: f64,
 }
 
 /// Reconstruct the per-vertex color exactly as the previous float path did.
@@ -258,7 +264,7 @@ fn vertex_color(color: [u8; 4], shade: f32, ao: u8) -> [f32; 4] {
 }
 
 impl Triangle {
-    fn colors(&self) -> [[f32; 4]; 3] {
+    pub(super) fn colors(&self) -> [[f32; 4]; 3] {
         [
             vertex_color(self.color, self.shade, self.ao[0]),
             vertex_color(self.color, self.shade, self.ao[1]),
@@ -266,7 +272,7 @@ impl Triangle {
         ]
     }
 
-    fn uvs(&self) -> [[f32; 2]; 3] {
+    pub(super) fn uvs(&self) -> [[f32; 2]; 3] {
         [
             decode_uv(self.uvs[0]),
             decode_uv(self.uvs[1]),
@@ -350,15 +356,15 @@ fn rasterize(
 }
 
 #[derive(Clone, Copy, Debug)]
-struct TileJob {
+pub(super) struct TileJob {
     index: usize,
-    x0: u32,
-    y0: u32,
-    width: u32,
-    height: u32,
+    pub(super) x0: u32,
+    pub(super) y0: u32,
+    pub(super) width: u32,
+    pub(super) height: u32,
 }
 
-fn tile_jobs(width: u32, height: u32, tile_size: u32) -> Vec<TileJob> {
+pub(super) fn tile_jobs(width: u32, height: u32, tile_size: u32) -> Vec<TileJob> {
     let tiles_x = width.div_ceil(tile_size);
     let tiles_y = height.div_ceil(tile_size);
     let mut jobs = Vec::with_capacity((tiles_x * tiles_y) as usize);
@@ -380,8 +386,6 @@ fn tile_jobs(width: u32, height: u32, tile_size: u32) -> Vec<TileJob> {
     jobs
 }
 
-const STREAM_PAGES_PER_CHUNK: usize = 8;
-
 fn table_bytes(mesh: &Mesh) -> u64 {
     mesh.statistics
         .quads
@@ -392,310 +396,14 @@ fn tile_buffer_bytes(options: &RenderOptions) -> u64 {
     u64::from(options.internal_width()) * u64::from(options.internal_height()) * 24
 }
 
-struct StreamTile {
-    job: TileJob,
-    colors: Vec<[f32; 4]>,
-    depths: Vec<f64>,
-    counters: TileCounters,
-}
-
-impl StreamTile {
-    fn new(job: TileJob, background: Background) -> Self {
-        let count = (u64::from(job.width) * u64::from(job.height)) as usize;
-        let mut colors = vec![[0.0f32; 4]; count];
-        if let Background::Solid(color) = background {
-            let fill = [
-                f32::from(color.r) / 255.0,
-                f32::from(color.g) / 255.0,
-                f32::from(color.b) / 255.0,
-                f32::from(color.a) / 255.0,
-            ];
-            colors.fill(fill);
-        }
-
-        Self {
-            job,
-            colors,
-            depths: vec![f64::INFINITY; count],
-            counters: TileCounters::default(),
-        }
-    }
-}
-
-fn rasterize_streaming(
-    mesh: &Mesh,
-    camera: &Camera,
-    options: &RenderOptions,
-    statistics: &mut RenderStatistics,
-    textures: Option<&TextureSet>,
-) -> Vec<u8> {
-    let width = options.internal_width();
-    let height = options.internal_height();
-    let tile_size = options.tile_size;
-    let tiles_x = width.div_ceil(tile_size);
-    let tiles_y = height.div_ceil(tile_size);
-    statistics.tiles = u64::from(tiles_x) * u64::from(tiles_y);
-
-    let jobs = tile_jobs(width, height, tile_size);
-    let tiles: Vec<std::sync::Mutex<StreamTile>> = jobs
-        .into_iter()
-        .map(|job| std::sync::Mutex::new(StreamTile::new(job, options.background)))
-        .collect();
-    let threads = worker_count(options.threads, tiles.len());
-
-    let mut quads = Vec::new();
-    let mut translucent = Vec::new();
-    let mut page_index = 0;
-
-    while page_index < mesh.pages.len() {
-        let end = (page_index + STREAM_PAGES_PER_CHUNK).min(mesh.pages.len());
-        quads.clear();
-        for page in &mesh.pages[page_index..end] {
-            push_page_quads(
-                page,
-                camera,
-                options,
-                statistics,
-                &mut quads,
-                &mut translucent,
-            );
-        }
-        page_index = end;
-
-        if quads.is_empty() {
-            continue;
-        }
-
-        let quad_bins = bin_quads(&quads, width, height, tile_size);
-        let touched: Vec<usize> = quad_bins
-            .iter()
-            .enumerate()
-            .filter(|(_, bin)| !bin.is_empty())
-            .map(|(index, _)| index)
-            .collect();
-        render_stream_chunk(
-            &tiles, &quads, &quad_bins, &touched, options, threads, textures,
-        );
-    }
-
-    if !translucent.is_empty() {
-        let triangle_bins = bin_triangles(&translucent, width, height, tile_size);
-        let touched: Vec<usize> = triangle_bins
-            .iter()
-            .enumerate()
-            .filter(|(_, bin)| !bin.is_empty())
-            .map(|(index, _)| index)
-            .collect();
-        render_stream_translucent(
-            &tiles,
-            &translucent,
-            &triangle_bins,
-            &touched,
-            options,
-            threads,
-            textures,
-        );
-    }
-
-    let mut output = vec![0u8; (u64::from(width) * u64::from(height) * 4) as usize];
-    for tile in tiles {
-        let tile = tile.into_inner().expect("stream tile mutex poisoned");
-        statistics.pixels_tested += tile.counters.pixels_tested;
-        statistics.pixels_written += tile.counters.pixels_written;
-        copy_tile(&tile.job, &tile.colors, &mut output, width);
-    }
-
-    if options.supersample > 1 {
-        downsample(
-            &output,
-            width,
-            height,
-            options.width,
-            options.height,
-            options.supersample,
-        )
-    } else {
-        output
-    }
-}
-
-fn render_stream_chunk(
-    tiles: &[std::sync::Mutex<StreamTile>],
-    quads: &[QuadRender],
-    bins: &[Vec<u32>],
-    touched: &[usize],
-    options: &RenderOptions,
-    threads: usize,
-    textures: Option<&TextureSet>,
-) {
-    let work = |tile_index: usize| {
-        let mut guard = tiles[tile_index]
-            .lock()
-            .expect("stream tile mutex poisoned");
-        let StreamTile {
-            job,
-            colors,
-            depths,
-            counters,
-        } = &mut *guard;
-        let job = *job;
-        let mut buffer = TileBuffer {
-            x0: job.x0,
-            y0: job.y0,
-            width: job.width,
-            height: job.height,
-            colors,
-            depths,
-            counters,
-            textures,
-            filter: options.texture_filter,
-        };
-
-        for &index in &bins[tile_index] {
-            let quad = &quads[index as usize];
-            if !intersects(
-                &quad_bounds(&quad.points),
-                job.x0,
-                job.y0,
-                job.width,
-                job.height,
-            ) {
-                continue;
-            }
-            buffer.rasterize_quad(quad);
-        }
-    };
-
-    run_parallel(touched, threads, work);
-}
-
-fn render_stream_translucent(
-    tiles: &[std::sync::Mutex<StreamTile>],
-    triangles: &[Triangle],
-    bins: &[Vec<u32>],
-    touched: &[usize],
-    options: &RenderOptions,
-    threads: usize,
-    textures: Option<&TextureSet>,
-) {
-    let work = |tile_index: usize| {
-        let mut guard = tiles[tile_index]
-            .lock()
-            .expect("stream tile mutex poisoned");
-        let StreamTile {
-            job,
-            colors,
-            depths,
-            counters,
-        } = &mut *guard;
-        let job = *job;
-        let mut buffer = TileBuffer {
-            x0: job.x0,
-            y0: job.y0,
-            width: job.width,
-            height: job.height,
-            colors,
-            depths,
-            counters,
-            textures,
-            filter: options.texture_filter,
-        };
-
-        let mut translucent: Vec<&Triangle> = bins[tile_index]
-            .iter()
-            .map(|&index| &triangles[index as usize])
-            .filter(|triangle| {
-                intersects(
-                    &bounds(&triangle.points),
-                    job.x0,
-                    job.y0,
-                    job.width,
-                    job.height,
-                )
-            })
-            .collect();
-        translucent.sort_by(|left, right| right.depth_key.total_cmp(&left.depth_key));
-
-        for triangle in translucent {
-            let colors = triangle.colors();
-            let uvs = triangle.uvs();
-            buffer.rasterize_triangle(
-                &triangle.points,
-                &colors,
-                &uvs,
-                triangle.texture,
-                triangle.layer,
-            );
-        }
-    };
-
-    run_parallel(touched, threads, work);
-}
-
-fn run_parallel<F>(indices: &[usize], threads: usize, work: F)
-where
-    F: Fn(usize) + Sync,
-{
-    if threads <= 1 || indices.len() <= 1 {
-        for &index in indices {
-            work(index);
-        }
-        return;
-    }
-
-    let cursor = std::sync::atomic::AtomicUsize::new(0);
-    std::thread::scope(|scope| {
-        for _ in 0..threads {
-            let cursor = &cursor;
-            let work = &work;
-            scope.spawn(move || {
-                loop {
-                    let position = cursor.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    let Some(&index) = indices.get(position) else {
-                        break;
-                    };
-                    work(index);
-                }
-            });
-        }
-    });
-}
-
-fn encode_tile(colors: &[[f32; 4]], width: u32, height: u32) -> Vec<u8> {
-    let mut rgba = vec![0u8; (u64::from(width) * u64::from(height) * 4) as usize];
-    for y in 0..height {
-        for x in 0..width {
-            let color = colors[(y * width + x) as usize];
-            let alpha = to_u8(color[3]);
-            let [red, green, blue] = if alpha == 0 {
-                [0, 0, 0]
-            } else {
-                [to_u8(color[0]), to_u8(color[1]), to_u8(color[2])]
-            };
-            let index = ((y * width + x) * 4) as usize;
-            rgba[index] = red;
-            rgba[index + 1] = green;
-            rgba[index + 2] = blue;
-            rgba[index + 3] = alpha;
-        }
-    }
-    rgba
-}
-
-fn copy_tile(job: &TileJob, colors: &[[f32; 4]], output: &mut [u8], width: u32) {
-    let rgba = encode_tile(colors, job.width, job.height);
-    let row_bytes = job.width as usize * 4;
-    for row in 0..job.height {
-        let source = row as usize * row_bytes;
-        let target =
-            ((u64::from(job.y0 + row) * u64::from(width) + u64::from(job.x0)) as usize) * 4;
-        output[target..target + row_bytes].copy_from_slice(&rgba[source..source + row_bytes]);
-    }
-}
-
 /// Group quads by the tiles their screen bounds cover, so each tile only visits
 /// candidates that can actually write a fragment.
-fn bin_quads(quads: &[QuadRender], width: u32, height: u32, tile_size: u32) -> Vec<Vec<u32>> {
+pub(super) fn bin_quads(
+    quads: &[QuadRender],
+    width: u32,
+    height: u32,
+    tile_size: u32,
+) -> Vec<Vec<u32>> {
     let tiles_x = width.div_ceil(tile_size);
     let tiles_y = height.div_ceil(tile_size);
     let mut bins = vec![Vec::new(); (tiles_x * tiles_y) as usize];
@@ -721,7 +429,12 @@ fn bin_quads(quads: &[QuadRender], width: u32, height: u32, tile_size: u32) -> V
 }
 
 /// Group translucent triangles by tile; only these need per-tile sorting.
-fn bin_triangles(triangles: &[Triangle], width: u32, height: u32, tile_size: u32) -> Vec<Vec<u32>> {
+pub(super) fn bin_triangles(
+    triangles: &[Triangle],
+    width: u32,
+    height: u32,
+    tile_size: u32,
+) -> Vec<Vec<u32>> {
     let tiles_x = width.div_ceil(tile_size);
     let tiles_y = height.div_ceil(tile_size);
     let mut bins = vec![Vec::new(); (tiles_x * tiles_y) as usize];
@@ -746,7 +459,7 @@ fn bin_triangles(triangles: &[Triangle], width: u32, height: u32, tile_size: u32
     bins
 }
 
-fn worker_count(requested: u32, jobs: usize) -> usize {
+pub(super) fn worker_count(requested: u32, jobs: usize) -> usize {
     let available = if requested == 0 {
         std::thread::available_parallelism()
             .map(std::num::NonZeroUsize::get)
@@ -814,8 +527,8 @@ struct TileOutput {
     width: u32,
     height: u32,
     rgba: Vec<u8>,
-    pixels_tested: u64,
-    pixels_written: u64,
+    pub(super) pixels_tested: u64,
+    pub(super) pixels_written: u64,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -928,78 +641,25 @@ fn render_tile(
 }
 
 #[derive(Default)]
-struct TileCounters {
+pub(super) struct TileCounters {
     pixels_tested: u64,
     pixels_written: u64,
 }
 
-fn downsample(
-    input: &[u8],
-    input_width: u32,
-    input_height: u32,
-    output_width: u32,
-    output_height: u32,
-    factor: u32,
-) -> Vec<u8> {
-    let mut output = vec![0u8; (u64::from(output_width) * u64::from(output_height) * 4) as usize];
-    let factor = f64::from(factor);
-    let count = factor * factor;
-
-    for output_y in 0..output_height {
-        for output_x in 0..output_width {
-            let mut alpha_sum = 0.0f64;
-            let mut color_sum = [0.0f64; 3];
-
-            for sample_y in 0..factor as u32 {
-                for sample_x in 0..factor as u32 {
-                    let input_x = output_x * factor as u32 + sample_x;
-                    let input_y = output_y * factor as u32 + sample_y;
-                    if input_x >= input_width || input_y >= input_height {
-                        continue;
-                    }
-                    let index = (u64::from(input_y) * u64::from(input_width) + u64::from(input_x))
-                        as usize
-                        * 4;
-                    let alpha = f64::from(input[index + 3]) / 255.0;
-                    alpha_sum += alpha;
-                    color_sum[0] += f64::from(input[index]) / 255.0 * alpha;
-                    color_sum[1] += f64::from(input[index + 1]) / 255.0 * alpha;
-                    color_sum[2] += f64::from(input[index + 2]) / 255.0 * alpha;
-                }
-            }
-
-            let average_alpha = alpha_sum / count;
-            let output_index =
-                (u64::from(output_y) * u64::from(output_width) + u64::from(output_x)) as usize * 4;
-            output[output_index + 3] = (average_alpha.clamp(0.0, 1.0) * 255.0).round() as u8;
-            if alpha_sum > 0.0 {
-                output[output_index] =
-                    ((color_sum[0] / alpha_sum).clamp(0.0, 1.0) * 255.0).round() as u8;
-                output[output_index + 1] =
-                    ((color_sum[1] / alpha_sum).clamp(0.0, 1.0) * 255.0).round() as u8;
-                output[output_index + 2] =
-                    ((color_sum[2] / alpha_sum).clamp(0.0, 1.0) * 255.0).round() as u8;
-            }
-        }
-    }
-
-    output
-}
-
-struct TileBuffer<'a> {
-    x0: u32,
-    y0: u32,
-    width: u32,
-    height: u32,
-    colors: &'a mut [[f32; 4]],
-    depths: &'a mut [f64],
-    counters: &'a mut TileCounters,
-    textures: Option<&'a TextureSet>,
-    filter: TextureFilter,
+pub(super) struct TileBuffer<'a> {
+    pub(super) x0: u32,
+    pub(super) y0: u32,
+    pub(super) width: u32,
+    pub(super) height: u32,
+    pub(super) colors: &'a mut [[f32; 4]],
+    pub(super) depths: &'a mut [f64],
+    pub(super) counters: &'a mut TileCounters,
+    pub(super) textures: Option<&'a TextureSet>,
+    pub(super) filter: TextureFilter,
 }
 
 impl TileBuffer<'_> {
-    fn rasterize_quad(&mut self, quad: &QuadRender) {
+    pub(super) fn rasterize_quad(&mut self, quad: &QuadRender) {
         let colors = [
             vertex_color(quad.color, quad.shade, quad.ao[0]),
             vertex_color(quad.color, quad.shade, quad.ao[1]),
@@ -1036,7 +696,7 @@ impl TileBuffer<'_> {
         );
     }
 
-    fn rasterize_triangle(
+    pub(super) fn rasterize_triangle(
         &mut self,
         points: &[[f64; 3]; 3],
         colors: &[[f32; 4]; 3],
@@ -1157,13 +817,13 @@ fn blend(destination: &mut [f32; 4], source: [f32; 4]) {
     destination[3] = out_alpha;
 }
 
-fn intersects(bbox: &[f64; 4], x0: u32, y0: u32, width: u32, height: u32) -> bool {
+pub(super) fn intersects(bbox: &[f64; 4], x0: u32, y0: u32, width: u32, height: u32) -> bool {
     let max_x = f64::from(x0 + width);
     let max_y = f64::from(y0 + height);
     bbox[2] >= f64::from(x0) && bbox[0] < max_x && bbox[3] >= f64::from(y0) && bbox[1] < max_y
 }
 
-fn bounds(points: &[[f64; 3]; 3]) -> [f64; 4] {
+pub(super) fn bounds(points: &[[f64; 3]; 3]) -> [f64; 4] {
     let mut min_x = f64::INFINITY;
     let mut max_x = f64::NEG_INFINITY;
     let mut min_y = f64::INFINITY;
@@ -1179,7 +839,7 @@ fn bounds(points: &[[f64; 3]; 3]) -> [f64; 4] {
     [min_x, min_y, max_x, max_y]
 }
 
-fn quad_bounds(points: &[[f64; 3]; 4]) -> [f64; 4] {
+pub(super) fn quad_bounds(points: &[[f64; 3]; 4]) -> [f64; 4] {
     let mut min_x = f64::INFINITY;
     let mut max_x = f64::NEG_INFINITY;
     let mut min_y = f64::INFINITY;
@@ -1203,6 +863,6 @@ fn dot3(left: [f64; 3], right: [f64; 3]) -> f64 {
     left[0] * right[0] + left[1] * right[1] + left[2] * right[2]
 }
 
-fn to_u8(value: f32) -> u8 {
+pub(super) fn to_u8(value: f32) -> u8 {
     (value.clamp(0.0, 1.0) * 255.0).round() as u8
 }

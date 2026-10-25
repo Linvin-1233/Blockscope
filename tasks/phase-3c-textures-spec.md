@@ -11,7 +11,7 @@ full Java block models, without committing Minecraft assets.
 
 Success means:
 
-- `renderd render` can read a user-provided client jar or extracted assets.
+- `blockscope render` can read a user-provided client jar or extracted assets.
 - The resource pack's blockstate/model mapping is authoritative; there is no
   hand-maintained per-block texture table for model-backed blocks.
 - Blockstates select the correct model variant or multipart model.
@@ -59,7 +59,7 @@ Success means:
   - `--assets <dir>`;
   - `--resource-pack <dir|zip>`;
   - `--texture-filter nearest|linear`;
-  - `renderd materials <file> ...` coverage report.
+  - `blockscope materials <file> ...` coverage report.
 - Diagnostics and limits:
   - missing model/texture counters;
   - invalid JSON and cycle errors with stable codes;
@@ -114,19 +114,19 @@ cargo test --workspace
 powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/check.ps1
 
 # Texture render against the local client jar
-cargo run -p renderd-cli --release -- render fixtures\private\四边形大宗.litematic `
+cargo run -p blockscope-cli --release -- render fixtures\private\四边形大宗.litematic `
   --client-jar "D:\hmcl\.minecraft\versions\26.2-Fabric\26.2-Fabric.jar" `
   --output renders\textured.png
 
 # Material coverage
-cargo run -p renderd-cli --release -- materials fixtures\private\四边形大宗.litematic `
+cargo run -p blockscope-cli --release -- materials fixtures\private\四边形大宗.litematic `
   --client-jar "D:\hmcl\.minecraft\versions\26.2-Fabric\26.2-Fabric.jar" --json
 
 # Extracted assets
-cargo run -p renderd-cli --release -- render model.litematic --assets D:\mc-assets --output out.png
+cargo run -p blockscope-cli --release -- render model.litematic --assets D:\mc-assets --output out.png
 
 # Optional overlay
-cargo run -p renderd-cli --release -- render model.litematic `
+cargo run -p blockscope-cli --release -- render model.litematic `
   --client-jar "D:\...\26.2-Fabric.jar" `
   --resource-pack "D:\...\resourcepacks\MyPack" `
   --output out.png
@@ -325,9 +325,9 @@ Follow the workspace conventions:
 
 ## Success Criteria
 
-1. `renderd render --client-jar <jar>` produces a textured PNG for the local
+1. `blockscope render --client-jar <jar>` produces a textured PNG for the local
    `26.2-Fabric.jar`.
-2. `renderd materials` reports pack/fallback/texture coverage for the user's
+2. `blockscope materials` reports pack/fallback/texture coverage for the user's
    fixture.
 3. At least 90% of non-air block states in the fixture resolve to a pack model or
    a textured fallback; the rest are listed with reasons.

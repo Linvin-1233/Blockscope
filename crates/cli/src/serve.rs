@@ -98,6 +98,12 @@ struct InputRef {
 }
 
 pub fn run(args: ServeArgs) -> Result<(), CliError> {
+    if args.threads > crate::MAX_THREADS {
+        return Err(CliError::input(format!(
+            "INVALID_RENDER_OPTIONS: threads must be at most {}",
+            crate::MAX_THREADS
+        )));
+    }
     let capacity = Capacity::detect();
     crate::warn_forced(args.limits.force_limits);
     let materials = load_materials(&args.assets)?;
@@ -236,12 +242,8 @@ fn process(
         ));
     }
 
-    let input = fs::read(&request.input.path).map_err(|error| {
-        CliError::input(format!(
-            "IO_ERROR: {}: {error}",
-            request.input.path.display()
-        ))
-    })?;
+    let limits = crate::decode_limits(force_limits, ignore_block_entity_nbt);
+    let input = crate::read_file_limited(&request.input.path, limits.max_input_bytes)?;
     let input_hash = sha256(&input).to_hex();
 
     if let Some(expected) = &request.input.hash
@@ -290,12 +292,9 @@ fn process(
         }
         None => {
             let parse_started = Instant::now();
-            let file = LitematicFile::parse_bytes(
-                &input,
-                &crate::decode_limits(force_limits, ignore_block_entity_nbt),
-                &crate::scene_limits(force_limits),
-            )
-            .map_err(CliError::from)?;
+            let file =
+                LitematicFile::parse_bytes(&input, &limits, &crate::scene_limits(force_limits))
+                    .map_err(CliError::from)?;
             let scene = file.into_scene().map_err(CliError::from)?;
             let parse_ms = parse_started.elapsed().as_secs_f64() * 1000.0;
 

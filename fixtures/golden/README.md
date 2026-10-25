@@ -6,7 +6,7 @@ change:
 
 ```powershell
 $env:UPDATE_GOLDEN = "1"
-cargo test -p renderd-cli --test golden
+cargo test -p blockscope-cli --test golden
 Remove-Item Env:UPDATE_GOLDEN
 ```
 

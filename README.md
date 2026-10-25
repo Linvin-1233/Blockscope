@@ -1,107 +1,66 @@
-# Litematic-render-QQBot
+# Blockscope
 
-Minecraft Litematic 无头渲染服务。Phase 3C 已完成：Rust 解析、色块/资源包
-材质、CPU PNG 渲染和基准测试；下一步是 Go QQBot 服务。
+[![CI](https://github.com/Linvin-1233/Blockscope/actions/workflows/ci.yml/badge.svg)](https://github.com/Linvin-1233/Blockscope/actions/workflows/ci.yml)
 
-## 文档
+Blockscope 是一个把 Minecraft `.litematic` 投影文件渲染成 PNG 的
+无头 Rust 图像渲染引擎，面向通用后端服务、批处理工具和自动化管线。仓库包含
+解析、材质、网格、CPU 渲染、CLI 和 stdio 服务。
 
-- [新版设计](.docs/qqbot-litematic-rust-renderer-engineering-design.md)
-- [旧版设计（历史方案）](.docs/minecraft-render-service-engineering-design.md)
-- [Phase 1 计划](tasks/plan.md)
-- [Phase 1 任务清单](tasks/todo.md)
-- [Phase 2 计划](tasks/phase-2-plan.md)
-- [Phase 2 任务清单](tasks/phase-2-todo.md)
-- [Phase 3 计划](tasks/phase-3-plan.md)
-- [Phase 3 任务清单](tasks/phase-3-todo.md)
-- [Litematic 格式笔记](docs/litematic-format.md)
+它不是 Minecraft 客户端截图工具：引擎直接解析 `.litematic`，在 CPU 上生成
+确定性 PNG，并可在服务端无图形环境中运行。
+
+- 当前版本：`0.1.0`
+- 支持平台：Windows x86_64、Linux x86_64 / aarch64
+- 下载：预编译二进制见 [GitHub Releases](https://github.com/Linvin-1233/Blockscope/releases)
+- English: [README.en.md](README.en.md)
+
+## 文档导航
+
+### 用户文档
+
+- [用户文档总览](docs/user/README.md)
+- [功能与限制](docs/user/features.md)
+- [安装与快速开始](docs/user/getting-started.md)
+- [CLI 命令](docs/user/cli.md)
+- [材质与资源包](docs/user/materials.md)
+- [LOD 与大结构](docs/user/lod.md)
+- [服务模式](docs/user/service.md)
+- [限制与安全](docs/user/limits.md)
+- [Docker](docs/user/docker.md)
+- [故障排查](docs/user/troubleshooting.md)
+
+### 技术文档
+
+- [Litematic 格式说明](docs/litematic-format.md)
 - [Color-block 网格说明](docs/mesh-geometry.md)
 - [CPU 渲染说明](docs/rendering.md)
 - [资源包材质说明](docs/textures.md)
+- [引擎协议 v1](docs/engine-protocol.md)
 - [部署说明](docs/deployment.md)
-- [引擎协议](docs/engine-protocol.md)
-- [Phase 3C 材质 spec](tasks/phase-3c-textures-spec.md)
-- [Phase 3C 材质计划](tasks/phase-3c-textures-plan.md)
-- [Phase 3C 材质任务](tasks/phase-3c-textures-todo.md)
 
-## 当前范围
+### 项目文档
 
-- 解析 `.litematic` v1-v7
-- 规范 Scene IR、材料统计、诊断和哈希
-- 默认色块 catalog、常见 partial shape、流体高度和静态方块实体 box mesh
-- 资源包 blockstate/model 解析、PNG 贴图、tint、cutout/translucent
-- 箱子内置 body/lid/lock 模型和 entity 贴图
-- OBJ/PLY 导出
-- CPU 正交相机、tile 光栅化、`flat-v1` / `simple-ao-v1` 和 PNG 输出
-- 超采样 1-4、多视角分别输出、并行 tile 和三角形分桶
-- 黄金 PNG 回归测试、`renderd bench` 分阶段计时
-- `renderd inspect` / `validate` / `stats` / `mesh` / `render` / `bench` / `materials` CLI
-- 资源包由部署者自行提供，不提交任何 Minecraft 资产
-- 暂不包含 Go QQBot 服务、通用实体模型和动画播放
+- [贡献指南](CONTRIBUTING.md) ([English](CONTRIBUTING.en.md))
+- [行为准则](CODE_OF_CONDUCT.md) ([English](CODE_OF_CONDUCT.en.md))
+- [变更日志](CHANGELOG.md) ([English](CHANGELOG.en.md))
 
-## CLI
+## 贡献
 
-```powershell
-cargo run -p renderd-cli -- inspect path\to\model.litematic --json
-cargo run -p renderd-cli -- validate path\to\model.litematic
-cargo run -p renderd-cli -- stats path\to\model.litematic --json
-cargo run -p renderd-cli -- mesh path\to\model.litematic --obj out.obj
-cargo run -p renderd-cli -- mesh path\to\model.litematic --ply out.ply
-cargo run -p renderd-cli -- render path\to\model.litematic --output out.png
-cargo run -p renderd-cli -- render path\to\model.litematic --output out.png --width 2048 --height 2048
-cargo run -p renderd-cli -- render path\to\model.litematic --output out.png --views 45,225
-cargo run -p renderd-cli -- render path\to\model.litematic --output out.png --supersample 4 --threads 4
-cargo run -p renderd-cli -- render path\to\model.litematic --output out.png `
-  --client-jar "D:\hmcl\.minecraft\versions\26.2-Fabric\26.2-Fabric.jar"
-cargo run -p renderd-cli --release -- materials path\to\model.litematic `
-  --client-jar "D:\hmcl\.minecraft\versions\26.2-Fabric\26.2-Fabric.jar" --json
-cargo run -p renderd-cli --release -- bench path\to\model.litematic --iterations 5
-cargo run -p renderd-cli -- mesh path\to\huge.litematic --force-limits --json
-```
+欢迎提交 bug、文档改进和代码贡献。开始前请阅读
+[CONTRIBUTING.md](CONTRIBUTING.md) 和 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)。
 
-`--force-limits` disables the parser, mesh, and render caps for one invocation
-and prints a warning to stderr. It does not allocate anything up front, but a
-large model can exhaust memory.
+提交前请运行：
 
-`inspect --json` 输出稳定 manifest，包含 bounds、region、材料统计、诊断、
-`inputHash` 和 `sceneHash`。
-
-## 开发
-
-需要 Rust stable 工具链：
-
-```powershell
-rustup default stable
+```bash
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
-pwsh ./scripts/check.ps1
 ```
 
-没有 PowerShell 7 时使用：
+或运行 `scripts/check.ps1` / `scripts/check.sh`。请勿提交 Minecraft 资产、
+私有 `.litematic` 或资源包。
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/check.ps1
-```
+## 许可证
 
-Linux 环境使用 `bash ./scripts/check.sh`。真实 `.litematic` 样本放入
-`fixtures/litematic/`，该目录默认不提交文件。
-
-## IDE 提示
-
-如果 RustRover 在测试文件里显示引用错误，但 `cargo test --workspace` 能通过，
-通常是 IDE 的 `cargo check` 缓存滞后。依次尝试：
-
-1. Cargo 工具窗口 → Reload Cargo Project。
-2. File → Invalidate Caches / Restart。
-3. 仍有问题时清理对应包的缓存：
-
-```powershell
-cargo clean -p litematic-nbt -p litematic-scene -p litematic-core -p renderd-cli
-```
-
-所有测试目标可以单独检查：
-
-```powershell
-cargo check -p litematic-nbt --tests
-cargo check -p litematic-scene --tests
-cargo check -p litematic-core --tests
-cargo check -p renderd-cli --tests
-```
+仓库当前未包含 `LICENSE` 文件。在维护者补充许可证之前，代码默认保留所有权利；
+如需在其它项目中使用，请先联系维护者。

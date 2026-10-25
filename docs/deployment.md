@@ -3,12 +3,29 @@
 The engine is a single static-ish binary with no runtime service dependencies.
 It runs the same way on Linux, in containers, and on Windows.
 
+## Prebuilt binaries
+
+Tagged releases publish standalone binaries, so a host does not need a Rust
+toolchain:
+
+| Platform | Asset |
+| --- | --- |
+| Linux x86_64 | `blockscope-v<version>-x86_64-unknown-linux-musl.tar.gz` |
+| Linux aarch64 | `blockscope-v<version>-aarch64-unknown-linux-musl.tar.gz` |
+| Windows x86_64 | `blockscope-v<version>-x86_64-pc-windows-msvc.zip` |
+
+Each archive ships with a `.sha256` file named after it without the extension
+(`blockscope-v<version>-<target>.sha256`); verify it before deploying. Linux
+artifacts are statically linked against musl and the Windows artifact uses the
+static CRT. The container image is still built from this repository (see below);
+no prebuilt image is published.
+
 ## Docker
 
 ```bash
-docker build -t renderd:local .
+docker build -t blockscope:local .
 
-docker run --rm --cpus=1 --memory=1g renderd:local capacity --json
+docker run --rm --cpus=1 --memory=1g blockscope:local capacity --json
 ```
 
 `capacity` reports what the engine would use inside that container. With
@@ -23,7 +40,7 @@ docker run --rm -i \
   --cpus=1 --memory=1g \
   -v "$PWD/assets/client.jar:/assets/client.jar:ro" \
   -v "$PWD/jobs:/data" \
-  renderd:local serve --client-jar /assets/client.jar
+  blockscope:local serve --client-jar /assets/client.jar
 ```
 
 Run a supervisor with a pool instead of a single worker:
@@ -33,13 +50,13 @@ docker run --rm -i \
   --cpus=2 --memory=2g \
   -v "$PWD/assets/client.jar:/assets/client.jar:ro" \
   -v "$PWD/jobs:/data" \
-  renderd:local supervise --workers 1 --threads 2 --client-jar /assets/client.jar
+  blockscope:local supervise --workers 1 --threads 2 --client-jar /assets/client.jar
 ```
 
 On a 1 CPU / 1 GiB container the capacity suggestion is one worker and one
 thread; raising `--workers` there only splits one core and doubles memory.
 
-`renderd supervise` also accepts:
+`blockscope supervise` also accepts:
 
 - `--timeout <seconds>`: per-job deadline, default 60, `0` disables.
 - `--memory <MiB>`: per-worker ceiling; defaults to 85 percent of available
@@ -53,7 +70,7 @@ thread; raising `--workers` there only splits one core and doubles memory.
 For an oversized schematic on a large host:
 
 ```bash
-renderd render huge.litematic --output huge.png \
+blockscope render huge.litematic --output huge.png \
   --lod auto --force-limits --threads 0 \
   --client-jar /assets/client.jar
 ```
@@ -65,7 +82,7 @@ reproducible across hosts with different memory.
 Under the supervisor, raise the per-worker ceiling to match the chosen LOD:
 
 ```bash
-renderd supervise --workers 1 --threads 12 --memory 8000 \
+blockscope supervise --workers 1 --threads 12 --memory 8000 \
   --force-limits --client-jar /assets/client.jar
 ```
 
@@ -81,19 +98,19 @@ WSL2 with Docker Desktop, or a plain Ubuntu distro, is enough for a local Linux
 check:
 
 ```bash
-cd /mnt/d/vscodeProj/Litematic-render-QQBot
+cd /mnt/d/vscodeProj/Blockscope
 export PATH="$HOME/.cargo/bin:$PATH"
 export CARGO_TARGET_DIR=/tmp/litematic-target
 
 cargo test --workspace
-cargo run -p renderd-cli --release -- capacity --json
+cargo run -p blockscope-cli --release -- capacity --json
 ```
 
 To verify cgroup-aware sizing without Docker, use a transient systemd scope:
 
 ```bash
 sudo systemd-run --scope -p MemoryMax=1G -p CPUQuota=100% -- \
-  /tmp/litematic-target/release/renderd capacity --json
+  /tmp/litematic-target/release/blockscope capacity --json
 ```
 
 Expected output: `cores: 1`, `cpuQuotaMilli: 1000`,
@@ -110,9 +127,15 @@ Expected output: `cores: 1`, `cpuQuotaMilli: 1000`,
   protocol smoke test inside `--cpus=1 --memory=1g` so cgroup parsing is
   exercised on every push.
 
+`.github/workflows/release.yml` runs on a `v*` tag: it checks that the tag
+matches `[workspace.package] version`, creates the GitHub Release from
+`CHANGELOG.md`, and uploads the three archives with sha256 files. Running the
+workflow manually builds and packages the same targets with `dry-run`, so the
+pipeline can be verified before the first tag exists.
+
 ## Capacity reference
 
-`renderd capacity` also reports `suggestedMaxQuads`: 80 percent of available
+`blockscope capacity` also reports `suggestedMaxQuads`: 80 percent of available
 memory divided by roughly 400 bytes per quad. The default mesh cap is the lower
 of 5,000,000 quads and that budget, so a 1 GiB container rejects oversized
 schematics earlier than a 32 GiB host. `--force-limits` bypasses the cap;
@@ -126,6 +149,6 @@ schematics earlier than a 32 GiB host. `--force-limits` bypasses the cap;
 | 4 CPU / 8 GiB | 2 | 2 | 2048 @ ss2 | ~350 MB |
 | 12 CPU / 32 GiB | 4 | 3 | 2048 @ ss2 | ~350 MB |
 
-These values come from the formulas in `renderd capacity`; override them with
+These values come from the formulas in `blockscope capacity`; override them with
 `--workers`, `--threads`, or `--memory-budget` when the automatic value is wrong
 for a deployment.

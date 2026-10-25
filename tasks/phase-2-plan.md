@@ -81,7 +81,7 @@ changing the mesh container.
 - `SceneBlockView` with page index and later-region-wins resolution.
 - Mesh builder with face culling, page assignment, limits, statistics.
 - OBJ and PLY exporters.
-- `renderd mesh <file>` with `--json`, `--obj`, `--ply`.
+- `blockscope mesh <file>` with `--json`, `--obj`, `--ply`.
 - Unit tests, CLI tests, and `docs/mesh-geometry.md`.
 
 ## Phase 2B Scope
@@ -109,7 +109,7 @@ changing the mesh container.
 | P2-3 | Scene block view | P2-1 | M |
 | P2-4 | Full-cube mesh builder | P2-2, P2-3 | M |
 | P2-5 | OBJ/PLY exporters | P2-4 | S |
-| P2-6 | `renderd mesh` CLI | P2-4, P2-5 | M |
+| P2-6 | `blockscope mesh` CLI | P2-4, P2-5 | M |
 | P2-7 | Phase 2A tests and docs | P2-4, P2-6 | M |
 | P2-8 | Box shapes + voxel mesher | P2-4 | L |
 | P2-9 | Shape families and properties | P2-8 | L |
@@ -131,7 +131,7 @@ Detailed acceptance criteria live in `tasks/phase-2-todo.md`.
 - [ ] Stone/glass and glass/glass culling rules pass.
 - [ ] Page boundaries and limits are covered.
 - [ ] OBJ/PLY output is deterministic.
-- [ ] `renderd mesh` runs on a synthetic fixture.
+- [ ] `blockscope mesh` runs on a synthetic fixture.
 
 ### Checkpoint 2A-3: Phase 2A acceptance
 

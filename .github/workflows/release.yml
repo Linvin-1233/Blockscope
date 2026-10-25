@@ -1,0 +1,81 @@
+name: release
+
+# Tag push creates the GitHub Release and uploads binaries.
+# Manual dispatch only builds and packages, so the workflow can be verified
+# before the first tag exists.
+on:
+  push:
+    tags:
+      - "v[0-9]+.*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  create_release:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify tag matches the workspace version
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          if [[ -z "${version}" ]]; then
+            echo "::error::Cannot read [workspace.package] version from Cargo.toml"
+            exit 1
+          fi
+          if [[ "${tag}" != "${version}" ]]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match workspace version ${version}"
+            exit 1
+          fi
+          echo "Tag ${GITHUB_REF_NAME} matches workspace version ${version}"
+      # Fails when CHANGELOG.md has no section for this version, so a release
+      # always carries curated notes instead of an empty body.
+      - uses: taiki-e/create-gh-release-action@v1
+        with:
+          changelog: CHANGELOG.md
+
+  upload_assets:
+    needs: create_release
+    if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || needs.create_release.result == 'success') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            # Link the static CRT so the executable runs without the
+            # Visual C++ redistributable.
+            rustflags: -C target-feature=+crt-static
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - uses: taiki-e/upload-rust-binary-action@v1
+        with:
+          bin: blockscope
+          package: blockscope-cli
+          target: ${{ matrix.target }}
+          archive: $bin-$tag-$target
+          tar: unix
+          zip: windows
+          include: README.md
+          leading-dir: true
+          checksum: sha256
+          locked: true
+          dry-run: ${{ github.event_name == 'workflow_dispatch' }}
+        env:
+          RUSTFLAGS: ${{ matrix.rustflags }}

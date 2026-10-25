@@ -60,7 +60,7 @@ render from it.
 
 **Verification:**
 
-- [x] `cargo test -p renderd-cli`
+- [x] `cargo test -p blockscope-cli`
 - [x] `cargo test -p litematic-render --test golden_png --test golden_textures`
 - [x] `git diff --stat fixtures/golden` is empty after the run.
 - [x] Real fixture render is byte-identical before and after (SHA256 match).
@@ -104,7 +104,7 @@ numbers as the new baseline.
 
 **Verification:**
 
-- [x] `cargo run -p renderd-cli --release -- bench ... --iterations 5`
+- [x] `cargo run -p blockscope-cli --release -- bench ... --iterations 5`
 - [x] Before and after numbers in the task notes: mesh 146 ms before, 146-152 ms
       after (with 8 percent more quads); render 204 ms before, 207-237 ms after.
 
@@ -157,7 +157,7 @@ jobs sequentially.
 **Verification:**
 
 - [x] Manual run: two jobs in one process took 412 ms and 394 ms with no reload.
-- [x] `cargo test -p renderd-cli` passes, including protocol round-trip tests.
+- [x] `cargo test -p blockscope-cli` passes, including protocol round-trip tests.
 
 **Dependencies:** P1, M3
 **Files likely touched:** `crates/cli/src/main.rs`, `crates/cli/src/serve.rs`

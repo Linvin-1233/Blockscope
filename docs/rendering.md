@@ -216,17 +216,17 @@ oversized schematics on a machine with enough memory.
 ## CLI
 
 ```powershell
-cargo run -p renderd-cli -- render path\to\model.litematic --output out.png
-cargo run -p renderd-cli -- render path\to\model.litematic --output out.png --width 2048 --height 2048
-cargo run -p renderd-cli -- render path\to\model.litematic --output out.png --views 45,225
-cargo run -p renderd-cli -- render path\to\model.litematic --output out.png --yaw 225 --elevation 35
-cargo run -p renderd-cli -- render path\to\model.litematic --output out.png --supersample 4
-cargo run -p renderd-cli -- render path\to\model.litematic --output out.png --threads 4
-cargo run -p renderd-cli -- render path\to\model.litematic --output out.png --background "#202830" --lighting flat-v1
-cargo run -p renderd-cli -- render path\to\model.litematic --output out.png `
+cargo run -p blockscope-cli -- render path\to\model.litematic --output out.png
+cargo run -p blockscope-cli -- render path\to\model.litematic --output out.png --width 2048 --height 2048
+cargo run -p blockscope-cli -- render path\to\model.litematic --output out.png --views 45,225
+cargo run -p blockscope-cli -- render path\to\model.litematic --output out.png --yaw 225 --elevation 35
+cargo run -p blockscope-cli -- render path\to\model.litematic --output out.png --supersample 4
+cargo run -p blockscope-cli -- render path\to\model.litematic --output out.png --threads 4
+cargo run -p blockscope-cli -- render path\to\model.litematic --output out.png --background "#202830" --lighting flat-v1
+cargo run -p blockscope-cli -- render path\to\model.litematic --output out.png `
   --client-jar "D:\hmcl\.minecraft\versions\26.2-Fabric\26.2-Fabric.jar"
-cargo run -p renderd-cli -- render path\to\model.litematic --output out.png --texture-filter linear
-cargo run -p renderd-cli -- render path\to\model.litematic --output out.png --json
+cargo run -p blockscope-cli -- render path\to\model.litematic --output out.png --texture-filter linear
+cargo run -p blockscope-cli -- render path\to\model.litematic --output out.png --json
 ```
 
 `--views` accepts comma-separated yaw angles. With one view the output path is
@@ -240,11 +240,11 @@ The human-readable output includes parse, mesh, render, PNG, and total timings.
 ## Benchmark
 
 ```powershell
-cargo run -p renderd-cli --release -- bench path\to\model.litematic --iterations 5
-cargo run -p renderd-cli --release -- bench path\to\model.litematic --width 2048 --height 2048 --supersample 2 --json
+cargo run -p blockscope-cli --release -- bench path\to\model.litematic --iterations 5
+cargo run -p blockscope-cli --release -- bench path\to\model.litematic --width 2048 --height 2048 --supersample 2 --json
 ```
 
-`renderd bench` parses and meshes once, then renders and PNG-encodes
+`blockscope bench` parses and meshes once, then renders and PNG-encodes
 `--iterations` times. It reports min/median/mean/max for render, PNG, and their
 sum, plus mesh and render counters, buffer sizes, and peak RSS on Linux
 (`null` on other platforms).
@@ -319,11 +319,12 @@ exactly in 7.5 s, while the porous `000001` falls back to LOD 2 in 16.4 s.
 - No mipmaps; nearest or bilinear sampling only.
 - No shadows, full light propagation, or emissive bloom.
 - Translucent sorting is per tile and approximate.
-- CPU-only; tiles are parallel, but mesh construction and PNG encoding are not.
+- CPU-only; tiles are parallel and mesh pages are built in parallel, but PNG
+  encoding runs on the calling thread.
 - Texture coordinates are Q12 fixed point; UVs outside [-8, 8) are clamped.
 - Color management is approximate; output is treated as sRGB.
 - Golden PNGs cover small synthetic scenes, not large real structures.
-- Performance thresholds still need a real QQBot workload and deployment target.
+- Performance thresholds still need a real workload and deployment target.
 
 ## Determinism
 

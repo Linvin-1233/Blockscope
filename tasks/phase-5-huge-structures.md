@@ -134,7 +134,7 @@ appear in the output.
 
 ### C4: Capacity-aware admission (implemented)
 
-- `renderd capacity` and both `hello` messages report `suggestedMaxQuads`
+- `blockscope capacity` and both `hello` messages report `suggestedMaxQuads`
   (80 percent of available memory at roughly 400 bytes per quad).
 - The default mesh cap is the lower of 5,000,000 quads and that budget, so a
   small container rejects oversized schematics before allocating render

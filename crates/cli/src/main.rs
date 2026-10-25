@@ -1,33 +1,31 @@
 use clap::{Args, Parser, Subcommand};
 use litematic_core::{DecodeLimits, LitematicError, LitematicFile, LitematicLimits};
 use litematic_material::{AssetSource, MaterialSet, MaterialSnapshot, TextureFilter};
-use litematic_mesh::{
-    ColorBlockCatalog, Mesh, MeshError, MeshLimits, MeshStatistics, Rgba, build_mesh_parallel,
-    write_obj, write_ply,
-};
-use litematic_render::{
-    Background, LightingProfile, RenderError, RenderOptions, RenderStatistics, render_mesh,
-    render_mesh_with_textures, write_png,
-};
+use litematic_mesh::{ColorBlockCatalog, Mesh, MeshError, MeshLimits, Rgba, build_mesh_parallel};
+use litematic_render::{Background, RenderError, RenderOptions};
 use litematic_scene::{Manifest, Scene, SceneError, aggregate_with_threads, sha256};
 use std::fmt;
-use std::fs;
-use std::fs::File;
-use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Instant;
 
 mod capacity;
+mod commands;
+mod file_io;
 mod serve;
 mod supervise;
+
+pub(crate) use file_io::read_file_limited;
+
+/// Upper bound for mesh, LOD, and rasterizer worker threads.
+pub(crate) const MAX_THREADS: u32 = 256;
 
 /// Litematic parser and render service.
 #[derive(Debug, Parser)]
 #[command(
-    name = "renderd",
+    name = "blockscope",
     version,
-    about = "Litematic parser and render service",
+    about = "Blockscope - headless Litematic image renderer",
     after_help = "Default limits: input 64 MiB, decompressed 256 MiB, NBT depth 64, regions 1024, total volume 200M."
 )]
 struct Cli {
@@ -44,15 +42,15 @@ enum Command {
     /// Print material statistics.
     Stats(StatsArgs),
     /// Build a color-block mesh and optionally export it.
-    Mesh(MeshArgs),
+    Mesh(commands::mesh::MeshArgs),
     /// Render a color-block mesh to PNG.
-    Render(RenderArgs),
+    Render(commands::render::RenderArgs),
     /// Measure parse, mesh, render, and PNG timings.
-    Bench(BenchArgs),
+    Bench(commands::bench::BenchArgs),
     /// Report model and texture coverage from a resource pack.
-    Materials(MaterialsArgs),
+    Materials(commands::materials::MaterialsArgs),
     /// Print detected CPU and memory capacity with suggested pool settings.
-    Capacity(CapacityArgs),
+    Capacity(commands::capacity::CapacityArgs),
     /// Run as a long-lived worker speaking newline-delimited JSON on stdio.
     Serve(serve::ServeArgs),
     /// Spawn and route jobs across a pool of worker processes.
@@ -101,28 +99,6 @@ struct StatsArgs {
     limits: LimitArgs,
 }
 
-#[derive(Debug, Args)]
-struct MeshArgs {
-    file: PathBuf,
-    /// Print mesh statistics as JSON.
-    #[arg(long)]
-    json: bool,
-    /// Write the mesh as OBJ.
-    #[arg(long)]
-    obj: Option<PathBuf>,
-    /// Write the mesh as PLY with vertex colors.
-    #[arg(long)]
-    ply: Option<PathBuf>,
-    /// Mesh worker threads; 0 selects available parallelism.
-    #[arg(long, default_value_t = 0)]
-    threads: u32,
-    /// Level of detail: 1 disables, 2-16 sets a factor, "auto" picks one.
-    #[arg(long, default_value = "1")]
-    lod: String,
-    #[command(flatten)]
-    limits: LimitArgs,
-}
-
 #[derive(Debug, Args, Clone, Default)]
 struct AssetArgs {
     /// Read blockstates, models, and textures directly from a client jar.
@@ -159,100 +135,6 @@ impl AssetArgs {
     }
 }
 
-#[derive(Debug, Args)]
-struct RenderArgs {
-    file: PathBuf,
-    /// Output PNG path.
-    #[arg(long, default_value = "render.png")]
-    output: PathBuf,
-    /// Output width in pixels.
-    #[arg(long, default_value_t = 1024)]
-    width: u32,
-    /// Output height in pixels.
-    #[arg(long, default_value_t = 1024)]
-    height: u32,
-    /// Horizontal rotation in degrees; 0 looks from the south, 45 from the
-    /// south-west.
-    #[arg(long, default_value_t = 45.0)]
-    yaw: f32,
-    /// Camera elevation in degrees.
-    #[arg(long, default_value_t = 30.0)]
-    elevation: f32,
-    /// "transparent" or #RRGGBB / #RRGGBBAA.
-    #[arg(long, default_value = "transparent")]
-    background: String,
-    /// flat-v1 or simple-ao-v1.
-    #[arg(long, default_value = "simple-ao-v1")]
-    lighting: String,
-    /// Supersampling factor: 1, 2, 3, or 4.
-    #[arg(long, default_value_t = 2)]
-    supersample: u32,
-    /// Rasterizer worker threads; 0 selects available parallelism.
-    #[arg(long, default_value_t = 0)]
-    threads: u32,
-    /// Level of detail: 1 disables, 2-16 sets a factor, "auto" picks one.
-    #[arg(long, default_value = "1")]
-    lod: String,
-    /// Comma-separated yaw angles, for example 45,225.
-    #[arg(long)]
-    views: Option<String>,
-    /// Print render statistics as JSON.
-    #[arg(long)]
-    json: bool,
-    #[command(flatten)]
-    assets: AssetArgs,
-    #[command(flatten)]
-    limits: LimitArgs,
-}
-
-#[derive(Debug, Args)]
-struct BenchArgs {
-    file: PathBuf,
-    /// Output width in pixels.
-    #[arg(long, default_value_t = 1024)]
-    width: u32,
-    /// Output height in pixels.
-    #[arg(long, default_value_t = 1024)]
-    height: u32,
-    /// Camera elevation in degrees.
-    #[arg(long, default_value_t = 30.0)]
-    elevation: f32,
-    /// Supersampling factor: 1, 2, 3, or 4.
-    #[arg(long, default_value_t = 2)]
-    supersample: u32,
-    /// Rasterizer worker threads; 0 selects available parallelism.
-    #[arg(long, default_value_t = 0)]
-    threads: u32,
-    /// Level of detail: 1 disables, 2-16 sets a factor, "auto" picks one.
-    #[arg(long, default_value = "1")]
-    lod: String,
-    /// Number of render iterations.
-    #[arg(long, default_value_t = 3)]
-    iterations: u32,
-    /// flat-v1 or simple-ao-v1.
-    #[arg(long, default_value = "simple-ao-v1")]
-    lighting: String,
-    /// Print the report as JSON.
-    #[arg(long)]
-    json: bool,
-    #[command(flatten)]
-    assets: AssetArgs,
-    #[command(flatten)]
-    limits: LimitArgs,
-}
-
-#[derive(Debug, Args)]
-struct MaterialsArgs {
-    file: PathBuf,
-    /// Print the coverage report as JSON.
-    #[arg(long)]
-    json: bool,
-    #[command(flatten)]
-    assets: AssetArgs,
-    #[command(flatten)]
-    limits: LimitArgs,
-}
-
 fn main() -> ExitCode {
     let cli = Cli::parse();
 
@@ -270,59 +152,13 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Command::Inspect(args) => inspect(args),
         Command::Validate(args) => validate(args),
         Command::Stats(args) => stats(args),
-        Command::Mesh(args) => mesh(args),
-        Command::Render(args) => render(args),
-        Command::Bench(args) => bench(args),
-        Command::Materials(args) => materials(args),
-        Command::Capacity(args) => capacity(args),
+        Command::Mesh(args) => commands::mesh::run(args),
+        Command::Render(args) => commands::render::run(args),
+        Command::Bench(args) => commands::bench::run(args),
+        Command::Materials(args) => commands::materials::run(args),
+        Command::Capacity(args) => commands::capacity::run(args),
         Command::Serve(args) => serve::run(args),
         Command::Supervise(args) => supervise::run(args),
-    }
-}
-
-#[derive(Debug, Args)]
-struct CapacityArgs {
-    /// Print capacity as JSON.
-    #[arg(long)]
-    json: bool,
-}
-
-fn capacity(args: CapacityArgs) -> Result<(), CliError> {
-    let capacity = capacity::Capacity::detect();
-
-    if args.json {
-        let json = serde_json::to_string_pretty(&capacity).map_err(CliError::internal)?;
-        println!("{json}");
-        return Ok(());
-    }
-
-    println!("platform: {}", capacity.platform);
-    println!("cores: {}", capacity.cores);
-    match capacity.cpu_quota_milli {
-        Some(milli) => println!("cpu quota: {:.1} cores", f64::from(milli) / 1000.0),
-        None => println!("cpu quota: unlimited"),
-    }
-    println!(
-        "memory limit: {}",
-        format_megabytes(capacity.memory_limit_bytes)
-    );
-    println!(
-        "memory available: {}",
-        format_megabytes(capacity.memory_available_bytes)
-    );
-    println!("suggested workers: {}", capacity.suggested_workers);
-    println!("suggested threads: {}", capacity.suggested_threads);
-    println!("suggested max quads: {}", capacity.suggested_max_quads);
-    println!("default tier: {}", capacity.tier());
-
-    Ok(())
-}
-
-fn format_megabytes(bytes: u64) -> String {
-    if bytes == 0 {
-        "unknown".to_string()
-    } else {
-        format!("{} MB", bytes / (1024 * 1024))
     }
 }
 
@@ -419,182 +255,6 @@ fn stats(args: StatsArgs) -> Result<(), CliError> {
 
     for (state, count) in blocks {
         println!("{count:>10}  {}", state.canonical());
-    }
-
-    Ok(())
-}
-
-fn mesh(args: MeshArgs) -> Result<(), CliError> {
-    warn_forced(args.limits.force_limits);
-    let (_, scene) = load_scene(
-        &args.file,
-        args.limits.force_limits,
-        GEOMETRY_IGNORES_BLOCK_ENTITY_NBT,
-    )?;
-    let lod = parse_lod(&args.lod)?;
-    let PreparedScene { mesh, .. } = prepare_scene(
-        scene,
-        None,
-        lod,
-        &mesh_limits(args.limits.force_limits),
-        args.threads,
-    )?;
-
-    if let Some(path) = &args.obj {
-        write_export(path, |writer| write_obj(&mesh, writer))?;
-        println!("wrote OBJ: {}", path.display());
-    }
-    if let Some(path) = &args.ply {
-        write_export(path, |writer| write_ply(&mesh, writer))?;
-        println!("wrote PLY: {}", path.display());
-    }
-
-    if args.json {
-        let json = serde_json::to_string_pretty(&mesh.statistics).map_err(CliError::internal)?;
-        println!("{json}");
-    } else {
-        print_mesh_stats(&mesh.statistics);
-    }
-
-    Ok(())
-}
-
-fn render(args: RenderArgs) -> Result<(), CliError> {
-    let started = Instant::now();
-    warn_forced(args.limits.force_limits);
-    let (_, scene) = load_scene(
-        &args.file,
-        args.limits.force_limits,
-        GEOMETRY_IGNORES_BLOCK_ENTITY_NBT,
-    )?;
-    let parse_ms = started.elapsed().as_secs_f64() * 1000.0;
-    let lod = parse_lod(&args.lod)?;
-
-    let background = parse_background(&args.background)?;
-
-    let lighting = LightingProfile::parse(&args.lighting).ok_or_else(|| {
-        CliError::input(format!(
-            "INVALID_RENDER_OPTIONS: unknown lighting profile '{}'",
-            args.lighting
-        ))
-    })?;
-
-    let views = parse_views(&args)?;
-    let view_count = views.len();
-    let texture_filter = parse_texture_filter(&args.assets.texture_filter)?;
-    let materials = load_materials(&args.assets)?;
-
-    let PreparedScene {
-        scene,
-        mesh,
-        snapshot,
-        factor,
-        lod_ms,
-        mesh_ms,
-    } = prepare_scene(
-        scene,
-        materials.as_ref(),
-        lod,
-        &mesh_limits(args.limits.force_limits),
-        args.threads,
-    )?;
-
-    let mut results = Vec::with_capacity(view_count);
-    for yaw in views {
-        let mut options = RenderOptions {
-            width: args.width,
-            height: args.height,
-            yaw,
-            elevation: args.elevation,
-            background,
-            lighting,
-            supersample: args.supersample,
-            threads: args.threads,
-            texture_filter,
-            ..Default::default()
-        };
-        apply_render_limits(args.limits.force_limits, &mut options);
-
-        let render_started = Instant::now();
-        let output = match &snapshot {
-            Some(snapshot) => {
-                render_mesh_with_textures(&scene, &mesh, &options, snapshot.textures())
-                    .map_err(CliError::from)?
-            }
-            None => render_mesh(&scene, &mesh, &options).map_err(CliError::from)?,
-        };
-        let render_ms = render_started.elapsed().as_secs_f64() * 1000.0;
-
-        let output_path = if view_count == 1 {
-            args.output.clone()
-        } else {
-            output_path_for_yaw(&args.output, yaw)
-        };
-        let png_started = Instant::now();
-        let file = File::create(&output_path).map_err(|error| {
-            CliError::input(format!("IO_ERROR: {}: {error}", output_path.display()))
-        })?;
-        let mut writer = BufWriter::new(file);
-        write_png(&output, &mut writer).map_err(CliError::from)?;
-        writer.flush().map_err(|error| {
-            CliError::input(format!("IO_ERROR: {}: {error}", output_path.display()))
-        })?;
-        let png_ms = png_started.elapsed().as_secs_f64() * 1000.0;
-
-        results.push((output_path, output, options, render_ms, png_ms));
-    }
-
-    let total_ms = started.elapsed().as_secs_f64() * 1000.0;
-
-    if args.json {
-        if results.len() == 1 {
-            let statistics = &results[0].1.statistics;
-            let json = serde_json::to_string_pretty(statistics).map_err(CliError::internal)?;
-            println!("{json}");
-        } else {
-            let entries: Vec<_> = results
-                .iter()
-                .map(|(path, output, _, _, _)| {
-                    serde_json::json!({
-                        "output": path.display().to_string(),
-                        "statistics": output.statistics,
-                    })
-                })
-                .collect();
-            let json = serde_json::to_string_pretty(&entries).map_err(CliError::internal)?;
-            println!("{json}");
-        }
-    } else {
-        for (path, output, options, render_ms, png_ms) in &results {
-            println!("output: {}", path.display());
-            println!("size: {}x{}", output.width, output.height);
-            println!("yaw: {}, elevation: {}", options.yaw, options.elevation);
-            println!("lighting: {}", options.lighting.as_str());
-            println!("background: {}", options.background.as_str());
-            println!(
-                "supersample: {} (internal {}x{})",
-                output.statistics.supersample,
-                output.statistics.internal_width,
-                output.statistics.internal_height
-            );
-            print_render_stats(&output.statistics);
-            println!("render: {render_ms:.1} ms, png: {png_ms:.1} ms");
-        }
-        println!("timings: parse {parse_ms:.1} ms, mesh {mesh_ms:.1} ms, total {total_ms:.1} ms");
-        if factor > 1 || matches!(lod, LodMode::Auto) {
-            println!("lod: {lod_ms:.1} ms (factor {factor})");
-        }
-        if let Some(snapshot) = &snapshot {
-            let diagnostics = snapshot.diagnostics();
-            println!(
-                "materials: pack {} states, chest {} states, fallback {} states, missing models {} missing textures {}",
-                diagnostics.pack_models,
-                diagnostics.chests,
-                diagnostics.fallback_shapes,
-                diagnostics.missing_models,
-                diagnostics.missing_textures
-            );
-        }
     }
 
     Ok(())
@@ -738,370 +398,6 @@ fn parse_background(value: &str) -> Result<Background, CliError> {
     Ok(Background::Solid(color))
 }
 
-fn materials(args: MaterialsArgs) -> Result<(), CliError> {
-    warn_forced(args.limits.force_limits);
-    let (_, scene) = load_scene(
-        &args.file,
-        args.limits.force_limits,
-        args.limits.ignore_block_entity_nbt,
-    )?;
-    let materials = load_materials(&args.assets)?.ok_or_else(|| {
-        CliError::input("ASSET_SOURCE_REQUIRED: provide --client-jar or --assets")
-    })?;
-    let report = materials.report(&scene);
-
-    if args.json {
-        let json = serde_json::to_string_pretty(&report).map_err(CliError::internal)?;
-        println!("{json}");
-        return Ok(());
-    }
-
-    println!("file: {}", args.file.display());
-    println!("total blocks: {}", report.total_blocks);
-    println!("pack models: {}", report.pack_models);
-    println!("chests: {}", report.chests);
-    println!("fallback: {}", report.fallback);
-    println!("unknown: {}", report.unknown);
-    println!("textured: {}", report.textured);
-    println!("missing textures: {}", report.missing_textures);
-    println!("entries:");
-
-    for entry in &report.entries {
-        println!(
-            "{:>10}  {:<10} {}  {}",
-            entry.count,
-            entry.kind.as_str(),
-            if entry.textured { "textured" } else { "color" },
-            entry.state
-        );
-    }
-
-    Ok(())
-}
-
-fn parse_views(args: &RenderArgs) -> Result<Vec<f32>, CliError> {
-    let Some(value) = &args.views else {
-        return Ok(vec![args.yaw]);
-    };
-
-    let views: Vec<f32> = value
-        .split(',')
-        .map(|part| {
-            part.trim().parse::<f32>().map_err(|_| {
-                CliError::input(format!(
-                    "INVALID_RENDER_OPTIONS: invalid view angle '{}'",
-                    part.trim()
-                ))
-            })
-        })
-        .collect::<Result<_, _>>()?;
-
-    if views.is_empty() {
-        return Err(CliError::input(
-            "INVALID_RENDER_OPTIONS: views must not be empty",
-        ));
-    }
-    if views.iter().any(|view| !view.is_finite()) {
-        return Err(CliError::input(
-            "INVALID_RENDER_OPTIONS: view angles must be finite",
-        ));
-    }
-
-    Ok(views)
-}
-
-fn output_path_for_yaw(path: &Path, yaw: f32) -> PathBuf {
-    let stem = path
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .unwrap_or("render");
-    let extension = path
-        .extension()
-        .and_then(|extension| extension.to_str())
-        .unwrap_or("png");
-    path.with_file_name(format!("{stem}-{yaw}.{extension}"))
-}
-
-#[derive(Debug, Clone, Copy)]
-struct TimingSummary {
-    min: f64,
-    median: f64,
-    mean: f64,
-    max: f64,
-}
-
-fn summarize(samples: &[f64]) -> TimingSummary {
-    let mut sorted = samples.to_vec();
-    sorted.sort_by(f64::total_cmp);
-
-    let min = sorted.first().copied().unwrap_or(0.0);
-    let max = sorted.last().copied().unwrap_or(0.0);
-    let mean = sorted.iter().sum::<f64>() / sorted.len().max(1) as f64;
-    let median = if sorted.is_empty() {
-        0.0
-    } else if sorted.len() % 2 == 1 {
-        sorted[sorted.len() / 2]
-    } else {
-        (sorted[sorted.len() / 2 - 1] + sorted[sorted.len() / 2]) * 0.5
-    };
-
-    TimingSummary {
-        min,
-        median,
-        mean,
-        max,
-    }
-}
-
-fn timing_json(summary: &TimingSummary) -> serde_json::Value {
-    serde_json::json!({
-        "min": summary.min,
-        "median": summary.median,
-        "mean": summary.mean,
-        "max": summary.max,
-    })
-}
-
-fn print_timing(name: &str, summary: &TimingSummary) {
-    println!(
-        "{name}: min {:.2} ms, median {:.2} ms, mean {:.2} ms, max {:.2} ms",
-        summary.min, summary.median, summary.mean, summary.max
-    );
-}
-
-fn bench(args: BenchArgs) -> Result<(), CliError> {
-    if args.iterations == 0 {
-        return Err(CliError::input(
-            "INVALID_RENDER_OPTIONS: iterations must be positive",
-        ));
-    }
-    warn_forced(args.limits.force_limits);
-
-    let lighting = LightingProfile::parse(&args.lighting).ok_or_else(|| {
-        CliError::input(format!(
-            "INVALID_RENDER_OPTIONS: unknown lighting profile '{}'",
-            args.lighting
-        ))
-    })?;
-
-    let texture_filter = parse_texture_filter(&args.assets.texture_filter)?;
-    let materials = load_materials(&args.assets)?;
-
-    let parse_started = Instant::now();
-    let (_, scene) = load_scene(
-        &args.file,
-        args.limits.force_limits,
-        GEOMETRY_IGNORES_BLOCK_ENTITY_NBT,
-    )?;
-    let parse_ms = parse_started.elapsed().as_secs_f64() * 1000.0;
-    let lod = parse_lod(&args.lod)?;
-
-    let PreparedScene {
-        scene,
-        mesh,
-        snapshot,
-        factor,
-        lod_ms,
-        mesh_ms,
-    } = prepare_scene(
-        scene,
-        materials.as_ref(),
-        lod,
-        &mesh_limits(args.limits.force_limits),
-        args.threads,
-    )?;
-
-    let mut options = RenderOptions {
-        width: args.width,
-        height: args.height,
-        yaw: 45.0,
-        elevation: args.elevation,
-        background: Background::Transparent,
-        lighting,
-        supersample: args.supersample,
-        threads: args.threads,
-        texture_filter,
-        ..Default::default()
-    };
-    apply_render_limits(args.limits.force_limits, &mut options);
-    options.validate().map_err(CliError::from)?;
-
-    let mut render_samples = Vec::with_capacity(args.iterations as usize);
-    let mut png_samples = Vec::with_capacity(args.iterations as usize);
-    let mut png_bytes = 0u64;
-    let mut last_output = None;
-
-    for _ in 0..args.iterations {
-        let render_started = Instant::now();
-        let output = match &snapshot {
-            Some(snapshot) => {
-                render_mesh_with_textures(&scene, &mesh, &options, snapshot.textures())
-                    .map_err(CliError::from)?
-            }
-            None => render_mesh(&scene, &mesh, &options).map_err(CliError::from)?,
-        };
-        render_samples.push(render_started.elapsed().as_secs_f64() * 1000.0);
-
-        let png_started = Instant::now();
-        let mut bytes = Vec::new();
-        write_png(&output, &mut bytes).map_err(CliError::from)?;
-        png_samples.push(png_started.elapsed().as_secs_f64() * 1000.0);
-
-        png_bytes = bytes.len() as u64;
-        last_output = Some(output);
-    }
-
-    let output = last_output.expect("iterations is positive");
-    let totals: Vec<f64> = render_samples
-        .iter()
-        .zip(&png_samples)
-        .map(|(render, png)| render + png)
-        .collect();
-    let render = summarize(&render_samples);
-    let png = summarize(&png_samples);
-    let total = summarize(&totals);
-    let peak_rss = peak_rss_bytes();
-
-    if args.json {
-        let report = serde_json::json!({
-            "file": args.file.display().to_string(),
-            "iterations": args.iterations,
-            "width": options.width,
-            "height": options.height,
-            "supersample": options.supersample,
-            "threads": options.threads,
-            "lod": factor,
-            "parseMs": parse_ms,
-            "lodMs": lod_ms,
-            "meshMs": mesh_ms,
-            "renderMs": timing_json(&render),
-            "pngMs": timing_json(&png),
-            "totalMs": timing_json(&total),
-            "mesh": mesh.statistics,
-            "renderStatistics": output.statistics,
-            "pngBytes": png_bytes,
-            "rgbaBytes": output.rgba.len() as u64,
-            "peakRssBytes": peak_rss,
-            "materials": snapshot.as_ref().map(|snapshot| snapshot.diagnostics().clone()),
-        });
-        let json = serde_json::to_string_pretty(&report).map_err(CliError::internal)?;
-        println!("{json}");
-    } else {
-        println!("file: {}", args.file.display());
-        println!(
-            "size: {}x{} (supersample {})",
-            options.width, options.height, options.supersample
-        );
-        println!(
-            "threads: {}",
-            if options.threads == 0 {
-                "auto".to_string()
-            } else {
-                options.threads.to_string()
-            }
-        );
-        println!("parse: {parse_ms:.2} ms");
-        if factor > 1 || matches!(lod, LodMode::Auto) {
-            println!("lod: {lod_ms:.2} ms (factor {factor})");
-        }
-        println!("mesh: {mesh_ms:.2} ms");
-        print_timing("render", &render);
-        print_timing("png", &png);
-        print_timing("total", &total);
-        println!(
-            "mesh: {} pages, {} quads, {} vertices",
-            mesh.statistics.pages, mesh.statistics.quads, mesh.statistics.vertices
-        );
-        println!(
-            "buffers: {} rgba bytes, {} png bytes",
-            output.rgba.len(),
-            png_bytes
-        );
-        if let Some(peak_rss) = peak_rss {
-            println!("peak rss: {} bytes", peak_rss);
-        }
-        if let Some(snapshot) = &snapshot {
-            let diagnostics = snapshot.diagnostics();
-            println!(
-                "materials: pack {} states, chest {} states, fallback {} states, missing models {} missing textures {}",
-                diagnostics.pack_models,
-                diagnostics.chests,
-                diagnostics.fallback_shapes,
-                diagnostics.missing_models,
-                diagnostics.missing_textures
-            );
-        }
-    }
-
-    Ok(())
-}
-
-/// Peak resident set size. Linux exposes it through `/proc`; other platforms
-/// report nothing rather than guessing.
-fn peak_rss_bytes() -> Option<u64> {
-    #[cfg(target_os = "linux")]
-    {
-        let status = fs::read_to_string("/proc/self/status").ok()?;
-        for line in status.lines() {
-            let Some(value) = line.strip_prefix("VmHWM:") else {
-                continue;
-            };
-            let kilobytes = value
-                .trim()
-                .trim_end_matches("kB")
-                .trim()
-                .parse::<u64>()
-                .ok()?;
-            return Some(kilobytes * 1024);
-        }
-        None
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        None
-    }
-}
-
-fn print_render_stats(statistics: &RenderStatistics) {
-    println!("tiles: {}", statistics.tiles);
-    println!("triangles: {}", statistics.triangles);
-    println!("culled backfaces: {}", statistics.culled_backfaces);
-    println!(
-        "layer triangles: opaque {} cutout {} translucent {}",
-        statistics.opaque_triangles, statistics.cutout_triangles, statistics.translucent_triangles
-    );
-    println!("pixels tested: {}", statistics.pixels_tested);
-    println!("pixels written: {}", statistics.pixels_written);
-}
-
-fn write_export<F>(path: &Path, write: F) -> Result<(), CliError>
-where
-    F: FnOnce(&mut BufWriter<File>) -> std::io::Result<()>,
-{
-    let file = File::create(path)
-        .map_err(|error| CliError::input(format!("IO_ERROR: {}: {error}", path.display())))?;
-    let mut writer = BufWriter::new(file);
-    write(&mut writer)
-        .map_err(|error| CliError::input(format!("IO_ERROR: {}: {error}", path.display())))?;
-    writer
-        .flush()
-        .map_err(|error| CliError::input(format!("IO_ERROR: {}: {error}", path.display())))?;
-    Ok(())
-}
-
-fn print_mesh_stats(statistics: &MeshStatistics) {
-    println!("pages: {}", statistics.pages);
-    println!("quads: {}", statistics.quads);
-    println!("vertices: {}", statistics.vertices);
-    println!("blocks visited: {}", statistics.blocks_visited);
-    println!("blocks rendered: {}", statistics.blocks_rendered);
-    println!("unknown blocks: {}", statistics.unknown_blocks);
-    println!(
-        "layers: opaque {} cutout {} translucent {}",
-        statistics.opaque_quads, statistics.cutout_quads, statistics.translucent_quads
-    );
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LodMode {
     Fixed(u32),
@@ -1142,6 +438,12 @@ fn prepare_scene(
     limits: &MeshLimits,
     threads: u32,
 ) -> Result<PreparedScene, CliError> {
+    if threads > MAX_THREADS {
+        return Err(CliError::input(format!(
+            "INVALID_RENDER_OPTIONS: threads must be at most {MAX_THREADS}"
+        )));
+    }
+
     match lod {
         LodMode::Fixed(factor) => {
             let lod_started = Instant::now();
@@ -1244,15 +546,11 @@ fn load_scene(
     force_limits: bool,
     ignore_block_entity_nbt: bool,
 ) -> Result<(Vec<u8>, Scene), CliError> {
-    let input = fs::read(path)
-        .map_err(|error| CliError::input(format!("IO_ERROR: {}: {error}", path.display())))?;
+    let limits = decode_limits(force_limits, ignore_block_entity_nbt);
+    let input = read_file_limited(path, limits.max_input_bytes)?;
 
-    let file = LitematicFile::parse_bytes(
-        &input,
-        &decode_limits(force_limits, ignore_block_entity_nbt),
-        &scene_limits(force_limits),
-    )
-    .map_err(CliError::from)?;
+    let file = LitematicFile::parse_bytes(&input, &limits, &scene_limits(force_limits))
+        .map_err(CliError::from)?;
 
     let scene = file.into_scene().map_err(CliError::from)?;
     Ok((input, scene))
@@ -1349,6 +647,43 @@ impl From<SceneError> for CliError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use litematic_scene::{BlockStateKey, PackedIndices, Region, SceneMetadata};
+
+    fn one_block_scene() -> Scene {
+        let states = PackedIndices::from_values(2, &[0]).unwrap();
+        let region = Region {
+            name: "main".to_string(),
+            origin: [0, 0, 0],
+            size: [1, 1, 1],
+            data_version: 0,
+            palette: vec![BlockStateKey::simple("minecraft:stone")],
+            states,
+            block_entities: Vec::new(),
+            entity_count: 0,
+            pending_block_tick_count: 0,
+            pending_fluid_tick_count: 0,
+        };
+        Scene::new(SceneMetadata::default(), vec![region], Vec::new()).unwrap()
+    }
+
+    #[test]
+    fn prepare_scene_rejects_oversized_thread_requests() {
+        let error = match prepare_scene(
+            one_block_scene(),
+            None,
+            LodMode::Fixed(1),
+            &MeshLimits::default(),
+            100_000,
+        ) {
+            Ok(_) => panic!("oversized thread request must be rejected"),
+            Err(error) => error,
+        };
+
+        assert!(
+            error.message.starts_with("INVALID_RENDER_OPTIONS: threads"),
+            "{error}"
+        );
+    }
 
     #[test]
     fn forced_limits_raise_every_cap() {

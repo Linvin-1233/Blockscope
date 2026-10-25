@@ -9,7 +9,7 @@ runtime; no Minecraft assets are stored in this repository.
 Point the CLI at a client jar:
 
 ```powershell
-renderd render model.litematic `
+blockscope render model.litematic `
   --client-jar "D:\hmcl\.minecraft\versions\26.2-Fabric\26.2-Fabric.jar" `
   --output out.png
 ```
@@ -17,13 +17,13 @@ renderd render model.litematic `
 Or at extracted assets:
 
 ```powershell
-renderd render model.litematic --assets D:\mc-assets --output out.png
+blockscope render model.litematic --assets D:\mc-assets --output out.png
 ```
 
 Add an overlay resource pack on top of the base:
 
 ```powershell
-renderd render model.litematic `
+blockscope render model.litematic `
   --client-jar "D:\...\26.2-Fabric.jar" `
   --resource-pack "D:\...\resourcepacks\MyPack" `
   --output out.png
@@ -93,8 +93,8 @@ Limits:
 |---|---|
 | texture dimensions | 2048 x 2048 |
 | decoded texture memory | 256 MiB |
-| texture count | 4096 |
-| JSON asset size | 8 MiB |
+| texture count | bounded by decoded texture memory |
+| asset size | 8 MiB |
 | model parent depth | 64 |
 
 ## Tint
@@ -143,15 +143,15 @@ implemented.
 
 ## Mesh Export
 
-`renderd mesh` remains the color-block export path. OBJ/PLY files do not include
-texture coordinates or materials yet; use `renderd render` for textured output.
+`blockscope mesh` remains the color-block export path. OBJ/PLY files do not include
+texture coordinates or materials yet; use `blockscope render` for textured output.
 
 ## Coverage Report
 
 ```powershell
-renderd materials model.litematic `
+blockscope materials model.litematic `
   --client-jar "D:\...\26.2-Fabric.jar"
-renderd materials model.litematic --client-jar "D:\...\26.2-Fabric.jar" --json
+blockscope materials model.litematic --client-jar "D:\...\26.2-Fabric.jar" --json
 ```
 
 The report includes per-block counts, `pack-model` / `chest` / `fallback` /

@@ -95,11 +95,17 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
     }
     .max(1);
     let threads = if args.threads == 0 {
-        capacity.suggested_threads
+        capacity.suggested_threads.min(crate::MAX_THREADS)
     } else {
         args.threads
     }
     .max(1);
+    if threads > crate::MAX_THREADS {
+        return Err(CliError::input(format!(
+            "INVALID_RENDER_OPTIONS: threads must be at most {}",
+            crate::MAX_THREADS
+        )));
+    }
     let queue_limit = if args.queue == 0 {
         workers * 2
     } else {
@@ -125,7 +131,7 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
 
     if workers.saturating_mul(threads) > capacity.cores {
         eprintln!(
-            "renderd supervise: {} workers x {} threads exceeds {} cores",
+            "blockscope supervise: {} workers x {} threads exceeds {} cores",
             workers, threads, capacity.cores
         );
     }
@@ -182,7 +188,7 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
         };
 
         match event {
-            Some(Event::Request(job)) => {
+            Some(Event::Request(mut job)) => {
                 if shutdown_at.is_some() {
                     write_error(&mut out, &job.id, "SHUTDOWN", "worker is shutting down")?;
                     continue;
@@ -191,6 +197,9 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
                 if !idle && queue.len() >= queue_limit {
                     write_error(&mut out, &job.id, "BUSY", "queue is full")?;
                     continue;
+                }
+                if job.hash.is_empty() {
+                    job.hash = route_key(&job.line);
                 }
                 queue.push_back(job);
                 dispatch(&mut pool, &mut queue, &mut sticky, &spec, &mut out)?;
@@ -261,7 +270,7 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
                         dispatch(&mut pool, &mut queue, &mut sticky, &spec, &mut out)?;
                     }
                     Err(error) => {
-                        eprintln!("renderd supervise: cannot restart worker {index}: {error}");
+                        eprintln!("blockscope supervise: cannot restart worker {index}: {error}");
                         shutdown_at = Some(Instant::now() + SHUTDOWN_GRACE);
                     }
                 }
@@ -370,7 +379,7 @@ fn enforce_limits(
                 restarted = true;
             }
             Err(error) => {
-                eprintln!("renderd supervise: cannot restart worker {index}: {error}");
+                eprintln!("blockscope supervise: cannot restart worker {index}: {error}");
                 return Err(CliError::internal("worker restart failed"));
             }
         }
@@ -565,15 +574,9 @@ fn read_stdin(tx: Sender<Event>) {
                     .and_then(Value::as_str)
                     .unwrap_or_default()
                     .to_string();
-                let hash = value
-                    .pointer("/input/path")
-                    .and_then(Value::as_str)
-                    .map(file_hash)
-                    .unwrap_or_default();
-                let lod = value.get("lod").and_then(Value::as_u64).unwrap_or(1);
                 let _ = tx.send(Event::Request(Job {
                     id,
-                    hash: format!("{hash}:{lod}"),
+                    hash: String::new(),
                     line: line.to_string(),
                     attempts: 0,
                 }));
@@ -593,10 +596,27 @@ fn read_stdin(tx: Sender<Event>) {
     let _ = tx.send(Event::StdinClosed);
 }
 
-fn file_hash(path: &str) -> String {
-    std::fs::read(path)
+/// Build the sticky-routing key without blocking the stdin reader.
+fn route_key(line: &str) -> String {
+    let Ok(value) = serde_json::from_str::<Value>(line) else {
+        return String::new();
+    };
+
+    let hash = value
+        .pointer("/input/path")
+        .and_then(Value::as_str)
+        .and_then(|path| {
+            crate::file_io::read_file_limited(
+                std::path::Path::new(path),
+                crate::file_io::DEFAULT_INPUT_LIMIT,
+            )
+            .ok()
+        })
         .map(|bytes| litematic_scene::sha256(&bytes).to_hex())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    let lod = value.get("lod").and_then(Value::as_u64).unwrap_or(1);
+
+    format!("{hash}:{lod}")
 }
 
 #[cfg(target_os = "linux")]
@@ -666,13 +686,14 @@ fn process_rss_bytes(_child: &Child) -> Option<u64> {
 }
 
 fn write_error(out: &mut impl Write, id: &str, code: &str, message: &str) -> Result<(), CliError> {
+    let retryable = !matches!(code, "INVALID_REQUEST" | "INVALID_RENDER_OPTIONS");
     write_line(
         out,
         &json!({
             "type": "result",
             "id": id,
             "ok": false,
-            "error": { "code": code, "message": message, "retryable": true },
+            "error": { "code": code, "message": message, "retryable": retryable },
         }),
     )
 }
@@ -722,5 +743,33 @@ mod tests {
     fn unknown_memory_disables_the_limit() {
         let capacity = capacity_with_memory(0);
         assert_eq!(memory_limit(&capacity, 2, 0), None);
+    }
+
+    #[test]
+    fn route_key_hashes_regular_files_and_preserves_lod() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("input.litematic");
+        std::fs::write(&path, b"data").unwrap();
+        let line = json!({
+            "type": "render",
+            "input": { "path": path },
+            "lod": 2,
+        })
+        .to_string();
+
+        let key = route_key(&line);
+        assert!(key.ends_with(":2"), "{key}");
+        assert_eq!(key.len(), 66, "{key}");
+    }
+
+    #[test]
+    fn route_key_returns_empty_hash_for_unreadable_paths() {
+        let line = json!({
+            "type": "render",
+            "input": { "path": "definitely-not-a-file" },
+        })
+        .to_string();
+
+        assert_eq!(route_key(&line), ":1");
     }
 }

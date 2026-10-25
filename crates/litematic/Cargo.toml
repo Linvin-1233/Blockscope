@@ -6,4 +6,3 @@ edition.workspace = true
 [dependencies]
 litematic-nbt = { path = "../nbt" }
 litematic-scene = { path = "../scene" }
-thiserror.workspace = true

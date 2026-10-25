@@ -189,7 +189,7 @@ licensing.
 
 - [x] `powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/check.ps1`
 - [x] WSL check command from the README.
-- [x] `renderd materials` on the local fixture.
+- [x] `blockscope materials` on the local fixture.
 
 **Dependencies:** M7  
 **Estimated scope:** Small

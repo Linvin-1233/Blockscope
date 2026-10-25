@@ -1,10 +1,10 @@
 # Engine Protocol (v1)
 
-Wire protocol between the bot/supervisor and a standalone renderer process. The
-goal is one transport that behaves the same on Linux and Windows, with a single
-job in flight per process.
+Wire protocol between an upper-layer service/supervisor and a standalone
+renderer process. The goal is one transport that behaves the same on Linux and
+Windows, with a single job in flight per process.
 
-**Status:** Designed. No implementation yet (tasks P2-P4).
+**Status:** Implemented for `blockscope serve` and `blockscope supervise` (protocol v1).
 
 ## Transport
 
@@ -56,7 +56,7 @@ supervisor                          worker
 `hello` is printed only after the material set is ready, so the supervisor can
 size its pool from `suggestedWorkers` and `suggestedThreads` instead of guessing
 from the host. Values come from cgroup limits on Linux and
-`GlobalMemoryStatusEx` on Windows; see `renderd capacity --json` for the same
+`GlobalMemoryStatusEx` on Windows; see `blockscope capacity --json` for the same
 data from the command line.
 
 ## Render request
@@ -76,13 +76,13 @@ data from the command line.
 | `textureFilter` | string | `nearest` | `nearest` or `linear` |
 | `format` | string | `png` | `png` only in v1 |
 | `outputDir` | string | required | Absolute directory; created if missing |
-| `threads` | integer | `0` | Mesh and rasterizer threads; `0` uses all cores |
+| `threads` | integer | `0` | Mesh and rasterizer threads; `0` uses all cores, capped at 256 |
 | `lod` | integer or `"auto"` | `1` | `1` disables; `2..=16` is a fixed factor; `auto` picks the smallest factor that fits the memory budget |
 | `elevation` | number | `30` | Degrees, `-89.9..=89.9` |
 
-Paths must be absolute. The supervisor resolves them before sending; relative
-paths are rejected with `INVALID_REQUEST` so behaviour does not depend on the
-worker's working directory.
+Paths must be absolute. The worker rejects relative paths with
+`INVALID_REQUEST`, so behaviour does not depend on the worker's working
+directory.
 
 `timeoutMs` is deliberately absent: the supervisor enforces timeouts by killing
 and restarting the worker. The engine cannot reliably interrupt its own
@@ -165,30 +165,39 @@ rasterizer mid-tile.
 
 | Code | Retryable | Cause |
 |---|---|---|
-| `INVALID_REQUEST` | no | Malformed JSON, missing field, relative path |
-| `INVALID_RENDER_OPTIONS` | no | Bad size, elevation, lighting, background |
+| `INVALID_REQUEST` | no | Malformed JSON, missing field, relative path, non-regular input |
+| `INVALID_RENDER_OPTIONS` | no | Bad size, elevation, lighting, background, or thread count |
 | `OUTPUT_TOO_LARGE` | no | Output or supersampled pixel limit exceeded |
-| `INPUT_TOO_LARGE` | no | Parse or resource limits rejected the file |
+| `INPUT_TOO_LARGE` | no | Raw input exceeds the parser input cap |
+| `INVALID_NBT` | no | NBT decode failure |
+| `RESOURCE_LIMIT` | no | Parser or scene resource limit |
 | `INVALID_LITEMATIC` | no | Corrupt or unsupported file |
-| `ASSET_SOURCE_REQUIRED` | no | Worker started without a pack or client jar |
-| `ASSET_ERROR` | no | Pack or jar cannot be read |
+| `ASSET_SOURCE_REQUIRED` | no | `materials` needs a pack or client jar |
+| `ASSET_READ_FAILED` | no | Pack or jar asset cannot be read |
+| `ASSET_LIMIT` | no | Asset exceeds its size limit |
+| `ASSET_SOURCE_UNSUPPORTED` | no | Pack or jar format is unsupported |
 | `INPUT_HASH_MISMATCH` | no | `input.hash` does not match the file |
 | `MESH_LIMIT_EXCEEDED` | no | Mesh limits exceeded |
+| `PAGE_LIMIT_EXCEEDED` | no | Mesh page limit exceeded |
 | `BUSY` | yes | Supervisor queue is full |
 | `SHUTDOWN` | yes | Supervisor is draining and stopped accepting work |
 | `MEMORY_LIMIT` | yes | Worker exceeded its per-worker memory ceiling |
 | `PNG_ENCODE_FAILED` | maybe | Encoder failure; retry once |
-| `IO_ERROR` | maybe | Output path unwritable or disk full |
+| `IO_ERROR` | maybe | Input or output file access failed |
 | `INTERNAL_ERROR` | maybe | Bug; retry once, then report |
 | `TIMEOUT` | yes | Emitted by the supervisor, not the engine |
+
+Parser errors also pass through their stable `LitematicErrorCode` names, such as
+`INVALID_PALETTE`, `INVALID_REGION_BOUNDS`, and
+`BLOCK_STATE_DATA_LENGTH_MISMATCH`.
 
 `retryable` is advisory. A retried job must be idempotent: outputs are written
 to a fresh directory or overwritten in place, and no state survives a job.
 
 ## Supervisor
 
-`renderd supervise` speaks the same protocol on its own stdio and owns a pool of
-`renderd serve` children:
+`blockscope supervise` speaks the same protocol on its own stdio and owns a pool of
+`blockscope serve` children:
 
 ```json
 {"type":"hello","protocolVersion":1,"engineVersion":"0.1.0","platform":"linux",
@@ -199,7 +208,7 @@ to a fresh directory or overwritten in place, and no state survives a job.
  "defaultTier":{"width":2048,"height":2048,"supersample":2}}
 ```
 
-- Pool size and threads default to `renderd capacity`; `--workers`, `--threads`,
+- Pool size and threads default to `blockscope capacity`; `--workers`, `--threads`,
   `--queue`, and `--cache` override them.
 - Jobs are queued and dispatched to idle workers. The queue is bounded; a full
   queue returns `BUSY`.

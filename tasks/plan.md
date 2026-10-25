@@ -4,6 +4,11 @@
 **Date:** 2026-10-24  
 **Scope:** Phase 1 only. Go/QQ service and the renderer are out of scope.
 
+> **Project note (2026-10-25):** The repository is now named
+> `Blockscope` and is positioned as a general Litematic image
+> rendering engine. Go/QQ adapter references in this historical plan are out of
+> scope for the current project.
+
 ## Overview
 
 Build a standalone Rust workspace that parses `.litematic` v1-v7 into a canonical
@@ -50,7 +55,7 @@ exists.
 
 ### ADR-003: CLI-first parser boundary
 
-`renderd inspect`, `renderd validate`, and `renderd stats` are the acceptance
+`blockscope inspect`, `blockscope validate`, and `blockscope stats` are the acceptance
 surface for Phase 1. The Go/Rust HTTP boundary is deferred until the Scene IR
 and manifest schema are stable.
 
@@ -125,7 +130,7 @@ diagnosis.
 | T7 | Block entities and diagnostics | T5 | M |
 | T8 | Scene IR and statistics | T6, T7 | M |
 | T9 | Hashes and manifest JSON | T8 | S |
-| T10 | `renderd` CLI | T9 | M |
+| T10 | `blockscope` CLI | T9 | M |
 | T11 | Fixtures and golden manifests | T8, T10 | M |
 | T12 | Format documentation and hardening | T10, T11 | M |
 
@@ -148,9 +153,9 @@ Detailed acceptance criteria and verification steps live in
 
 ### Checkpoint 3: CLI end-to-end
 
-- [ ] `renderd inspect <file> --json` emits a stable manifest.
-- [ ] `renderd validate` returns stable error codes.
-- [ ] `renderd stats` prints deterministic counts.
+- [ ] `blockscope inspect <file> --json` emits a stable manifest.
+- [ ] `blockscope validate` returns stable error codes.
+- [ ] `blockscope stats` prints deterministic counts.
 
 ### Checkpoint 4: Phase 1 acceptance
 
@@ -165,7 +170,7 @@ Detailed acceptance criteria and verification steps live in
 | Risk | Impact | Mitigation |
 |---|---|---|
 | Rust toolchain is installed but no default version is configured | Cannot build | Run `rustup default stable` and pin it in `rust-toolchain.toml` |
-| No real litematic samples in the repository | Parser may miss real-world edge cases | Synthetic fixtures plus user-side validation with `renderd inspect` |
+| No real litematic samples in the repository | Parser may miss real-world edge cases | Synthetic fixtures plus user-side validation with `blockscope inspect` |
 | Litematic v1-v7 differences are undocumented | Silent misparse | Read Litematica upstream, write format notes, add boundary tests |
 | Windows/Linux path and atomic rename differences | Publish or cleanup failures | CI matrix, path tests, retry-safe atomic publish in later phases |
 | Reference repository has no license | Legal and contamination risk | Study-only policy, no code/asset copying, provenance notes |

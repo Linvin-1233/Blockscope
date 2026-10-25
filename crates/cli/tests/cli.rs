@@ -18,7 +18,7 @@ fn write_fixture(bytes: &[u8]) -> NamedTempFile {
 }
 
 fn run(args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_renderd"))
+    Command::new(env!("CARGO_BIN_EXE_blockscope"))
         .args(args)
         .output()
         .unwrap()

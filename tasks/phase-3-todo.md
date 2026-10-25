@@ -94,7 +94,7 @@ validation.
 **Dependencies:** P3-3  
 **Estimated scope:** Large
 
-## Task P3-5: PNG encoder and `renderd render` CLI
+## Task P3-5: PNG encoder and `blockscope render` CLI
 
 **Description:** Encode RGBA output as PNG and expose the renderer through the
 CLI.
@@ -102,7 +102,7 @@ CLI.
 **Acceptance criteria:**
 
 - [x] PNG encoder writes RGBA8 with a valid signature.
-- [x] `renderd render <file> --output out.png` works.
+- [x] `blockscope render <file> --output out.png` works.
 - [x] Width, height, yaw, elevation, background, and lighting are configurable.
 - [x] `--json` prints render statistics.
 - [x] Invalid background/lighting returns exit code 2.
@@ -136,7 +136,7 @@ CLI.
 - [x] `cargo fmt --all --check` passes.
 - [x] `cargo clippy --workspace --all-targets -- -D warnings` passes.
 - [x] `cargo test --workspace` passes on Windows and WSL.
-- [x] `renderd render` demo succeeds on a synthetic fixture.
+- [x] `blockscope render` demo succeeds on a synthetic fixture.
 
 **Dependencies:** P3-4, P3-5  
 **Estimated scope:** Medium
@@ -152,12 +152,12 @@ CLI.
 - [x] Benchmarks record parse, mesh, render, PNG, and buffer sizes.
 - [x] Peak RSS is reported on Linux; other platforms report `null` instead of
       guessing.
-- [ ] Performance thresholds are based on real QQBot projections.
+- [ ] Performance thresholds are based on real Litematic projections.
 
 **Verification:**
 
 - [x] Golden PNG test compares bytes exactly and supports `UPDATE_GOLDEN=1`.
-- [x] `renderd bench --json` parses in a CLI test.
+- [x] `blockscope bench --json` parses in a CLI test.
 - [x] Synthetic `tile_bench` example prints single, dual, and auto-thread
       timings.
 

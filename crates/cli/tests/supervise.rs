@@ -10,14 +10,14 @@ fn start() -> (Child, ChildStdin, Lines<BufReader<ChildStdout>>) {
 }
 
 fn start_with(args: &[&str]) -> (Child, ChildStdin, Lines<BufReader<ChildStdout>>) {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_renderd"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_blockscope"))
         .arg("supervise")
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .expect("spawn renderd supervise");
+        .expect("spawn blockscope supervise");
 
     let stdin = child.stdin.take().unwrap();
     let stdout = child.stdout.take().unwrap();
@@ -253,6 +253,7 @@ fn supervisor_reports_bad_messages_without_exiting() {
     let invalid = read_json(&mut lines);
     assert_eq!(invalid["ok"], false);
     assert_eq!(invalid["error"]["code"], "INVALID_REQUEST");
+    assert_eq!(invalid["error"]["retryable"], false);
 
     send(&mut stdin, &json!({ "type": "shutdown" }));
     assert_eq!(read_json(&mut lines)["type"], "bye");

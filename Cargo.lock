@@ -114,6 +114,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "blockscope-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "litematic-core",
+ "litematic-material",
+ "litematic-mesh",
+ "litematic-render",
+ "litematic-scene",
+ "png",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "borsh"
 version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -410,7 +426,6 @@ version = "0.1.0"
 dependencies = [
  "litematic-nbt",
  "litematic-scene",
- "thiserror",
 ]
 
 [[package]]
@@ -464,7 +479,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "thiserror",
 ]
 
 [[package]]
@@ -624,22 +638,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
-name = "renderd-cli"
-version = "0.1.0"
-dependencies = [
- "clap",
- "litematic-core",
- "litematic-material",
- "litematic-mesh",
- "litematic-render",
- "litematic-scene",
- "png",
- "serde",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
 name = "rustix"
 version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -752,26 +750,6 @@ dependencies = [
  "once_cell",
  "rustix",
  "windows-sys",
-]
-
-[[package]]
-name = "thiserror"
-version = "2.0.21"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09e52cb86a36cede5cb101bf8908837b3e4c6e5e59fe7fd85c23fb56200d189e"
-dependencies = [
- "thiserror-impl",
-]
-
-[[package]]
-name = "thiserror-impl"
-version = "2.0.21"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe5197923287db20a58125f0bc85c062f7f2c892de97b18c356f9efb14b28524"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]

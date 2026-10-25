@@ -5,13 +5,13 @@ use std::io::{BufRead, BufReader, Lines, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
 fn start() -> (Child, ChildStdin, Lines<BufReader<ChildStdout>>) {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_renderd"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_blockscope"))
         .arg("serve")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .expect("spawn renderd serve");
+        .expect("spawn blockscope serve");
 
     let stdin = child.stdin.take().unwrap();
     let stdout = child.stdout.take().unwrap();
@@ -213,6 +213,36 @@ fn serve_accepts_auto_lod() {
     send(&mut stdin, &request);
     let second = read_json(&mut lines);
     assert_eq!(second["cacheHit"], true);
+
+    send(&mut stdin, &json!({ "type": "shutdown" }));
+    assert_eq!(read_json(&mut lines)["type"], "bye");
+    assert!(child.wait().unwrap().success());
+}
+
+#[test]
+fn serve_rejects_oversized_thread_requests() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = fixture(dir.path());
+    let out_dir = dir.path().join("out");
+
+    let (mut child, mut stdin, mut lines) = start();
+    let _hello = read_json(&mut lines);
+
+    send(
+        &mut stdin,
+        &json!({
+            "type": "render",
+            "id": "threads",
+            "input": { "path": input.display().to_string() },
+            "width": 64,
+            "height": 64,
+            "threads": 100_000,
+            "outputDir": out_dir.display().to_string(),
+        }),
+    );
+    let result = read_json(&mut lines);
+    assert_eq!(result["ok"], false, "{result}");
+    assert_eq!(result["error"]["code"], "INVALID_RENDER_OPTIONS");
 
     send(&mut stdin, &json!({ "type": "shutdown" }));
     assert_eq!(read_json(&mut lines)["type"], "bye");

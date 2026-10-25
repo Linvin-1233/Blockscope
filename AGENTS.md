@@ -34,11 +34,8 @@ For every request:
 
 Formatting and naming follow the language toolchain:
 
-- Go: `gofmt` and `goimports`; tabs; exported identifiers PascalCase;
-  unexported identifiers camelCase.
 - Rust: `rustfmt`; 4 spaces; functions and variables snake_case; types
   PascalCase; max width 100.
-- JS/TS: Prettier; 2 spaces; camelCase; 120 columns.
 - Markdown, JSON, YAML: Prettier where applicable.
 
 All languages:
