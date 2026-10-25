@@ -1,12 +1,14 @@
 use super::downsample::downsample;
 use super::{
     QuadRender, RenderStatistics, TileBuffer, TileCounters, TileJob, Triangle, bin_quads,
-    bin_triangles, bounds, intersects, push_page_quads, quad_bounds, tile_jobs, to_u8,
-    worker_count,
+    bin_triangles, bounds, intersects, merge_page_statistics, push_page_quads, quad_bounds,
+    tile_jobs, to_u8, worker_count,
 };
 use crate::{Background, Camera, RenderOptions};
 use litematic_material::TextureSet;
-use litematic_mesh::Mesh;
+use litematic_mesh::{Mesh, MeshPage};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Barrier, Mutex, OnceLock};
 
 const STREAM_PAGES_PER_CHUNK: usize = 64;
 
@@ -25,45 +27,55 @@ pub(super) fn rasterize_streaming(
     statistics.tiles = u64::from(tiles_x) * u64::from(tiles_y);
 
     let jobs = tile_jobs(width, height, tile_size);
-    let tiles: Vec<std::sync::Mutex<StreamTile>> = jobs
+    let tiles: Vec<Mutex<StreamTile>> = jobs
         .into_iter()
-        .map(|job| std::sync::Mutex::new(StreamTile::new(job, options.background)))
+        .map(|job| Mutex::new(StreamTile::new(job, options.background)))
         .collect();
     let threads = worker_count(options.threads, tiles.len());
 
-    let mut quads = Vec::new();
     let mut translucent = Vec::new();
-    let mut page_index = 0;
 
-    while page_index < mesh.pages.len() {
-        let end = (page_index + STREAM_PAGES_PER_CHUNK).min(mesh.pages.len());
-        quads.clear();
-        for page in &mesh.pages[page_index..end] {
-            push_page_quads(
-                page,
+    for pages in mesh.pages.chunks(STREAM_PAGES_PER_CHUNK) {
+        // Each worker projects a contiguous run of pages, so merging the parts
+        // in worker order keeps the draw order identical to the serial path.
+        let slices = page_slices(pages, threads);
+        let parts: Vec<OnceLock<ChunkPart>> = (0..threads).map(|_| OnceLock::new()).collect();
+        let barrier = Barrier::new(threads);
+        let cursor = AtomicUsize::new(0);
+        {
+            let chunk = ChunkContext {
+                pages,
+                slices: &slices,
                 camera,
                 options,
-                statistics,
-                &mut quads,
-                &mut translucent,
-            );
-        }
-        page_index = end;
+                textures,
+                tiles: &tiles,
+                parts: &parts,
+                barrier: &barrier,
+                cursor: &cursor,
+                width,
+                height,
+                tile_size,
+            };
 
-        if quads.is_empty() {
-            continue;
+            std::thread::scope(|scope| {
+                let mut handles = Vec::with_capacity(threads.saturating_sub(1));
+                for worker in 1..threads {
+                    let chunk = &chunk;
+                    handles.push(scope.spawn(move || render_chunk(chunk, worker)));
+                }
+                render_chunk(&chunk, 0);
+                for handle in handles {
+                    handle.join().expect("stream worker panicked");
+                }
+            });
         }
 
-        let quad_bins = bin_quads(&quads, width, height, tile_size);
-        let touched: Vec<usize> = quad_bins
-            .iter()
-            .enumerate()
-            .filter(|(_, bin)| !bin.is_empty())
-            .map(|(index, _)| index)
-            .collect();
-        render_stream_chunk(
-            &tiles, &quads, &quad_bins, &touched, options, threads, textures,
-        );
+        for part in parts {
+            let part = part.into_inner().expect("stream chunk part missing");
+            merge_page_statistics(statistics, &part.statistics);
+            translucent.extend(part.translucent);
+        }
     }
 
     if !translucent.is_empty() {
@@ -108,6 +120,30 @@ pub(super) fn rasterize_streaming(
     }
 }
 
+/// Split a chunk into contiguous page slices of roughly equal quad counts, so
+/// projection workers finish together instead of waiting on a page-dense tail.
+fn page_slices(pages: &[MeshPage], threads: usize) -> Vec<(usize, usize)> {
+    let total: usize = pages.iter().map(|page| page.quads.len()).sum();
+    let target = total.div_ceil(threads).max(1);
+    let mut slices = Vec::with_capacity(threads);
+    let mut start = 0;
+    let mut quads = 0;
+
+    for (index, page) in pages.iter().enumerate() {
+        quads += page.quads.len();
+        if slices.len() + 1 < threads && quads >= target * (slices.len() + 1) {
+            slices.push((start, index + 1));
+            start = index + 1;
+        }
+    }
+
+    while slices.len() + 1 < threads {
+        slices.push((start, start));
+    }
+    slices.push((start, pages.len()));
+    slices
+}
+
 struct StreamTile {
     job: TileJob,
     colors: Vec<[f32; 4]>,
@@ -138,40 +174,115 @@ impl StreamTile {
     }
 }
 
-fn render_stream_chunk(
-    tiles: &[std::sync::Mutex<StreamTile>],
-    quads: &[QuadRender],
-    bins: &[Vec<u32>],
-    touched: &[usize],
-    options: &RenderOptions,
-    threads: usize,
-    textures: Option<&TextureSet>,
-) {
-    let work = |tile_index: usize| {
-        let mut guard = tiles[tile_index]
-            .lock()
-            .expect("stream tile mutex poisoned");
-        let StreamTile {
-            job,
-            colors,
-            depths,
-            counters,
-        } = &mut *guard;
-        let job = *job;
-        let mut buffer = TileBuffer {
-            x0: job.x0,
-            y0: job.y0,
-            width: job.width,
-            height: job.height,
-            colors,
-            depths,
-            counters,
-            textures,
-            filter: options.texture_filter,
-        };
+/// Projected geometry for one worker's slice of a streamed page chunk.
+struct ChunkPart {
+    quads: Vec<QuadRender>,
+    bins: Vec<Vec<u32>>,
+    translucent: Vec<Triangle>,
+    statistics: RenderStatistics,
+}
 
-        for &index in &bins[tile_index] {
-            let quad = &quads[index as usize];
+struct ChunkContext<'a> {
+    pages: &'a [MeshPage],
+    slices: &'a [(usize, usize)],
+    camera: &'a Camera,
+    options: &'a RenderOptions,
+    textures: Option<&'a TextureSet>,
+    tiles: &'a [Mutex<StreamTile>],
+    parts: &'a [OnceLock<ChunkPart>],
+    barrier: &'a Barrier,
+    cursor: &'a AtomicUsize,
+    width: u32,
+    height: u32,
+    tile_size: u32,
+}
+
+/// Project and bin this worker's pages, then join the tile raster pass.
+///
+/// The projection used to run on the main thread while the workers were idle;
+/// splitting it across the same threads keeps every core busy for the whole
+/// chunk and leaves the per-tile draw order unchanged.
+fn render_chunk(chunk: &ChunkContext<'_>, worker: usize) {
+    let (start, end) = chunk.slices[worker];
+    let pages = &chunk.pages[start..end];
+
+    // Reserving the page quad count avoids repeated growth copies; culling
+    // only ever makes this an upper bound.
+    let mut quads = Vec::with_capacity(pages.iter().map(|page| page.quads.len()).sum());
+    let mut translucent = Vec::new();
+    let mut statistics = RenderStatistics::default();
+    for page in pages {
+        push_page_quads(
+            page,
+            chunk.camera,
+            chunk.options,
+            &mut statistics,
+            &mut quads,
+            &mut translucent,
+        );
+    }
+
+    let bins = bin_quads(&quads, chunk.width, chunk.height, chunk.tile_size);
+    let part = ChunkPart {
+        quads,
+        bins,
+        translucent,
+        statistics,
+    };
+    assert!(
+        chunk.parts[worker].set(part).is_ok(),
+        "stream chunk part set twice"
+    );
+
+    chunk.barrier.wait();
+
+    let touched: Vec<usize> = (0..chunk.tiles.len())
+        .filter(|&index| {
+            chunk
+                .parts
+                .iter()
+                .any(|part| part.get().is_some_and(|part| !part.bins[index].is_empty()))
+        })
+        .collect();
+
+    loop {
+        let position = chunk.cursor.fetch_add(1, Ordering::Relaxed);
+        let Some(&tile_index) = touched.get(position) else {
+            break;
+        };
+        render_chunk_tile(chunk, tile_index);
+    }
+}
+
+fn render_chunk_tile(chunk: &ChunkContext<'_>, tile_index: usize) {
+    let mut guard = chunk.tiles[tile_index]
+        .lock()
+        .expect("stream tile mutex poisoned");
+    let StreamTile {
+        job,
+        colors,
+        depths,
+        counters,
+    } = &mut *guard;
+    let job = *job;
+    let mut buffer = TileBuffer {
+        x0: job.x0,
+        y0: job.y0,
+        width: job.width,
+        height: job.height,
+        colors,
+        depths,
+        counters,
+        textures: chunk.textures,
+        filter: chunk.options.texture_filter,
+    };
+
+    for part in chunk.parts {
+        let Some(part) = part.get() else {
+            continue;
+        };
+        for &index in &part.bins[tile_index] {
+            let quad = &part.quads[index as usize];
             if !intersects(
                 &quad_bounds(&quad.points),
                 job.x0,
@@ -183,13 +294,11 @@ fn render_stream_chunk(
             }
             buffer.rasterize_quad(quad);
         }
-    };
-
-    run_parallel(touched, threads, work);
+    }
 }
 
 fn render_stream_translucent(
-    tiles: &[std::sync::Mutex<StreamTile>],
+    tiles: &[Mutex<StreamTile>],
     triangles: &[Triangle],
     bins: &[Vec<u32>],
     touched: &[usize],
@@ -263,14 +372,14 @@ where
         return;
     }
 
-    let cursor = std::sync::atomic::AtomicUsize::new(0);
+    let cursor = AtomicUsize::new(0);
     std::thread::scope(|scope| {
         for _ in 0..workers {
             let cursor = &cursor;
             let work = &work;
             scope.spawn(move || {
                 loop {
-                    let position = cursor.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let position = cursor.fetch_add(1, Ordering::Relaxed);
                     let Some(&index) = indices.get(position) else {
                         break;
                     };

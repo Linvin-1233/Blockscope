@@ -163,7 +163,7 @@ fn project_mesh_pages(
     (quads, translucent)
 }
 
-fn merge_page_statistics(target: &mut RenderStatistics, source: &RenderStatistics) {
+pub(super) fn merge_page_statistics(target: &mut RenderStatistics, source: &RenderStatistics) {
     target.culled_backfaces += source.culled_backfaces;
     target.triangles += source.triangles;
     target.opaque_triangles += source.opaque_triangles;
