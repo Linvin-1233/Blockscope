@@ -62,7 +62,8 @@ fn render_mesh_internal(
     options.validate()?;
     let camera = Camera::new(&scene.bounds, options)?;
 
-    let mut triangles = Vec::new();
+    let mut quads = Vec::new();
+    let mut translucent = Vec::new();
     let mut statistics = RenderStatistics {
         width: options.width,
         height: options.height,
@@ -88,9 +89,6 @@ fn render_mesh_internal(
                 continue;
             }
 
-            let mut triangle_points = [[[0.0f64; 3]; 3]; 2];
-            let mut triangle_colors = [[[0.0f32; 4]; 3]; 2];
-            let mut triangle_uvs = [[[0.0f32; 2]; 3]; 2];
             let mut projected = [[0.0f64; 3]; 4];
             let mut vertex_colors = [[0.0f32; 4]; 4];
 
@@ -119,43 +117,71 @@ fn render_mesh_internal(
                 ];
             }
 
-            for (triangle_index, indices) in [[0usize, 1, 2], [0, 2, 3]].into_iter().enumerate() {
-                for (slot, index) in indices.into_iter().enumerate() {
-                    triangle_points[triangle_index][slot] = projected[index];
-                    triangle_colors[triangle_index][slot] = vertex_colors[index];
-                    triangle_uvs[triangle_index][slot] = quad.vertices[index].uv;
-                }
-                let points = triangle_points[triangle_index];
-                let bbox = bounds(points);
+            let texture = quad.vertices[0].texture;
+            let layer = quad.layer;
+            let mut keep = false;
+
+            for indices in [[0usize, 1, 2], [0, 2, 3]] {
+                let points = [
+                    projected[indices[0]],
+                    projected[indices[1]],
+                    projected[indices[2]],
+                ];
+                let bbox = bounds(&points);
                 if bbox[0] > bbox[2] || bbox[1] > bbox[3] {
                     continue;
                 }
-                let depth_key = (points[0][2] + points[1][2] + points[2][2]) / 3.0;
-                let triangle = Triangle {
-                    points,
-                    colors: triangle_colors[triangle_index],
-                    uvs: triangle_uvs[triangle_index],
-                    texture: quad.vertices[0].texture,
-                    layer: quad.layer,
-                    depth_key,
-                    bbox,
-                };
+                keep = true;
 
-                match quad.layer {
+                match layer {
                     RenderLayer::Opaque => statistics.opaque_triangles += 1,
                     RenderLayer::Cutout => statistics.cutout_triangles += 1,
                     RenderLayer::Translucent => statistics.translucent_triangles += 1,
                 }
-                if quad.vertices[0].texture != NO_TEXTURE {
+                if texture != NO_TEXTURE {
                     statistics.textured_triangles += 1;
                 }
                 statistics.triangles += 1;
-                triangles.push(triangle);
+
+                if layer == RenderLayer::Translucent {
+                    let depth_key = (points[0][2] + points[1][2] + points[2][2]) / 3.0;
+                    translucent.push(Triangle {
+                        points,
+                        colors: [
+                            vertex_colors[indices[0]],
+                            vertex_colors[indices[1]],
+                            vertex_colors[indices[2]],
+                        ],
+                        uvs: [
+                            quad.vertices[indices[0]].uv,
+                            quad.vertices[indices[1]].uv,
+                            quad.vertices[indices[2]].uv,
+                        ],
+                        texture,
+                        layer,
+                        depth_key,
+                    });
+                }
+            }
+
+            if keep && layer != RenderLayer::Translucent {
+                quads.push(QuadRender {
+                    points: projected,
+                    colors: vertex_colors,
+                    uvs: [
+                        quad.vertices[0].uv,
+                        quad.vertices[1].uv,
+                        quad.vertices[2].uv,
+                        quad.vertices[3].uv,
+                    ],
+                    texture,
+                    layer,
+                });
             }
         }
     }
 
-    let rgba = rasterize(&triangles, options, &mut statistics, textures);
+    let rgba = rasterize(&quads, &translucent, options, &mut statistics, textures);
     Ok(RenderOutput {
         width: options.width,
         height: options.height,
@@ -164,6 +190,18 @@ fn render_mesh_internal(
     })
 }
 
+/// An opaque or cutout quad, projected once and split into triangles per tile.
+#[derive(Debug, Clone)]
+struct QuadRender {
+    points: [[f64; 3]; 4],
+    colors: [[f32; 4]; 4],
+    uvs: [[f32; 2]; 4],
+    texture: u16,
+    layer: RenderLayer,
+}
+
+/// A translucent triangle. Only translucent geometry needs sorting, so this is
+/// kept separate from the quad table.
 #[derive(Debug, Clone)]
 struct Triangle {
     points: [[f64; 3]; 3],
@@ -172,11 +210,11 @@ struct Triangle {
     texture: u16,
     layer: RenderLayer,
     depth_key: f64,
-    bbox: [f64; 4],
 }
 
 fn rasterize(
-    triangles: &[Triangle],
+    quads: &[QuadRender],
+    translucent: &[Triangle],
     options: &RenderOptions,
     statistics: &mut RenderStatistics,
     textures: Option<&TextureSet>,
@@ -189,13 +227,33 @@ fn rasterize(
     statistics.tiles = u64::from(tiles_x) * u64::from(tiles_y);
 
     let jobs = tile_jobs(width, height, tile_size);
-    let bins = bin_triangles(triangles, width, height, tile_size);
+    let quad_bins = bin_quads(quads, width, height, tile_size);
+    let triangle_bins = bin_triangles(translucent, width, height, tile_size);
     let threads = worker_count(options.threads, jobs.len());
     let tiles = if threads > 1 {
-        render_tiles_parallel(triangles, options, &jobs, &bins, threads, textures)
+        render_tiles_parallel(
+            quads,
+            translucent,
+            options,
+            &jobs,
+            &quad_bins,
+            &triangle_bins,
+            threads,
+            textures,
+        )
     } else {
         jobs.iter()
-            .map(|job| render_tile(triangles, options, job, &bins[job.index], textures))
+            .map(|job| {
+                render_tile(
+                    quads,
+                    translucent,
+                    options,
+                    job,
+                    &quad_bins[job.index],
+                    &triangle_bins[job.index],
+                    textures,
+                )
+            })
             .collect()
     };
 
@@ -259,8 +317,34 @@ fn tile_jobs(width: u32, height: u32, tile_size: u32) -> Vec<TileJob> {
     jobs
 }
 
-/// Group triangles by the tiles their screen bounds cover, so each tile only
-/// visits candidates that can actually write a fragment.
+/// Group quads by the tiles their screen bounds cover, so each tile only visits
+/// candidates that can actually write a fragment.
+fn bin_quads(quads: &[QuadRender], width: u32, height: u32, tile_size: u32) -> Vec<Vec<u32>> {
+    let tiles_x = width.div_ceil(tile_size);
+    let tiles_y = height.div_ceil(tile_size);
+    let mut bins = vec![Vec::new(); (tiles_x * tiles_y) as usize];
+    let tile_size = f64::from(tile_size);
+    let max_tile_x = f64::from(tiles_x - 1);
+    let max_tile_y = f64::from(tiles_y - 1);
+
+    for (index, quad) in quads.iter().enumerate() {
+        let bbox = quad_bounds(&quad.points);
+        let min_x = (bbox[0] / tile_size).floor().clamp(0.0, max_tile_x) as u32;
+        let max_x = (bbox[2] / tile_size).floor().clamp(0.0, max_tile_x) as u32;
+        let min_y = (bbox[1] / tile_size).floor().clamp(0.0, max_tile_y) as u32;
+        let max_y = (bbox[3] / tile_size).floor().clamp(0.0, max_tile_y) as u32;
+
+        for tile_y in min_y..=max_y {
+            for tile_x in min_x..=max_x {
+                bins[(tile_y * tiles_x + tile_x) as usize].push(index as u32);
+            }
+        }
+    }
+
+    bins
+}
+
+/// Group translucent triangles by tile; only these need per-tile sorting.
 fn bin_triangles(triangles: &[Triangle], width: u32, height: u32, tile_size: u32) -> Vec<Vec<u32>> {
     let tiles_x = width.div_ceil(tile_size);
     let tiles_y = height.div_ceil(tile_size);
@@ -270,18 +354,11 @@ fn bin_triangles(triangles: &[Triangle], width: u32, height: u32, tile_size: u32
     let max_tile_y = f64::from(tiles_y - 1);
 
     for (index, triangle) in triangles.iter().enumerate() {
-        let min_x = (triangle.bbox[0] / tile_size)
-            .floor()
-            .clamp(0.0, max_tile_x) as u32;
-        let max_x = (triangle.bbox[2] / tile_size)
-            .floor()
-            .clamp(0.0, max_tile_x) as u32;
-        let min_y = (triangle.bbox[1] / tile_size)
-            .floor()
-            .clamp(0.0, max_tile_y) as u32;
-        let max_y = (triangle.bbox[3] / tile_size)
-            .floor()
-            .clamp(0.0, max_tile_y) as u32;
+        let bbox = bounds(&triangle.points);
+        let min_x = (bbox[0] / tile_size).floor().clamp(0.0, max_tile_x) as u32;
+        let max_x = (bbox[2] / tile_size).floor().clamp(0.0, max_tile_x) as u32;
+        let min_y = (bbox[1] / tile_size).floor().clamp(0.0, max_tile_y) as u32;
+        let max_y = (bbox[3] / tile_size).floor().clamp(0.0, max_tile_y) as u32;
 
         for tile_y in min_y..=max_y {
             for tile_x in min_x..=max_x {
@@ -305,11 +382,14 @@ fn worker_count(requested: u32, jobs: usize) -> usize {
     available.clamp(1, jobs.max(1))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_tiles_parallel(
-    triangles: &[Triangle],
+    quads: &[QuadRender],
+    translucent: &[Triangle],
     options: &RenderOptions,
     jobs: &[TileJob],
-    bins: &[Vec<u32>],
+    quad_bins: &[Vec<u32>],
+    triangle_bins: &[Vec<u32>],
     threads: usize,
     textures: Option<&TextureSet>,
 ) -> Vec<TileOutput> {
@@ -326,7 +406,15 @@ fn render_tiles_parallel(
                     let Some(job) = jobs.get(index) else {
                         break;
                     };
-                    local.push(render_tile(triangles, options, job, &bins[index], textures));
+                    local.push(render_tile(
+                        quads,
+                        translucent,
+                        options,
+                        job,
+                        &quad_bins[index],
+                        &triangle_bins[index],
+                        textures,
+                    ));
                 }
                 local
             }));
@@ -354,11 +442,14 @@ struct TileOutput {
     pixels_written: u64,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_tile(
-    triangles: &[Triangle],
+    quads: &[QuadRender],
+    translucent_triangles: &[Triangle],
     options: &RenderOptions,
     job: &TileJob,
-    candidates: &[u32],
+    quad_candidates: &[u32],
+    triangle_candidates: &[u32],
     textures: Option<&TextureSet>,
 ) -> TileOutput {
     let pixel_count = (u64::from(job.width) * u64::from(job.height)) as usize;
@@ -388,29 +479,43 @@ fn render_tile(
             filter: options.texture_filter,
         };
 
-        for &index in candidates {
-            let triangle = &triangles[index as usize];
-            if triangle.layer == RenderLayer::Translucent {
+        for &index in quad_candidates {
+            let quad = &quads[index as usize];
+            if !intersects(
+                &quad_bounds(&quad.points),
+                job.x0,
+                job.y0,
+                job.width,
+                job.height,
+            ) {
                 continue;
             }
-            if !intersects(triangle, job.x0, job.y0, job.width, job.height) {
-                continue;
-            }
-            tile.rasterize(triangle);
+            tile.rasterize_quad(quad);
         }
 
-        let mut translucent: Vec<&Triangle> = candidates
+        let mut translucent: Vec<&Triangle> = triangle_candidates
             .iter()
-            .map(|&index| &triangles[index as usize])
+            .map(|&index| &translucent_triangles[index as usize])
             .filter(|triangle| {
-                triangle.layer == RenderLayer::Translucent
-                    && intersects(triangle, job.x0, job.y0, job.width, job.height)
+                intersects(
+                    &bounds(&triangle.points),
+                    job.x0,
+                    job.y0,
+                    job.width,
+                    job.height,
+                )
             })
             .collect();
         translucent.sort_by(|left, right| right.depth_key.total_cmp(&left.depth_key));
 
         for triangle in translucent {
-            tile.rasterize(triangle);
+            tile.rasterize_triangle(
+                &triangle.points,
+                &triangle.colors,
+                &triangle.uvs,
+                triangle.texture,
+                triangle.layer,
+            );
         }
     }
 
@@ -516,23 +621,39 @@ struct TileBuffer<'a> {
 }
 
 impl TileBuffer<'_> {
-    fn rasterize(&mut self, triangle: &Triangle) {
-        let min_x = triangle.bbox[0].floor().max(f64::from(self.x0)) as i32;
-        let min_y = triangle.bbox[1].floor().max(f64::from(self.y0)) as i32;
-        let max_x = triangle.bbox[2]
-            .ceil()
-            .min(f64::from(self.x0 + self.width) - 1.0) as i32;
-        let max_y = triangle.bbox[3]
-            .ceil()
-            .min(f64::from(self.y0 + self.height) - 1.0) as i32;
+    fn rasterize_quad(&mut self, quad: &QuadRender) {
+        let points = [quad.points[0], quad.points[1], quad.points[2]];
+        let colors = [quad.colors[0], quad.colors[1], quad.colors[2]];
+        let uvs = [quad.uvs[0], quad.uvs[1], quad.uvs[2]];
+        self.rasterize_triangle(&points, &colors, &uvs, quad.texture, quad.layer);
+
+        let points = [quad.points[0], quad.points[2], quad.points[3]];
+        let colors = [quad.colors[0], quad.colors[2], quad.colors[3]];
+        let uvs = [quad.uvs[0], quad.uvs[2], quad.uvs[3]];
+        self.rasterize_triangle(&points, &colors, &uvs, quad.texture, quad.layer);
+    }
+
+    fn rasterize_triangle(
+        &mut self,
+        points: &[[f64; 3]; 3],
+        colors: &[[f32; 4]; 3],
+        uvs: &[[f32; 2]; 3],
+        texture: u16,
+        layer: RenderLayer,
+    ) {
+        let bbox = bounds(points);
+        let min_x = bbox[0].floor().max(f64::from(self.x0)) as i32;
+        let min_y = bbox[1].floor().max(f64::from(self.y0)) as i32;
+        let max_x = bbox[2].ceil().min(f64::from(self.x0 + self.width) - 1.0) as i32;
+        let max_y = bbox[3].ceil().min(f64::from(self.y0 + self.height) - 1.0) as i32;
 
         if max_x < min_x || max_y < min_y {
             return;
         }
 
-        let p0 = triangle.points[0];
-        let p1 = triangle.points[1];
-        let p2 = triangle.points[2];
+        let p0 = points[0];
+        let p1 = points[1];
+        let p2 = points[2];
         let area = edge(p0, p1, p2);
         if area.abs() < 1e-12 {
             return;
@@ -570,32 +691,26 @@ impl TileBuffer<'_> {
                 }
 
                 let mut color = [
-                    (triangle.colors[0][0] as f64 * b0
-                        + triangle.colors[1][0] as f64 * b1
-                        + triangle.colors[2][0] as f64 * b2) as f32,
-                    (triangle.colors[0][1] as f64 * b0
-                        + triangle.colors[1][1] as f64 * b1
-                        + triangle.colors[2][1] as f64 * b2) as f32,
-                    (triangle.colors[0][2] as f64 * b0
-                        + triangle.colors[1][2] as f64 * b1
-                        + triangle.colors[2][2] as f64 * b2) as f32,
-                    (triangle.colors[0][3] as f64 * b0
-                        + triangle.colors[1][3] as f64 * b1
-                        + triangle.colors[2][3] as f64 * b2) as f32,
+                    (colors[0][0] as f64 * b0 + colors[1][0] as f64 * b1 + colors[2][0] as f64 * b2)
+                        as f32,
+                    (colors[0][1] as f64 * b0 + colors[1][1] as f64 * b1 + colors[2][1] as f64 * b2)
+                        as f32,
+                    (colors[0][2] as f64 * b0 + colors[1][2] as f64 * b1 + colors[2][2] as f64 * b2)
+                        as f32,
+                    (colors[0][3] as f64 * b0 + colors[1][3] as f64 * b1 + colors[2][3] as f64 * b2)
+                        as f32,
                 ];
 
-                if triangle.texture != NO_TEXTURE
+                if texture != NO_TEXTURE
                     && let Some(textures) = self.textures
                 {
                     let uv = [
-                        (triangle.uvs[0][0] as f64 * b0
-                            + triangle.uvs[1][0] as f64 * b1
-                            + triangle.uvs[2][0] as f64 * b2) as f32,
-                        (triangle.uvs[0][1] as f64 * b0
-                            + triangle.uvs[1][1] as f64 * b1
-                            + triangle.uvs[2][1] as f64 * b2) as f32,
+                        (uvs[0][0] as f64 * b0 + uvs[1][0] as f64 * b1 + uvs[2][0] as f64 * b2)
+                            as f32,
+                        (uvs[0][1] as f64 * b0 + uvs[1][1] as f64 * b1 + uvs[2][1] as f64 * b2)
+                            as f32,
                     ];
-                    if let Some(texel) = textures.sample(triangle.texture, uv, self.filter) {
+                    if let Some(texel) = textures.sample(texture, uv, self.filter) {
                         color[0] *= texel[0];
                         color[1] *= texel[1];
                         color[2] *= texel[2];
@@ -603,11 +718,11 @@ impl TileBuffer<'_> {
                     }
                 }
 
-                if triangle.layer == RenderLayer::Cutout && color[3] < 0.5 {
+                if layer == RenderLayer::Cutout && color[3] < 0.5 {
                     continue;
                 }
 
-                if triangle.layer == RenderLayer::Translucent {
+                if layer == RenderLayer::Translucent {
                     blend(&mut self.colors[index], color);
                 } else {
                     self.colors[index] = color;
@@ -639,16 +754,29 @@ fn blend(destination: &mut [f32; 4], source: [f32; 4]) {
     destination[3] = out_alpha;
 }
 
-fn intersects(triangle: &Triangle, x0: u32, y0: u32, width: u32, height: u32) -> bool {
+fn intersects(bbox: &[f64; 4], x0: u32, y0: u32, width: u32, height: u32) -> bool {
     let max_x = f64::from(x0 + width);
     let max_y = f64::from(y0 + height);
-    triangle.bbox[2] >= f64::from(x0)
-        && triangle.bbox[0] < max_x
-        && triangle.bbox[3] >= f64::from(y0)
-        && triangle.bbox[1] < max_y
+    bbox[2] >= f64::from(x0) && bbox[0] < max_x && bbox[3] >= f64::from(y0) && bbox[1] < max_y
 }
 
-fn bounds(points: [[f64; 3]; 3]) -> [f64; 4] {
+fn bounds(points: &[[f64; 3]; 3]) -> [f64; 4] {
+    let mut min_x = f64::INFINITY;
+    let mut max_x = f64::NEG_INFINITY;
+    let mut min_y = f64::INFINITY;
+    let mut max_y = f64::NEG_INFINITY;
+
+    for point in points {
+        min_x = min_x.min(point[0]);
+        max_x = max_x.max(point[0]);
+        min_y = min_y.min(point[1]);
+        max_y = max_y.max(point[1]);
+    }
+
+    [min_x, min_y, max_x, max_y]
+}
+
+fn quad_bounds(points: &[[f64; 3]; 4]) -> [f64; 4] {
     let mut min_x = f64::INFINITY;
     let mut max_x = f64::NEG_INFINITY;
     let mut min_y = f64::INFINITY;

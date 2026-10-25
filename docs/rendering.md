@@ -83,6 +83,19 @@ cull.
 - Final RGBA8 conversion clamps and rounds; fully transparent pixels are written
   as zero RGB.
 
+### Geometry table
+
+Opaque and cutout geometry is projected once per quad and stored in a compact
+quad table (about 200 bytes per quad: four screen points, four shaded colors,
+four UVs, texture id, layer). Triangles are formed only while a tile rasterizes
+a quad, so the render table is roughly half the size of storing two full
+triangles per quad. Translucent triangles are kept separately because they need
+a per-tile depth sort. Output stays byte-identical.
+
+Measured on the 370x370 fixture at 1024x1024 and supersample 2: peak memory
+dropped from 19.6 GB to 13.5 GB, render time from 13.5 s to 6.6 s, and the PNG
+hash did not change.
+
 ### Triangle binning
 
 Before rasterization, each triangle is inserted into every tile its screen-space

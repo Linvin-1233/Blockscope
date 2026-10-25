@@ -1,6 +1,6 @@
 # Phase 5 Plan: Huge Structures
 
-**Status:** C1 and C3 implemented; C2 and C4 pending. This plan covers the
+**Status:** C1, C2, and C3 implemented; C4 pending. This plan covers the
 extreme fixtures.
 
 ## Measured baseline
@@ -76,18 +76,25 @@ in `BTreeMap` key order, so output is byte-identical to the serial builder.
   fixture is 15 times over the default quad cap, so the useful metric is
   throughput and memory, not an absolute wall time.
 
-### C2: Lower the render memory per quad
+### C2: Lower the render memory per quad (implemented)
 
-The triangle table costs about 190 bytes per triangle and duplicates the mesh.
-Replace it with either compact triangles or direct quad rasterization:
+The triangle table cost about 190 bytes per triangle and duplicated the mesh.
+The rasterizer now projects each opaque or cutout quad once into a compact table
+(about 200 bytes per quad), forms the two triangles while rasterizing a tile,
+and keeps only translucent triangles separately for depth sorting.
 
-- Precompute one projected quad (4 screen points + depth planes) per quad,
-  split into two triangles during rasterization.
-- Bin quad indices per tile instead of triangles.
-- Keep colors and UVs in the mesh, not in a second table.
+Measured on `000002` at 1024x1024 and supersample 2:
 
-**Acceptance:** peak memory per quad drops by at least 30 percent at the same
-output bytes; render time regresses by no more than 10 percent.
+| Metric | Before | After |
+|---|---|---|
+| Peak working set | 19,558 MB | **13,514 MB** |
+| Wall time | 38.7 s | 32.4 s |
+| Render time | 13.5 s | 6.6 s |
+| PNG SHA-256 | `E861C6...` | `E861C6...` (identical) |
+
+`000001` exact is estimated at roughly 29 GB (13.5 GB mesh plus 15.5 GB quad
+table), still more free memory than the 48 GB test host had available; `--lod
+auto` keeps choosing LOD 2.
 
 ### C3: Level of detail (implemented)
 
@@ -131,9 +138,9 @@ the same job succeeds with `--force-limits` and `--lod` on a larger machine.
 
 ## Order
 
-C1 is done. C3 is done. Remaining: C2 (lower per-quad render memory) and C4
-(capacity-aware admission). C3 already meets the 10 minute budget at LOD 4, so
-C2 is an optimisation rather than a blocker.
+C1 is done. C2 is done. C3 is done. Remaining: C4 (capacity-aware admission).
+C2 and LOD together cover both ends: exact rendering for scenes that fit, LOD
+for the rest.
 
 ## Risks
 
