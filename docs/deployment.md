@@ -14,6 +14,8 @@ toolchain:
 | Linux aarch64 | `blockscope-v<version>-aarch64-unknown-linux-musl.tar.gz` |
 | Windows x86_64 | `blockscope-v<version>-x86_64-pc-windows-msvc.msi` (installer) |
 | Windows x86_64 | `blockscope-v<version>-x86_64-pc-windows-msvc.zip` (portable) |
+| macOS aarch64 | `blockscope-v<version>-aarch64-apple-darwin.tar.gz` |
+| macOS x86_64 | `blockscope-v<version>-x86_64-apple-darwin.tar.gz` |
 
 Each file ships with a `.sha256` file named after it without the extension
 (`blockscope-v<version>-<target>.sha256`); verify it before deploying. Linux
@@ -124,7 +126,7 @@ Expected output: `cores: 1`, `cpuQuotaMilli: 1000`,
 
 `.github/workflows/ci.yml` runs two jobs:
 
-- `test` on `ubuntu-latest` and `windows-latest`: fmt, clippy with
+- `test` on `ubuntu-latest`, `windows-latest`, and `macos-latest`: fmt, clippy with
   `-D warnings`, and the full workspace test suite.
 - `container` on `ubuntu-latest`: builds the image, then runs `capacity` and a
   protocol smoke test inside `--cpus=1 --memory=1g` so cgroup parsing is
@@ -132,7 +134,7 @@ Expected output: `cores: 1`, `cpuQuotaMilli: 1000`,
 
 `.github/workflows/release.yml` runs on a `v*` tag: it checks that the tag
 matches `[workspace.package] version`, creates the GitHub Release from
-`CHANGELOG.md`, and uploads the three archives with sha256 files. Running the
+`CHANGELOG.md`, and uploads the five archives with sha256 files. Running the
 workflow manually builds and packages the same targets with `dry-run`, so the
 pipeline can be verified before the first tag exists.
 

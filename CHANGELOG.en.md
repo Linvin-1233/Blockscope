@@ -5,6 +5,15 @@
 User-facing changes are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
+## [Unreleased]
+
+### Added
+
+- macOS support for Apple Silicon (`aarch64-apple-darwin`) and Intel (`x86_64-apple-darwin`).
+- macOS memory and capacity detection in CLI using `sysctl` and Mach VM statistics.
+- Supervisor process RSS monitoring on macOS via `proc_pidinfo` for memory limit enforcement.
+- `bench` peak RSS reporting on macOS via `getrusage`.
+- CI test matrix and release distribution workflow expanded to include macOS runner and targets.
 
 ## [0.1.2] - 2026-10-25
 
