@@ -13,32 +13,52 @@
 ## 下载预编译二进制（推荐）
 
 在 [Releases](https://github.com/Linvin-1233/Blockscope/releases) 下载对应平台的
-压缩包：
+安装包或压缩包：
 
-| 平台 | 目标三元组 | 压缩格式 |
+| 平台 | 目标三元组 | 格式 |
 | --- | --- | --- |
 | Linux x86_64 | `x86_64-unknown-linux-musl` | `.tar.gz` |
 | Linux aarch64 | `aarch64-unknown-linux-musl` | `.tar.gz` |
-| Windows x86_64 | `x86_64-pc-windows-msvc` | `.zip` |
+| Windows x86_64 | `x86_64-pc-windows-msvc` | `.msi` / `.zip` |
 
-文件名形如 `blockscope-v0.1.0-x86_64-unknown-linux-musl.tar.gz`，压缩包旁有去掉
-扩展名的 `.sha256` 校验文件（如 `blockscope-v0.1.0-x86_64-unknown-linux-musl.sha256`）。
+文件名形如 `blockscope-v0.1.1-x86_64-unknown-linux-musl.tar.gz`，旁边有去掉扩展名
+的 `.sha256` 校验文件（如 `blockscope-v0.1.1-x86_64-unknown-linux-musl.sha256`）。
 Linux 产物静态链接 musl，Windows 产物静态链接 CRT，目标机器不需要额外安装运行时库。
 
-Linux（以 `v0.1.0`、`x86_64` 为例）：
+### Linux
 
 ```bash
-curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.1.0/blockscope-v0.1.0-x86_64-unknown-linux-musl.tar.gz
-curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.1.0/blockscope-v0.1.0-x86_64-unknown-linux-musl.sha256
-sha256sum -c blockscope-v0.1.0-x86_64-unknown-linux-musl.sha256
-tar -xzf blockscope-v0.1.0-x86_64-unknown-linux-musl.tar.gz
-./blockscope-v0.1.0-x86_64-unknown-linux-musl/blockscope --version
+curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.1.1/blockscope-v0.1.1-x86_64-unknown-linux-musl.tar.gz
+curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.1.1/blockscope-v0.1.1-x86_64-unknown-linux-musl.sha256
+sha256sum -c blockscope-v0.1.1-x86_64-unknown-linux-musl.sha256
+tar -xzf blockscope-v0.1.1-x86_64-unknown-linux-musl.tar.gz
+./blockscope-v0.1.1-x86_64-unknown-linux-musl/blockscope --version
 ```
 
-Windows PowerShell：
+### Windows：MSI 安装（推荐）
+
+按用户安装，不需要管理员权限：
 
 ```powershell
-$tag = "v0.1.0"
+$tag = "v0.1.1"
+$name = "blockscope-$tag-x86_64-pc-windows-msvc"
+Invoke-WebRequest "https://github.com/Linvin-1233/Blockscope/releases/download/$tag/$name.msi" -OutFile "$name.msi"
+Invoke-WebRequest "https://github.com/Linvin-1233/Blockscope/releases/download/$tag/$name.msi.sha256" -OutFile "$name.msi.sha256"
+Get-FileHash "$name.msi" -Algorithm SHA256
+Get-Content "$name.msi.sha256"
+msiexec /i "$name.msi"
+```
+
+安装到 `%LOCALAPPDATA%\Programs\Blockscope`，并把该目录追加到当前用户的 `PATH`；
+重新打开终端后 `blockscope --version` 即可用。卸载在“设置 → 应用”里，卸载会同时
+移除 `PATH` 条目。静默安装用 `msiexec /i "$name.msi" /qn`。
+
+### Windows：便携 zip
+
+不想安装时直接解压：
+
+```powershell
+$tag = "v0.1.1"
 $name = "blockscope-$tag-x86_64-pc-windows-msvc"
 Invoke-WebRequest "https://github.com/Linvin-1233/Blockscope/releases/download/$tag/$name.zip" -OutFile "$name.zip"
 Invoke-WebRequest "https://github.com/Linvin-1233/Blockscope/releases/download/$tag/$name.sha256" -OutFile "$name.sha256"

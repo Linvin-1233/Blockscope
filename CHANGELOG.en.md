@@ -6,6 +6,23 @@ User-facing changes are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] - 2026-10-25
+
+### Added
+
+- A per-user Windows MSI that installs to
+  `%LOCALAPPDATA%\Programs\Blockscope`, appends the directory to the user
+  `PATH`, removes both on uninstall, and supports
+  `msiexec /i <msi> /qn` for unattended installs.
+- CI builds the MSI on every push as a validation artifact; the release workflow
+  uploads `blockscope-v<version>-x86_64-pc-windows-msvc.msi` and its `.sha256`
+  for `v*` tags.
+
+### Changed
+
+- Windows installation docs now prefer the MSI and keep the portable zip as an
+  alternative.
+
 ## [0.1.0] - 2026-10-25
 
 First public snapshot of the current workspace version.

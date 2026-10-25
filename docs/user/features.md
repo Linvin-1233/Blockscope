@@ -3,7 +3,7 @@
 Blockscope 是一个把 Minecraft `.litematic` 投影文件渲染成 PNG 的
 无头 Rust 图像渲染引擎，面向通用后端服务、批处理工具和自动化管线。
 
-当前 workspace 版本为 `0.1.0`，支持 Windows 和 Linux。仓库包含解析、材质、
+当前 workspace 版本为 `0.1.1`，支持 Windows 和 Linux。仓库包含解析、材质、
 网格、CPU 光栅化、CLI 和 stdio 服务；不包含特定聊天平台或机器人适配层。
 
 ## 功能

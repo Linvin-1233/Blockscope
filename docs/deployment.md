@@ -12,13 +12,16 @@ toolchain:
 | --- | --- |
 | Linux x86_64 | `blockscope-v<version>-x86_64-unknown-linux-musl.tar.gz` |
 | Linux aarch64 | `blockscope-v<version>-aarch64-unknown-linux-musl.tar.gz` |
-| Windows x86_64 | `blockscope-v<version>-x86_64-pc-windows-msvc.zip` |
+| Windows x86_64 | `blockscope-v<version>-x86_64-pc-windows-msvc.msi` (installer) |
+| Windows x86_64 | `blockscope-v<version>-x86_64-pc-windows-msvc.zip` (portable) |
 
-Each archive ships with a `.sha256` file named after it without the extension
+Each file ships with a `.sha256` file named after it without the extension
 (`blockscope-v<version>-<target>.sha256`); verify it before deploying. Linux
 artifacts are statically linked against musl and the Windows artifact uses the
-static CRT. The container image is still built from this repository (see below);
-no prebuilt image is published.
+static CRT. The MSI installs per user under `%LOCALAPPDATA%\Programs\Blockscope`,
+maintains the user `PATH`, and removes both on uninstall; `msiexec /i <msi> /qn`
+is the unattended form. The container image is still built from this repository
+(see below); no prebuilt image is published.
 
 ## Docker
 

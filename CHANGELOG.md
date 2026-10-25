@@ -5,6 +5,20 @@
 本文件记录面向用户的变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [0.1.1] - 2026-10-25
+
+### Added
+
+- Windows 提供按用户安装的 MSI：安装到 `%LOCALAPPDATA%\Programs\Blockscope`，
+  自动把目录加入用户 `PATH`，卸载时移除该条目；支持
+  `msiexec /i <msi> /qn` 静默安装。
+- CI 每次推送都会构建 MSI 作为校验产物；release 工作流为 `v*` 标签上传
+  `blockscope-v<version>-x86_64-pc-windows-msvc.msi` 及 `.sha256`。
+
+### Changed
+
+- Windows 安装文档改为优先使用 MSI，便携 zip 保留为备选。
+
 ## [0.1.0] - 2026-10-25
 
 当前 workspace 版本的首个公开快照。

@@ -14,35 +14,56 @@
 
 ## Download prebuilt binaries (recommended)
 
-Download the archive for your platform from
+Download the installer or archive for your platform from
 [Releases](https://github.com/Linvin-1233/Blockscope/releases):
 
-| Platform | Target triple | Archive |
+| Platform | Target triple | Format |
 | --- | --- | --- |
 | Linux x86_64 | `x86_64-unknown-linux-musl` | `.tar.gz` |
 | Linux aarch64 | `aarch64-unknown-linux-musl` | `.tar.gz` |
-| Windows x86_64 | `x86_64-pc-windows-msvc` | `.zip` |
+| Windows x86_64 | `x86_64-pc-windows-msvc` | `.msi` / `.zip` |
 
-Names look like `blockscope-v0.1.0-x86_64-unknown-linux-musl.tar.gz`, and each
-archive has a `.sha256` file next to it with the extension removed
-(`blockscope-v0.1.0-x86_64-unknown-linux-musl.sha256`). Linux artifacts are
+Names look like `blockscope-v0.1.1-x86_64-unknown-linux-musl.tar.gz`, and each
+file has a `.sha256` next to it with the extension removed
+(`blockscope-v0.1.1-x86_64-unknown-linux-musl.sha256`). Linux artifacts are
 linked statically against musl and the Windows artifact uses the static CRT, so
 the target machine needs no extra runtime libraries.
 
-Linux (using `v0.1.0` and `x86_64` as an example):
+### Linux
 
 ```bash
-curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.1.0/blockscope-v0.1.0-x86_64-unknown-linux-musl.tar.gz
-curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.1.0/blockscope-v0.1.0-x86_64-unknown-linux-musl.sha256
-sha256sum -c blockscope-v0.1.0-x86_64-unknown-linux-musl.sha256
-tar -xzf blockscope-v0.1.0-x86_64-unknown-linux-musl.tar.gz
-./blockscope-v0.1.0-x86_64-unknown-linux-musl/blockscope --version
+curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.1.1/blockscope-v0.1.1-x86_64-unknown-linux-musl.tar.gz
+curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.1.1/blockscope-v0.1.1-x86_64-unknown-linux-musl.sha256
+sha256sum -c blockscope-v0.1.1-x86_64-unknown-linux-musl.sha256
+tar -xzf blockscope-v0.1.1-x86_64-unknown-linux-musl.tar.gz
+./blockscope-v0.1.1-x86_64-unknown-linux-musl/blockscope --version
 ```
 
-Windows PowerShell:
+### Windows: MSI installer (recommended)
+
+Installs per user, so no administrator rights are required:
 
 ```powershell
-$tag = "v0.1.0"
+$tag = "v0.1.1"
+$name = "blockscope-$tag-x86_64-pc-windows-msvc"
+Invoke-WebRequest "https://github.com/Linvin-1233/Blockscope/releases/download/$tag/$name.msi" -OutFile "$name.msi"
+Invoke-WebRequest "https://github.com/Linvin-1233/Blockscope/releases/download/$tag/$name.msi.sha256" -OutFile "$name.msi.sha256"
+Get-FileHash "$name.msi" -Algorithm SHA256
+Get-Content "$name.msi.sha256"
+msiexec /i "$name.msi"
+```
+
+It installs to `%LOCALAPPDATA%\Programs\Blockscope` and appends that directory to
+the current user's `PATH`; open a new terminal and `blockscope --version` works.
+Uninstall from Settings > Apps, which also removes the `PATH` entry. Use
+`msiexec /i "$name.msi" /qn` for a silent install.
+
+### Windows: portable zip
+
+Unpack it instead if you do not want an installed copy:
+
+```powershell
+$tag = "v0.1.1"
 $name = "blockscope-$tag-x86_64-pc-windows-msvc"
 Invoke-WebRequest "https://github.com/Linvin-1233/Blockscope/releases/download/$tag/$name.zip" -OutFile "$name.zip"
 Invoke-WebRequest "https://github.com/Linvin-1233/Blockscope/releases/download/$tag/$name.sha256" -OutFile "$name.sha256"

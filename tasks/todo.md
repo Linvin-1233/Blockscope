@@ -398,9 +398,25 @@ v1.
 - [x] `blockscope --version` prints `blockscope 0.1.0`.
 - [x] `parse-changelog CHANGELOG.md 0.1.0` and `parse-changelog CHANGELOG.en.md 0.1.0`
       both succeed, so the release body is non-empty.
-- [ ] `workflow_dispatch` run is green on GitHub Actions.
-- [ ] The first `v*` tag uploads the three archives and a changelog body.
+- [x] `workflow_dispatch` run is green on GitHub Actions.
+- [x] The `v0.1.0` tag uploaded the three archives and a changelog body.
 
-**Remaining before the first release:** push the `v0.1.0` tag. The workspace
-version and the `CHANGELOG.md` section already match, so the version guard and
-the changelog lookup both pass.
+## Release distribution: Windows MSI
+
+**Status:** Shipped in 0.1.1. The portable zip stays available.
+
+**Acceptance criteria:**
+
+- [x] `installer/blockscope.wxs` installs per user under
+      `%LOCALAPPDATA%\Programs\Blockscope` and maintains the user `PATH`.
+- [x] `scripts/build-msi.ps1` pins WiX 6.0.2 and rejects pre-release versions.
+- [x] CI builds the MSI on every push and uploads it as a validation artifact.
+- [x] The release workflow uploads the MSI and a `.sha256` file for `v*` tags.
+- [x] Windows installation docs prefer the MSI and keep the portable zip.
+
+**Verification:**
+
+- [x] `npx js-yaml` parses both workflows; `installer/blockscope.wxs` is
+      well-formed XML.
+- [x] The CI `installer` job builds the MSI successfully.
+- [ ] Install, `blockscope --version`, and uninstall verified on a Windows host.
