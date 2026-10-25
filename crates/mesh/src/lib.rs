@@ -18,7 +18,10 @@ pub use catalog::{
 pub use color::{RenderLayer, Rgba};
 pub use error::{MeshError, MeshErrorCode};
 pub use export::{write_obj, write_ply};
-pub use mesh::{Mesh, MeshLimits, MeshPage, MeshStatistics, Quad, Vertex};
+pub use mesh::{
+    AO_LEVELS, Mesh, MeshLimits, MeshPage, MeshStatistics, Quad, UV_SCALE, Vertex,
+    ambient_occlusion_level, decode_uv, encode_uv,
+};
 pub use model::{
     BlockModel, FaceDirection, ModelBox, ModelQuad, NO_TEXTURE, empty_model, face_uv,
     full_cube_model,

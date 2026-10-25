@@ -1,6 +1,6 @@
 # Phase 5 Plan: Huge Structures
 
-**Status:** C1-C4 implemented. This plan covers the extreme fixtures.
+**Status:** C1-C5 implemented. This plan covers the extreme fixtures.
 
 ## Measured baseline
 
@@ -24,9 +24,10 @@
 | Blocks visited | 9,393,931 |
 | Unknown blocks (no palette color) | 3,268,723 |
 
-The fixture is pathological: its 9.4M blocks emit 77.6M quads, roughly 8 quads
-per block, so face culling barely helps. The mesh alone needs about 13 GB, and
-a triangle table would add another 20 to 30 GB.
+The fixture is pathological: its 9.4M blocks emit 77.6M quads with the
+color-only catalog, roughly 8 quads per block, so face culling barely helps. The
+client-jar material set used for the rendering measurements emits 118.6M quads
+(474M vertices), so the mesh alone needs about 21 GB before the render tables.
 
 Consequences:
 
@@ -79,8 +80,9 @@ in `BTreeMap` key order, so output is byte-identical to the serial builder.
 
 The triangle table cost about 190 bytes per triangle and duplicated the mesh.
 The rasterizer now projects each opaque or cutout quad once into a compact table
-(about 200 bytes per quad), forms the two triangles while rasterizing a tile,
-and keeps only translucent triangles separately for depth sorting.
+(about 200 bytes per quad at the time; C5 later reduced it to 128), forms the two
+triangles while rasterizing a tile, and keeps only translucent triangles
+separately for depth sorting.
 
 Measured on `000002` at 1024x1024 and supersample 2:
 
@@ -97,9 +99,10 @@ auto` keeps choosing LOD 2.
 
 ### C3: Level of detail (implemented)
 
-`000001` emits 77.6M quads, so exact rendering needs more than 13 GB before the
-triangle table. `litematic_scene::aggregate` merges cells in a pure data layer,
-and `--lod N` (2..=16) applies it after parsing:
+`000001` emits 77.6M quads with the color-only catalog and 118.6M with the
+client jar, so exact rendering needs more than 13 GB before the triangle table.
+`litematic_scene::aggregate` merges cells in a pure data layer, and `--lod N`
+(2..=16) applies it after parsing:
 
 - Each cell keeps the most frequent non-air state; ties use canonical order.
 - Later regions win overlaps, matching the mesh builder.
@@ -113,14 +116,16 @@ aggregated scene.
 
 Measured with the client jar at 1024x1024, supersample 2, 12 threads:
 
-| LOD | Quads | Triangles | Wall | Peak working set |
-|---|---|---|---|---|
-| 1 | 77.6M | 117M | 37.2 s | 23.1 GB |
-| 2 | 10.5M | 14.6M | 9.4 s | 5.5 GB |
-| 4 | 1.3M | 1.55M | 4.0 s | 683 MB |
+| LOD | Triangles | Wall | Peak working set |
+|---|---|---|---|
+| 1 (exact) | 117M | 36.6 s | 18.9 GB |
+| 2 | 14.6M | 16.4 s | 9.6 GB |
+| 4 | 1.55M | 4.0 s | 683 MB |
 
-With page streaming, exact `000001` now completes in 37.2 s and 23.1 GB, within
+With page streaming, exact `000001` now completes in 36.6 s and 18.9 GB, within
 the 10 minute budget on a 48 GB host. LOD remains necessary for smaller hosts.
+The LOD 2 pass itself dropped from 0.63 s to 0.21 s after aggregation was
+parallelized.
 
 LOD 4 meets the 10 minute budget with a large margin. LOD 2 is viable on a
 16 GB host but not on a small VPS. The render for LOD 4 reports 18 missing
@@ -137,16 +142,35 @@ appear in the output.
 - `--lod auto` uses the same budget to choose a factor.
 
 Measured on the test host: 27 GB free produced a 54.3M quad budget. `000002`
-exact (19.9M quads) is now chosen automatically; `000001` (77.6M quads) falls
-back to LOD 2, and `000001` exact succeeds when forced.
+exact (19.9M quads) is now chosen automatically; `000001` (118.6M quads with
+the client jar) falls back to LOD 2, and `000001` exact succeeds when forced.
 
 **Acceptance:** a 2 GiB worker rejects `000001` with the mesh cap and no OOM;
 the same job succeeds with `--force-limits` and `--lod` on a larger machine.
 
+### C5: Compact attributes and parallel aggregation (implemented)
+
+- LOD aggregation splits output rows across workers. Palette ids are assigned
+  in a serial pass over the chosen per-cell state ids, so the scene, palette
+  order, and packed indices are identical to the single-threaded path.
+- Mesh UVs are Q12 fixed point (`i16`) and ambient occlusion is a 2-bit level.
+  Both reconstruct the exact previous float values on the measured fixtures.
+- `Vertex` drops from 44 to 36 bytes and `Quad` from 180 to 148 bytes.
+- The projected quad table stores one RGBA color, one shade factor, four AO
+  levels, and Q12 UVs per quad: 200 to 128 bytes. Translucent triangles drop
+  from 160 to 112 bytes.
+- Aggregation: `000001` LOD 2 0.63 s to 0.21 s (scan stage 0.54 s to 0.07 s),
+  LOD 4 1.74 s to 0.19 s, LOD 8 0.63 s to 0.15 s; `000002` LOD 2 1.8 s to
+  0.42 s, LOD 8 1.2 s to 0.20 s.
+- Memory: `000001` exact 23.1 to 18.9 GB, `000002` exact 7.5 to 6.3 GB.
+- PNG SHA-256 is unchanged for `000001` exact, `000002` exact, and `000001`
+  auto (LOD 2).
+
 ## Order
 
-C1, C2, C3, and C4 are implemented. Exact rendering covers scenes that fit the
-budget, streaming keeps memory near the mesh size, and LOD covers the rest.
+C1, C2, C3, C4, and C5 are implemented. Exact rendering covers scenes that fit
+the budget, streaming keeps memory near the mesh size, compact attributes shrink
+that mesh, and LOD covers the rest.
 
 ## Risks
 

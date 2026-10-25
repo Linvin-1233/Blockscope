@@ -16,6 +16,16 @@ const AIR: u32 = u32::MAX;
 /// and renderer need no special cases. Block entities, entities, and pending
 /// ticks are dropped, and the palette is rebuilt in first-seen order.
 pub fn aggregate(scene: &Scene, factor: u32) -> Result<Scene, SceneError> {
+    aggregate_with_threads(scene, factor, 0)
+}
+
+/// Aggregate with an explicit worker count. `threads == 0` uses the available
+/// parallelism. The result is identical for every worker count.
+pub fn aggregate_with_threads(
+    scene: &Scene,
+    factor: u32,
+    threads: u32,
+) -> Result<Scene, SceneError> {
     if !(MIN_FACTOR..=MAX_FACTOR).contains(&factor) {
         return Err(SceneError::new(
             SceneErrorCode::InvalidLodFactor,
@@ -44,66 +54,81 @@ pub fn aggregate(scene: &Scene, factor: u32) -> Result<Scene, SceneError> {
 
     let table = build_state_table(scene);
     let air = BlockStateKey::simple("minecraft:air");
-    let mut values = Vec::with_capacity(capacity);
+    // Chosen global state id per output cell, in y/z/x order. Filled in
+    // parallel over y, then rewritten with palette indices in one serial pass
+    // so the palette order stays identical to the single-threaded path.
+    let mut values = vec![AIR; capacity];
+
+    let fallback = if threads == 0 {
+        std::thread::available_parallelism()
+            .map(|value| value.get())
+            .unwrap_or(1)
+    } else {
+        threads as usize
+    };
+    let workers = fallback.clamp(1, size[1].max(1) as usize);
+    let plane = size[0] as usize * size[2] as usize;
+
+    if workers <= 1 || capacity < 8192 || plane == 0 {
+        fill_rows(
+            scene,
+            &table,
+            factor,
+            min_cell,
+            size,
+            0,
+            size[1],
+            &mut values,
+        );
+    } else {
+        let rows_per_chunk = (size[1] as usize).div_ceil(workers);
+        let chunk_cells = rows_per_chunk * plane;
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = values
+                .chunks_mut(chunk_cells)
+                .enumerate()
+                .map(|(chunk_index, chunk)| {
+                    let start_y =
+                        u32::try_from(chunk_index * rows_per_chunk).expect("chunk row fits u32");
+                    let rows = u32::try_from(chunk.len() / plane).expect("chunk rows fit u32");
+                    let table = &table;
+                    scope.spawn(move || {
+                        fill_rows(scene, table, factor, min_cell, size, start_y, rows, chunk);
+                    })
+                })
+                .collect();
+            for handle in handles {
+                handle.join().expect("lod aggregation worker panicked");
+            }
+        });
+    }
+
     let mut palette: Vec<BlockStateKey> = Vec::new();
     let mut palette_ids: HashMap<u32, u32> = HashMap::new();
     let mut air_index: Option<u32> = None;
-    let mut counts: HashMap<u32, u32> = HashMap::new();
-
-    for y in 0..size[1] {
-        for z in 0..size[2] {
-            for x in 0..size[0] {
-                let base = [
-                    (min_cell[0] + i64::from(x)) * factor,
-                    (min_cell[1] + i64::from(y)) * factor,
-                    (min_cell[2] + i64::from(z)) * factor,
-                ];
-
-                counts.clear();
-                for dy in 0..factor {
-                    for dz in 0..factor {
-                        for dx in 0..factor {
-                            let world = [base[0] + dx, base[1] + dy, base[2] + dz];
-                            let Some(id) = resolve_id(scene, &table, world) else {
-                                continue;
-                            };
-                            *counts.entry(id).or_insert(0) += 1;
-                        }
-                    }
+    for id in &mut values {
+        if *id == AIR {
+            *id = match air_index {
+                Some(index) => index,
+                None => {
+                    let index = u32::try_from(palette.len()).map_err(size_overflow)?;
+                    palette.push(air.clone());
+                    air_index = Some(index);
+                    index
                 }
-
-                let chosen = counts
-                    .iter()
-                    .max_by(|left, right| {
-                        left.1.cmp(right.1).then_with(|| {
-                            table.states[*right.0 as usize].cmp(table.states[*left.0 as usize])
-                        })
-                    })
-                    .map(|(id, _)| *id);
-
-                let index = match chosen {
-                    Some(id) => match palette_ids.get(&id) {
-                        Some(index) => *index,
-                        None => {
-                            let index = u32::try_from(palette.len()).map_err(size_overflow)?;
-                            palette.push(table.states[id as usize].clone());
-                            palette_ids.insert(id, index);
-                            index
-                        }
-                    },
-                    None => match air_index {
-                        Some(index) => index,
-                        None => {
-                            let index = u32::try_from(palette.len()).map_err(size_overflow)?;
-                            palette.push(air.clone());
-                            air_index = Some(index);
-                            index
-                        }
-                    },
-                };
-                values.push(index);
-            }
+            };
+            continue;
         }
+
+        *id = match palette_ids.get(id) {
+            Some(index) => *index,
+            None => {
+                let index = u32::try_from(palette.len()).map_err(size_overflow)?;
+                palette.push(table.states[*id as usize].clone());
+                palette_ids.insert(*id, index);
+                index
+            }
+        };
     }
 
     let bits = PackedIndices::bits_for_palette(palette.len());
@@ -128,6 +153,64 @@ pub fn aggregate(scene: &Scene, factor: u32) -> Result<Scene, SceneError> {
     };
 
     Scene::new(scene.metadata.clone(), vec![region], Vec::new())
+}
+
+/// Fill `rows` output rows starting at `start_y` with chosen state ids.
+#[allow(clippy::too_many_arguments)]
+fn fill_rows(
+    scene: &Scene,
+    table: &StateTable<'_>,
+    factor: i64,
+    min_cell: [i64; 3],
+    size: [u32; 3],
+    start_y: u32,
+    rows: u32,
+    out: &mut [u32],
+) {
+    let size_x = size[0] as usize;
+    let size_z = size[2] as usize;
+    let plane = size_x * size_z;
+    debug_assert_eq!(out.len(), rows as usize * plane);
+
+    let mut counts: HashMap<u32, u32> = HashMap::new();
+    for local_y in 0..rows {
+        let y = start_y + local_y;
+        for z in 0..size[2] {
+            for x in 0..size[0] {
+                let base = [
+                    (min_cell[0] + i64::from(x)) * factor,
+                    (min_cell[1] + i64::from(y)) * factor,
+                    (min_cell[2] + i64::from(z)) * factor,
+                ];
+
+                counts.clear();
+                for dy in 0..factor {
+                    for dz in 0..factor {
+                        for dx in 0..factor {
+                            let world = [base[0] + dx, base[1] + dy, base[2] + dz];
+                            let Some(id) = resolve_id(scene, table, world) else {
+                                continue;
+                            };
+                            *counts.entry(id).or_insert(0) += 1;
+                        }
+                    }
+                }
+
+                let chosen = counts
+                    .iter()
+                    .max_by(|left, right| {
+                        left.1.cmp(right.1).then_with(|| {
+                            table.states[*right.0 as usize].cmp(table.states[*left.0 as usize])
+                        })
+                    })
+                    .map(|(id, _)| *id)
+                    .unwrap_or(AIR);
+
+                let index = local_y as usize * plane + z as usize * size_x + x as usize;
+                out[index] = chosen;
+            }
+        }
+    }
 }
 
 /// Unique non-air states and a per-region mapping from palette id to state id.

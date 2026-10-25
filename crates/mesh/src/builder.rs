@@ -1,7 +1,7 @@
 use crate::catalog::BlockCatalog;
 use crate::model::{ModelQuad, NO_TEXTURE};
 use crate::view::SceneBlockView;
-use crate::{Mesh, MeshError, MeshLimits, MeshPage, MeshStatistics, Quad, Vertex};
+use crate::{Mesh, MeshError, MeshLimits, MeshPage, MeshStatistics, Quad, Vertex, encode_uv};
 use litematic_scene::{BlockStateKey, Scene};
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -222,13 +222,13 @@ fn build_page<C: BlockCatalog + ?Sized>(
                                 ],
                                 normal: model_quad.normal,
                                 color: color.to_array(),
-                                uv: model_quad.uv[index],
+                                uv: encode_uv(model_quad.uv[index]),
                                 texture: model_quad.texture,
                                 shade: model_quad.shade,
                                 ao: if ambient_occlusion {
                                     vertex_ao(view, catalog, world, model_quad, corner)
                                 } else {
-                                    1.0
+                                    3
                                 },
                             }
                         });
@@ -367,16 +367,16 @@ fn vertex_ao<C: BlockCatalog + ?Sized>(
     world: [i64; 3],
     quad: &ModelQuad,
     corner: [f32; 3],
-) -> f32 {
+) -> u8 {
     let Some(face) = quad.cullface else {
-        return 1.0;
+        return 3;
     };
 
     let (u_axis, v_axis) = face.tangents();
     let u = corner[u_axis];
     let v = corner[v_axis];
     if !(u == 0.0 || u == 16.0) || !(v == 0.0 || v == 16.0) {
-        return 1.0;
+        return 3;
     }
 
     let du = if u == 16.0 { 1 } else { -1 };
@@ -393,13 +393,16 @@ fn vertex_ao<C: BlockCatalog + ?Sized>(
     let s1 = occludes(view, catalog, side1);
     let s2 = occludes(view, catalog, side2);
     let c = occludes(view, catalog, corner_pos);
-    let raw = if s1 && s2 {
-        0.0
-    } else {
-        1.0 - (u8::from(s1) + u8::from(s2) + u8::from(c)) as f32 / 3.0
-    };
+    if s1 && s2 {
+        return 0;
+    }
 
-    0.55 + 0.45 * raw
+    match u8::from(s1) + u8::from(s2) + u8::from(c) {
+        0 => 3,
+        1 => 2,
+        2 => 1,
+        _ => 0,
+    }
 }
 
 fn shifted(world: [i64; 3], base: [i64; 3], axis: usize, delta: i64) -> [i64; 3] {

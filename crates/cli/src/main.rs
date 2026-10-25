@@ -9,7 +9,7 @@ use litematic_render::{
     Background, LightingProfile, RenderError, RenderOptions, RenderStatistics, render_mesh,
     render_mesh_with_textures, write_png,
 };
-use litematic_scene::{Manifest, Scene, SceneError, aggregate, sha256};
+use litematic_scene::{Manifest, Scene, SceneError, aggregate_with_threads, sha256};
 use std::fmt;
 use std::fs;
 use std::fs::File;
@@ -1108,7 +1108,7 @@ fn prepare_scene(
     match lod {
         LodMode::Fixed(factor) => {
             let lod_started = Instant::now();
-            let scene = apply_lod(scene, factor)?;
+            let scene = apply_lod(scene, factor, threads)?;
             let lod_ms = lod_started.elapsed().as_secs_f64() * 1000.0;
 
             let mesh_started = Instant::now();
@@ -1152,7 +1152,7 @@ fn prepare_auto(
         let aggregated = if factor == 1 {
             None
         } else {
-            Some(aggregate(&scene, factor).map_err(CliError::from)?)
+            Some(aggregate_with_threads(&scene, factor, threads).map_err(CliError::from)?)
         };
         lod_total += lod_started.elapsed().as_secs_f64() * 1000.0;
 
@@ -1192,11 +1192,11 @@ fn is_mesh_limit_error(error: &CliError) -> bool {
         || error.message.starts_with("PAGE_LIMIT_EXCEEDED")
 }
 
-fn apply_lod(scene: Scene, lod: u32) -> Result<Scene, CliError> {
+fn apply_lod(scene: Scene, lod: u32, threads: u32) -> Result<Scene, CliError> {
     if lod <= 1 {
         return Ok(scene);
     }
-    aggregate(&scene, lod).map_err(CliError::from)
+    aggregate_with_threads(&scene, lod, threads).map_err(CliError::from)
 }
 
 fn load_scene(path: &Path, force_limits: bool) -> Result<(Vec<u8>, Scene), CliError> {

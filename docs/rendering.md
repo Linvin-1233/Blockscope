@@ -83,17 +83,33 @@ cull.
 - Final RGBA8 conversion clamps and rounds; fully transparent pixels are written
   as zero RGB.
 
+### Compact mesh attributes
+
+The mesh stores fixed-point attributes instead of full floats. Texture
+coordinates are Q12 (`i16`); the builder emits UVs on a 1/16 or 1/32 grid for the
+tested material sets, so the round trip is exact. Ambient occlusion is one of
+four levels. Quads also share their color, normal, texture, and shade, which the
+builder already emits once per quad. Reconstruction uses the same float
+expressions as before, so rendered output is bit-identical.
+
+| Structure | Before | After |
+|---|---|---|
+| `Vertex` | 44 B | 36 B |
+| `Quad` | 180 B | 148 B |
+| projected quad table entry | 200 B | 128 B |
+| translucent triangle | 160 B | 112 B |
+
 ### Geometry table
 
 Opaque and cutout geometry is projected once per quad and stored in a compact
-quad table (about 200 bytes per quad: four screen points, four shaded colors,
-four UVs, texture id, layer). Triangles are formed only while a tile rasterizes
-a quad, so the render table is roughly half the size of storing two full
-triangles per quad. Translucent triangles are kept separately because they need
-a per-tile depth sort. Output stays byte-identical.
+quad table (about 128 bytes per quad: four screen points, one color and shade
+pair, four AO levels, four Q12 UVs, texture id, layer). Triangles are formed
+only while a tile rasterizes a quad, so the render table is roughly half the
+size of storing two full triangles per quad. Translucent triangles are kept
+separately because they need a per-tile depth sort. Output stays byte-identical.
 
 Measured on the 370x370 fixture at 1024x1024 and supersample 2: peak memory
-dropped from 19.6 GB to 13.5 GB, render time from 13.5 s to 6.6 s, and the PNG
+dropped from 19.6 GB to 6.3 GB and render time from 13.5 s to 4.0 s; the PNG
 hash did not change.
 
 ### Page streaming
@@ -108,8 +124,8 @@ Measured on the test host at 1024x1024 and supersample 2:
 
 | Scene | Peak working set | Wall | Render |
 |---|---|---|---|
-| `000002` exact | 7.5 GB | 29.8 s | 4.3 s |
-| `000001` exact | 23.1 GB | 37.2 s | 11.6 s |
+| `000002` exact | 6.3 GB | 30.4 s | 4.0 s |
+| `000001` exact | 18.9 GB | 36.6 s | 10.1 s |
 
 Both used to need the full per-quad table (13.5 GB and roughly 45 GB
 respectively). A small-scene equality test forces streaming and compares RGBA
@@ -266,20 +282,25 @@ dropped, and small details disappear. It is opt-in and off by default.
 Measured on the 9.4M-block stress fixture (211x211x211, 1024x1024, supersample
 2, 12 threads, client jar):
 
-| LOD | Quads | Triangles | Wall | Peak working set |
-|---|---|---|---|---|
-| 1 (exact) | 77.6M | 117M | 37.2 s | 23.1 GB |
-| 2 | 10.5M | 14.6M | 9.4 s | 5.5 GB |
-| 4 | 1.3M | 1.55M | 4.0 s | 683 MB |
+| LOD | Triangles | Wall | Peak working set |
+|---|---|---|---|
+| 1 (exact) | 117M | 36.6 s | 18.9 GB |
+| 2 | 14.6M | 16.4 s | 9.6 GB |
+| 4 | 1.55M | 4.0 s | 683 MB |
+
+Aggregation is parallel over output rows and produces the same scene as the
+single-threaded path. On the test host, the LOD 2 pass for `000001` dropped from
+0.63 s to 0.21 s; the scan stage alone dropped from 0.54 s to 0.07 s on 12
+threads. LOD 8 for `000002` dropped from 1.2 s to 0.20 s.
 
 For oversized schematics, LOD 4 is the practical default; LOD 2 keeps more
 detail at a large memory cost.
 
 `--lod auto` starts with an exact mesh and falls back to 2, 4, 8, or 16 only
 when the quad budget does not fit. The budget is 80 percent of available memory
-divided by roughly 600 bytes per quad, so a file that can be rendered exactly
+divided by roughly 400 bytes per quad, so a file that can be rendered exactly
 is never degraded. On the 48 GB test host, `000003` (solid, 67M blocks) renders
-exactly in 7.5 s, while the porous `000001` falls back to LOD 2 in 12.9 s.
+exactly in 7.5 s, while the porous `000001` falls back to LOD 2 in 16.4 s.
 
 ## Known Limitations
 
@@ -289,6 +310,7 @@ exactly in 7.5 s, while the porous `000001` falls back to LOD 2 in 12.9 s.
 - No shadows, full light propagation, or emissive bloom.
 - Translucent sorting is per tile and approximate.
 - CPU-only; tiles are parallel, but mesh construction and PNG encoding are not.
+- Texture coordinates are Q12 fixed point; UVs outside [-8, 8) are clamped.
 - Color management is approximate; output is treated as sRGB.
 - Golden PNGs cover small synthetic scenes, not large real structures.
 - Performance thresholds still need a real QQBot workload and deployment target.

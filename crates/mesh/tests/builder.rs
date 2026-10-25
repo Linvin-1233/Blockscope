@@ -250,14 +250,14 @@ fn ambient_occlusion_darkens_contact_vertices() {
             .quads
             .iter()
             .flat_map(|quad| &quad.vertices)
-            .any(|vertex| vertex.ao < 0.99)
+            .any(|vertex| vertex.ambient_occlusion() < 0.99)
     );
     assert!(
         mesh.pages[0]
             .quads
             .iter()
             .flat_map(|quad| &quad.vertices)
-            .all(|vertex| vertex.ao > 0.0)
+            .all(|vertex| vertex.ambient_occlusion() > 0.0)
     );
 }
 

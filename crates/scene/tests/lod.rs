@@ -1,5 +1,6 @@
 use litematic_scene::{
     BlockStateKey, PackedIndices, Region, Scene, SceneErrorCode, SceneMetadata, aggregate,
+    aggregate_with_threads,
 };
 
 fn metadata() -> SceneMetadata {
@@ -204,4 +205,69 @@ fn aggregation_is_deterministic() {
     let second = aggregate(&scene, 2).unwrap();
     assert_eq!(first, second);
     assert_eq!(first.scene_hash(), second.scene_hash());
+}
+
+#[test]
+fn parallel_aggregation_matches_the_serial_path() {
+    let values: Vec<u32> = (0..262_144).map(|index| (index % 5) as u32).collect();
+    let scene = scene(vec![region(
+        "main",
+        [0, 0, 0],
+        [64, 64, 64],
+        &[
+            "minecraft:stone",
+            "minecraft:glass",
+            "minecraft:air",
+            "minecraft:dirt",
+            "minecraft:oak_planks",
+        ],
+        &values,
+    )]);
+
+    for factor in [2u32, 3] {
+        let serial = aggregate_with_threads(&scene, factor, 1).unwrap();
+        for threads in [2u32, 3, 7, 0] {
+            let parallel = aggregate_with_threads(&scene, factor, threads).unwrap();
+            assert_eq!(serial, parallel, "factor {factor} threads {threads}");
+            assert_eq!(serial.scene_hash(), parallel.scene_hash());
+        }
+    }
+}
+
+#[test]
+fn parallel_aggregation_keeps_region_priority() {
+    let lower = region(
+        "lower",
+        [0, 0, 0],
+        [64, 64, 64],
+        &["minecraft:black_wool", "minecraft:stone"],
+        &vec![0; 262_144],
+    );
+    let mut upper_values = vec![0u32; 262_144];
+    let mut dirt = 0;
+    for y in 0..2 {
+        for z in 0..2 {
+            for x in 0..2 {
+                if dirt < 5 {
+                    upper_values[(y * 64 + z) * 64 + x] = 1;
+                    dirt += 1;
+                }
+            }
+        }
+    }
+    let upper = region(
+        "upper",
+        [0, 0, 0],
+        [64, 64, 64],
+        &["minecraft:white_wool", "minecraft:dirt"],
+        &upper_values,
+    );
+    let scene = scene(vec![lower, upper]);
+
+    let serial = aggregate_with_threads(&scene, 2, 1).unwrap();
+    let parallel = aggregate_with_threads(&scene, 2, 4).unwrap();
+    assert_eq!(serial, parallel);
+    let region = only_region(&parallel);
+    assert_eq!(state_at(region, 0).name, "minecraft:dirt");
+    assert_eq!(state_at(region, 7).name, "minecraft:white_wool");
 }

@@ -20,7 +20,7 @@ pub use bounds::Bounds;
 pub use diagnostic::{Diagnostic, DiagnosticCode, DiagnosticSeverity};
 pub use error::{SceneError, SceneErrorCode};
 pub use hash::{Sha256Digest, sha256};
-pub use lod::aggregate;
+pub use lod::{aggregate, aggregate_with_threads};
 pub use manifest::{
     MANIFEST_SCHEMA_VERSION, Manifest, ManifestBounds, ManifestDiagnostic, ManifestMetadata,
     ManifestRegion, ManifestStatistics, ParserInfo,

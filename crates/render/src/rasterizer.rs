@@ -1,7 +1,7 @@
 use crate::camera::Camera;
 use crate::{Background, LightingProfile, RenderError, RenderOptions};
 use litematic_material::{TextureFilter, TextureSet};
-use litematic_mesh::{Mesh, MeshPage, NO_TEXTURE, RenderLayer};
+use litematic_mesh::{Mesh, MeshPage, NO_TEXTURE, RenderLayer, ambient_occlusion_level, decode_uv};
 use litematic_scene::Scene;
 use serde::{Deserialize, Serialize};
 
@@ -106,7 +106,8 @@ fn push_page_quads(
     translucent: &mut Vec<Triangle>,
 ) {
     for quad in &page.quads {
-        let normal = quad.vertices[0].normal;
+        let first = &quad.vertices[0];
+        let normal = first.normal;
         if dot3(
             [
                 f64::from(normal[0]),
@@ -121,8 +122,6 @@ fn push_page_quads(
         }
 
         let mut projected = [[0.0f64; 3]; 4];
-        let mut vertex_colors = [[0.0f32; 4]; 4];
-
         for (index, vertex) in quad.vertices.iter().enumerate() {
             let world = [
                 f64::from(page.origin[0]) + f64::from(vertex.position[0]),
@@ -130,25 +129,40 @@ fn push_page_quads(
                 f64::from(page.origin[2]) + f64::from(vertex.position[2]),
             ];
             projected[index] = camera.project(world);
-
-            let shade = if vertex.shade {
-                f64::from(options.lighting.face_shade(vertex.normal))
-            } else {
-                1.0
-            };
-            let ao = match options.lighting {
-                LightingProfile::FlatV1 => 1.0,
-                LightingProfile::SimpleAoV1 => f64::from(vertex.ao),
-            };
-            vertex_colors[index] = [
-                (f64::from(vertex.color[0]) / 255.0 * shade * ao) as f32,
-                (f64::from(vertex.color[1]) / 255.0 * shade * ao) as f32,
-                (f64::from(vertex.color[2]) / 255.0 * shade * ao) as f32,
-                f32::from(vertex.color[3]) / 255.0,
-            ];
         }
 
-        let texture = quad.vertices[0].texture;
+        // The mesh builder emits one material and light tuple per quad: all
+        // four vertices share color, normal, texture, and shade.
+        debug_assert!(
+            quad.vertices
+                .iter()
+                .all(|vertex| vertex.color == first.color
+                    && vertex.normal == first.normal
+                    && vertex.texture == first.texture
+                    && vertex.shade == first.shade)
+        );
+        let shade = if first.shade {
+            options.lighting.face_shade(first.normal)
+        } else {
+            1.0
+        };
+        let color = first.color;
+        let ao = match options.lighting {
+            LightingProfile::FlatV1 => [3u8; 4],
+            LightingProfile::SimpleAoV1 => [
+                quad.vertices[0].ao,
+                quad.vertices[1].ao,
+                quad.vertices[2].ao,
+                quad.vertices[3].ao,
+            ],
+        };
+        let uvs = [
+            quad.vertices[0].uv,
+            quad.vertices[1].uv,
+            quad.vertices[2].uv,
+            quad.vertices[3].uv,
+        ];
+        let texture = first.texture;
         let layer = quad.layer;
         let mut keep = false;
 
@@ -178,16 +192,10 @@ fn push_page_quads(
                 let depth_key = (points[0][2] + points[1][2] + points[2][2]) / 3.0;
                 translucent.push(Triangle {
                     points,
-                    colors: [
-                        vertex_colors[indices[0]],
-                        vertex_colors[indices[1]],
-                        vertex_colors[indices[2]],
-                    ],
-                    uvs: [
-                        quad.vertices[indices[0]].uv,
-                        quad.vertices[indices[1]].uv,
-                        quad.vertices[indices[2]].uv,
-                    ],
+                    color,
+                    shade,
+                    ao: [ao[indices[0]], ao[indices[1]], ao[indices[2]]],
+                    uvs: [uvs[indices[0]], uvs[indices[1]], uvs[indices[2]]],
                     texture,
                     layer,
                     depth_key,
@@ -198,13 +206,10 @@ fn push_page_quads(
         if keep && layer != RenderLayer::Translucent {
             quads.push(QuadRender {
                 points: projected,
-                colors: vertex_colors,
-                uvs: [
-                    quad.vertices[0].uv,
-                    quad.vertices[1].uv,
-                    quad.vertices[2].uv,
-                    quad.vertices[3].uv,
-                ],
+                color,
+                shade,
+                ao,
+                uvs,
                 texture,
                 layer,
             });
@@ -213,11 +218,15 @@ fn push_page_quads(
 }
 
 /// An opaque or cutout quad, projected once and split into triangles per tile.
+/// Colors and texture coordinates are stored compactly; the exact float values
+/// are reconstructed when the quad is rasterized into a tile.
 #[derive(Debug, Clone)]
 struct QuadRender {
     points: [[f64; 3]; 4],
-    colors: [[f32; 4]; 4],
-    uvs: [[f32; 2]; 4],
+    color: [u8; 4],
+    shade: f32,
+    ao: [u8; 4],
+    uvs: [[i16; 2]; 4],
     texture: u16,
     layer: RenderLayer,
 }
@@ -227,11 +236,43 @@ struct QuadRender {
 #[derive(Debug, Clone)]
 struct Triangle {
     points: [[f64; 3]; 3],
-    colors: [[f32; 4]; 3],
-    uvs: [[f32; 2]; 3],
+    color: [u8; 4],
+    shade: f32,
+    ao: [u8; 3],
+    uvs: [[i16; 2]; 3],
     texture: u16,
     layer: RenderLayer,
     depth_key: f64,
+}
+
+/// Reconstruct the per-vertex color exactly as the previous float path did.
+fn vertex_color(color: [u8; 4], shade: f32, ao: u8) -> [f32; 4] {
+    let shade = f64::from(shade);
+    let ao = f64::from(ambient_occlusion_level(ao));
+    [
+        (f64::from(color[0]) / 255.0 * shade * ao) as f32,
+        (f64::from(color[1]) / 255.0 * shade * ao) as f32,
+        (f64::from(color[2]) / 255.0 * shade * ao) as f32,
+        f32::from(color[3]) / 255.0,
+    ]
+}
+
+impl Triangle {
+    fn colors(&self) -> [[f32; 4]; 3] {
+        [
+            vertex_color(self.color, self.shade, self.ao[0]),
+            vertex_color(self.color, self.shade, self.ao[1]),
+            vertex_color(self.color, self.shade, self.ao[2]),
+        ]
+    }
+
+    fn uvs(&self) -> [[f32; 2]; 3] {
+        [
+            decode_uv(self.uvs[0]),
+            decode_uv(self.uvs[1]),
+            decode_uv(self.uvs[2]),
+        ]
+    }
 }
 
 fn rasterize(
@@ -576,10 +617,12 @@ fn render_stream_translucent(
         translucent.sort_by(|left, right| right.depth_key.total_cmp(&left.depth_key));
 
         for triangle in translucent {
+            let colors = triangle.colors();
+            let uvs = triangle.uvs();
             buffer.rasterize_triangle(
                 &triangle.points,
-                &triangle.colors,
-                &triangle.uvs,
+                &colors,
+                &uvs,
                 triangle.texture,
                 triangle.layer,
             );
@@ -842,10 +885,12 @@ fn render_tile(
         translucent.sort_by(|left, right| right.depth_key.total_cmp(&left.depth_key));
 
         for triangle in translucent {
+            let colors = triangle.colors();
+            let uvs = triangle.uvs();
             tile.rasterize_triangle(
                 &triangle.points,
-                &triangle.colors,
-                &triangle.uvs,
+                &colors,
+                &uvs,
                 triangle.texture,
                 triangle.layer,
             );
@@ -955,15 +1000,40 @@ struct TileBuffer<'a> {
 
 impl TileBuffer<'_> {
     fn rasterize_quad(&mut self, quad: &QuadRender) {
+        let colors = [
+            vertex_color(quad.color, quad.shade, quad.ao[0]),
+            vertex_color(quad.color, quad.shade, quad.ao[1]),
+            vertex_color(quad.color, quad.shade, quad.ao[2]),
+            vertex_color(quad.color, quad.shade, quad.ao[3]),
+        ];
+        let uvs = [
+            decode_uv(quad.uvs[0]),
+            decode_uv(quad.uvs[1]),
+            decode_uv(quad.uvs[2]),
+            decode_uv(quad.uvs[3]),
+        ];
+
         let points = [quad.points[0], quad.points[1], quad.points[2]];
-        let colors = [quad.colors[0], quad.colors[1], quad.colors[2]];
-        let uvs = [quad.uvs[0], quad.uvs[1], quad.uvs[2]];
-        self.rasterize_triangle(&points, &colors, &uvs, quad.texture, quad.layer);
+        let triangle_colors = [colors[0], colors[1], colors[2]];
+        let triangle_uvs = [uvs[0], uvs[1], uvs[2]];
+        self.rasterize_triangle(
+            &points,
+            &triangle_colors,
+            &triangle_uvs,
+            quad.texture,
+            quad.layer,
+        );
 
         let points = [quad.points[0], quad.points[2], quad.points[3]];
-        let colors = [quad.colors[0], quad.colors[2], quad.colors[3]];
-        let uvs = [quad.uvs[0], quad.uvs[2], quad.uvs[3]];
-        self.rasterize_triangle(&points, &colors, &uvs, quad.texture, quad.layer);
+        let triangle_colors = [colors[0], colors[2], colors[3]];
+        let triangle_uvs = [uvs[0], uvs[2], uvs[3]];
+        self.rasterize_triangle(
+            &points,
+            &triangle_colors,
+            &triangle_uvs,
+            quad.texture,
+            quad.layer,
+        );
     }
 
     fn rasterize_triangle(
