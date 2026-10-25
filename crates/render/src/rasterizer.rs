@@ -778,12 +778,18 @@ impl TileBuffer<'_> {
             vertex_color(quad.color, quad.shade, quad.ao[2]),
             vertex_color(quad.color, quad.shade, quad.ao[3]),
         ];
-        let uvs = [
-            decode_uv(quad.uvs[0]),
-            decode_uv(quad.uvs[1]),
-            decode_uv(quad.uvs[2]),
-            decode_uv(quad.uvs[3]),
-        ];
+        // Untextured quads never sample uvs; the culling and shading path only
+        // needs the color table.
+        let uvs = if quad.texture == NO_TEXTURE {
+            [[0.0; 2]; 4]
+        } else {
+            [
+                decode_uv(quad.uvs[0]),
+                decode_uv(quad.uvs[1]),
+                decode_uv(quad.uvs[2]),
+                decode_uv(quad.uvs[3]),
+            ]
+        };
 
         let points = [quad.points[0], quad.points[1], quad.points[2]];
         let triangle_colors = [colors[0], colors[1], colors[2]];
