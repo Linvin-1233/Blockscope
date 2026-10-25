@@ -83,6 +83,16 @@ cull.
 - Final RGBA8 conversion clamps and rounds; fully transparent pixels are written
   as zero RGB.
 
+### Row spans
+
+Each edge function is affine in screen x on a fixed scanline, so the rasterizer
+solves the three zero crossings to bound the row, then walks the two endpoints
+in with the exact per-pixel edge test. A row only visits the pixels inside the
+triangle instead of the whole bounding box. Barycentric weights, depth, and
+color interpolation still use the same expressions in the same order, so
+accepted fragments are bit-identical while most rejected pixels are never
+visited. `pixelsTested` counts the fragments that remain after this clipping.
+
 ### Block entity NBT
 
 The renderer never reads block entity contents, so `mesh`, `bench`, and `render`
@@ -129,6 +139,14 @@ buffers, the rasterizer streams mesh pages instead. It projects a chunk of
 pages, bins them to the tiles they touch, renders those tiles into buffers that
 stay resident for the whole image, and drops the chunk. Only one chunk of
 geometry is alive at a time. Output is byte-identical to the table path.
+
+Chunks are sized by projected quad count rather than page count, because page
+sizes differ by orders of magnitude between meshes; a page-count cap would spawn
+a worker scope per handful of fine-grained pages. Within a chunk the same
+scoped workers project contiguous page slices, bin the result, and rasterize the
+touched tiles, so projection no longer serializes the main thread while the
+workers wait. Slice and part order follow page order, which keeps the draw order
+and therefore the output deterministic.
 
 Measured on the test host at 1024x1024 and supersample 2:
 
@@ -247,7 +265,7 @@ threshold.
 - total triangles and culled backfaces;
 - opaque/cutout/translucent triangle counts;
 - textured triangle count;
-- pixels tested and pixels written.
+- pixels tested (fragments inside the clipped row spans) and pixels written.
 
 Golden PNGs for cube, partial shapes, water, negative coordinates, AO, textured
 cube, stairs, cutout, glass, and chest live in `fixtures/golden/render/`.

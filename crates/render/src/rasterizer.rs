@@ -163,7 +163,7 @@ fn project_mesh_pages(
     (quads, translucent)
 }
 
-fn merge_page_statistics(target: &mut RenderStatistics, source: &RenderStatistics) {
+pub(super) fn merge_page_statistics(target: &mut RenderStatistics, source: &RenderStatistics) {
     target.culled_backfaces += source.culled_backfaces;
     target.triangles += source.triangles;
     target.opaque_triangles += source.opaque_triangles;
@@ -712,6 +712,64 @@ pub(super) struct TileBuffer<'a> {
     pub(super) filter: TextureFilter,
 }
 
+/// Extra pixels kept around a row span estimated from edge zero crossings, so
+/// the exact per-pixel test only ever trims the span instead of widening it.
+const SPAN_MARGIN: f64 = 2.0;
+
+/// One triangle edge prepared for per-row span estimation.
+///
+/// On a fixed row the edge function is affine in screen x:
+/// `w = dx * (py - ay) - dy * (px - ax)`. The sign of its x slope decides
+/// whether the edge bounds an inside row from below or above, so a row only
+/// visits the pixels between the three crossings instead of the whole bounding
+/// box. The per-row values still come from the same expression the exact test
+/// uses, keeping the accepted pixel set unchanged.
+#[derive(Clone, Copy)]
+struct RowEdge {
+    ax: f64,
+    ay: f64,
+    dx: f64,
+    dy: f64,
+    /// `dx / dy`, used only to estimate the zero crossing of the row.
+    slide: f64,
+    bound: RowBound,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum RowBound {
+    Lower,
+    Upper,
+    /// `dy` is zero, so the edge accepts or rejects the whole row.
+    Constant,
+}
+
+impl RowEdge {
+    fn new(from: [f64; 3], to: [f64; 3], inside_positive: f64) -> Self {
+        let dx = to[0] - from[0];
+        let dy = to[1] - from[1];
+        let bound = if dy == 0.0 {
+            RowBound::Constant
+        } else if -inside_positive * dy > 0.0 {
+            RowBound::Lower
+        } else {
+            RowBound::Upper
+        };
+        Self {
+            ax: from[0],
+            ay: from[1],
+            dx,
+            dy,
+            slide: if dy == 0.0 { 0.0 } else { dx / dy },
+            bound,
+        }
+    }
+
+    /// Continuous x where this edge changes sign on the row through `py`.
+    fn root_x(&self, py: f64) -> f64 {
+        self.ax - 0.5 + self.slide * (py - self.ay)
+    }
+}
+
 impl TileBuffer<'_> {
     pub(super) fn rasterize_quad(&mut self, quad: &QuadRender) {
         let colors = [
@@ -720,12 +778,18 @@ impl TileBuffer<'_> {
             vertex_color(quad.color, quad.shade, quad.ao[2]),
             vertex_color(quad.color, quad.shade, quad.ao[3]),
         ];
-        let uvs = [
-            decode_uv(quad.uvs[0]),
-            decode_uv(quad.uvs[1]),
-            decode_uv(quad.uvs[2]),
-            decode_uv(quad.uvs[3]),
-        ];
+        // Untextured quads never sample uvs; the culling and shading path only
+        // needs the color table.
+        let uvs = if quad.texture == NO_TEXTURE {
+            [[0.0; 2]; 4]
+        } else {
+            [
+                decode_uv(quad.uvs[0]),
+                decode_uv(quad.uvs[1]),
+                decode_uv(quad.uvs[2]),
+                decode_uv(quad.uvs[3]),
+            ]
+        };
 
         let points = [quad.points[0], quad.points[1], quad.points[2]];
         let triangle_colors = [colors[0], colors[1], colors[2]];
@@ -776,34 +840,125 @@ impl TileBuffer<'_> {
             return;
         }
 
-        for y in min_y..=max_y {
-            let py = f64::from(y) + 0.5;
-            for x in min_x..=max_x {
-                self.counters.pixels_tested += 1;
-                let px = f64::from(x) + 0.5;
-                let w0 = edge(p1, p2, [px, py, 0.0]);
-                let w1 = edge(p2, p0, [px, py, 0.0]);
-                let w2 = edge(p0, p1, [px, py, 0.0]);
+        // Barycentric weights, depth, and color interpolation stay in the same
+        // order as the full bounding-box scan; only the visited pixel span is
+        // narrowed, so accepted fragments are bit-identical.
+        let inverse = 1.0 / area;
+        let positive = area > 0.0;
+        let inside_positive = if positive { 1.0 } else { -1.0 };
+        let edge0 = RowEdge::new(p1, p2, inside_positive);
+        let edge1 = RowEdge::new(p2, p0, inside_positive);
+        let edge2 = RowEdge::new(p0, p1, inside_positive);
+        let depth0 = p0[2];
+        let depth1 = p1[2];
+        let depth2 = p2[2];
 
-                if area > 0.0 {
-                    if w0 < 0.0 || w1 < 0.0 || w2 < 0.0 {
-                        continue;
+        let local_x0 = self.x0 as i32;
+        let local_y0 = self.y0 as i32;
+        let width = self.width as usize;
+        let textures = self.textures;
+        let filter = self.filter;
+        let mut tested = 0u64;
+        let mut written = 0u64;
+
+        let row_start = (min_y - local_y0) as usize;
+        let row_count = (max_y - min_y + 1) as usize;
+        let colors_rows = self
+            .colors
+            .chunks_mut(width)
+            .skip(row_start)
+            .take(row_count);
+        let depths_rows = self
+            .depths
+            .chunks_mut(width)
+            .skip(row_start)
+            .take(row_count);
+        let mut row_py = f64::from(min_y) + 0.5;
+
+        for (colors_row, depths_row) in colors_rows.zip(depths_rows) {
+            let py = row_py;
+            row_py += 1.0;
+
+            // Row-constant term of each edge function.
+            let t0 = edge0.dx * (py - edge0.ay);
+            let t1 = edge1.dx * (py - edge1.ay);
+            let t2 = edge2.dx * (py - edge2.ay);
+
+            let mut lo = min_x;
+            let mut hi = max_x;
+            let mut empty = false;
+            for (edge, t) in [(&edge0, t0), (&edge1, t1), (&edge2, t2)] {
+                match edge.bound {
+                    RowBound::Lower => {
+                        lo = lo.max((edge.root_x(py) - SPAN_MARGIN).ceil() as i32);
                     }
-                } else if w0 > 0.0 || w1 > 0.0 || w2 > 0.0 {
-                    continue;
+                    RowBound::Upper => {
+                        hi = hi.min((edge.root_x(py) + SPAN_MARGIN).floor() as i32);
+                    }
+                    RowBound::Constant => {
+                        if inside_positive * t < 0.0 {
+                            empty = true;
+                        }
+                    }
                 }
+            }
+            if empty {
+                continue;
+            }
 
-                let inverse = 1.0 / area;
+            let mut lo = lo.clamp(min_x, max_x);
+            let mut hi = hi.clamp(min_x, max_x);
+            if hi < lo {
+                // The crossing estimates disagreed; every bounding-box row of a
+                // triangle is reachable, so widen instead of trusting them.
+                lo = min_x;
+                hi = max_x;
+            }
+
+            let passes = |x: i32| -> bool {
+                let px = f64::from(x) + 0.5;
+                let w0 = t0 - edge0.dy * (px - edge0.ax);
+                let w1 = t1 - edge1.dy * (px - edge1.ax);
+                let w2 = t2 - edge2.dy * (px - edge2.ax);
+                if positive {
+                    w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0
+                } else {
+                    w0 <= 0.0 && w1 <= 0.0 && w2 <= 0.0
+                }
+            };
+
+            // The edge functions are monotone in x, so the accepted pixels of
+            // a row form one interval; walk the two conservative endpoints in.
+            while lo <= hi && !passes(lo) {
+                lo += 1;
+            }
+            while hi >= lo && !passes(hi) {
+                hi -= 1;
+            }
+            if hi < lo {
+                continue;
+            }
+
+            let start = (lo - local_x0) as usize;
+            let end = (hi - local_x0) as usize;
+            let mut px = f64::from(lo) + 0.5;
+
+            for (color_slot, depth_slot) in colors_row[start..=end]
+                .iter_mut()
+                .zip(&mut depths_row[start..=end])
+            {
+                tested += 1;
+                let w0 = t0 - edge0.dy * (px - edge0.ax);
+                let w1 = t1 - edge1.dy * (px - edge1.ax);
+                let w2 = t2 - edge2.dy * (px - edge2.ax);
+                px += 1.0;
+
                 let b0 = w0 * inverse;
                 let b1 = w1 * inverse;
                 let b2 = w2 * inverse;
-                let depth = b0 * p0[2] + b1 * p1[2] + b2 * p2[2];
+                let depth = b0 * depth0 + b1 * depth1 + b2 * depth2;
 
-                let local_x = (x - self.x0 as i32) as u32;
-                let local_y = (y - self.y0 as i32) as u32;
-                let index = (local_y * self.width + local_x) as usize;
-
-                if depth >= self.depths[index] {
+                if depth >= *depth_slot {
                     continue;
                 }
 
@@ -819,7 +974,7 @@ impl TileBuffer<'_> {
                 ];
 
                 if texture != NO_TEXTURE
-                    && let Some(textures) = self.textures
+                    && let Some(textures) = textures
                 {
                     let uv = [
                         (uvs[0][0] as f64 * b0 + uvs[1][0] as f64 * b1 + uvs[2][0] as f64 * b2)
@@ -827,7 +982,7 @@ impl TileBuffer<'_> {
                         (uvs[0][1] as f64 * b0 + uvs[1][1] as f64 * b1 + uvs[2][1] as f64 * b2)
                             as f32,
                     ];
-                    if let Some(texel) = textures.sample(texture, uv, self.filter) {
+                    if let Some(texel) = textures.sample(texture, uv, filter) {
                         color[0] *= texel[0];
                         color[1] *= texel[1];
                         color[2] *= texel[2];
@@ -840,14 +995,17 @@ impl TileBuffer<'_> {
                 }
 
                 if layer == RenderLayer::Translucent {
-                    blend(&mut self.colors[index], color);
+                    blend(color_slot, color);
                 } else {
-                    self.colors[index] = color;
-                    self.depths[index] = depth;
+                    *color_slot = color;
+                    *depth_slot = depth;
                 }
-                self.counters.pixels_written += 1;
+                written += 1;
             }
         }
+
+        self.counters.pixels_tested += tested;
+        self.counters.pixels_written += written;
     }
 }
 

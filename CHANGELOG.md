@@ -15,6 +15,14 @@
 - `bench` 命令在 macOS 上通过 `getrusage` 报告峰值物理内存（peak RSS）。
 - CI 测试矩阵和 release 工作流增加 macOS 构建目标与产物打包。
 
+### Changed
+
+- CPU 渲染器按扫描线与三角形边的交点裁剪每行像素跨度，并让流式渲染的投影与分箱
+  和光栅化共用同一批工作线程、按投影四边形数量切块。大夹具（1024x1024、超采样 2）
+  的渲染耗时：`DenseNonSolid` 271 ms → 147 ms，`Atrium` 77 ms → 40 ms，
+  `Valkyrie` 73 ms → 30 ms。PNG 输出保持逐字节一致；`pixelsTested` 改为统计行裁剪后
+  实际测试的片段数。
+
 ## [0.1.2] - 2026-10-25
 
 ### Fixed

@@ -15,6 +15,16 @@ User-facing changes are recorded here. The format follows
 - `bench` peak RSS reporting on macOS via `getrusage`.
 - CI test matrix and release distribution workflow expanded to include macOS runner and targets.
 
+### Changed
+
+- The CPU rasterizer clips each scanline to the triangle's row span, and streamed
+  chunks now project and bin on the same worker pool that rasterizes them,
+  chunking by projected quad count instead of page count. Render time on the
+  large fixtures (1024x1024, supersample 2) drops from 271 ms to 147 ms
+  (`DenseNonSolid`), 77 ms to 40 ms (`Atrium`), and 73 ms to 30 ms
+  (`Valkyrie`). PNG output stays byte-identical; `pixelsTested` now reports the
+  span fragments actually tested after row clipping.
+
 ## [0.1.2] - 2026-10-25
 
 ### Fixed
