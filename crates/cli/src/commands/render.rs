@@ -5,9 +5,9 @@ use crate::{
 };
 use clap::Args;
 use litematic_render::{
-    LightingProfile, RenderOptions, RenderStatistics, TerminalOptions, TerminalProtocol,
-    detect_terminal_protocol, render_mesh, render_mesh_with_textures, render_to_terminal,
-    write_png,
+    LightingProfile, RenderOptions, RenderStatistics, StreamingRenderer, TerminalOptions,
+    TerminalProtocol, detect_terminal_protocol, render_mesh, render_mesh_with_textures,
+    render_to_terminal, write_png,
 };
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -69,6 +69,9 @@ pub(crate) struct RenderArgs {
     /// Skip writing output image file (useful with --terminal).
     #[arg(long)]
     no_file: bool,
+    /// Build mesh in bounded page chunks instead of retaining the full mesh.
+    #[arg(long)]
+    stream_mesh: bool,
     #[command(flatten)]
     assets: AssetArgs,
     #[command(flatten)]
@@ -124,20 +127,36 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
     } else {
         None
     };
-    let PreparedScene {
-        scene,
-        mesh,
-        snapshot,
-        factor,
-        lod_ms,
-        mesh_ms,
-    } = prepare_scene(
-        scene,
-        materials.as_ref(),
-        lod,
-        &mesh_limits(args.limits.force_limits),
-        args.threads,
-    )?;
+    if args.stream_mesh && matches!(lod, LodMode::Auto) {
+        return Err(CliError::input(
+            "INVALID_RENDER_OPTIONS: --stream-mesh cannot be combined with --lod auto",
+        ));
+    }
+
+    let limits = mesh_limits(args.limits.force_limits);
+    let (scene, snapshot, mesh, factor, lod_ms, mut mesh_ms_total) = if args.stream_mesh {
+        let factor = match lod {
+            LodMode::Fixed(factor) => factor,
+            LodMode::Auto => unreachable!("auto LOD was rejected above"),
+        };
+        let lod_started = Instant::now();
+        let scene = crate::apply_lod(scene, factor, args.threads)?;
+        let lod_ms = lod_started.elapsed().as_secs_f64() * 1000.0;
+        let snapshot = materials
+            .as_ref()
+            .map(|materials| crate::material_snapshot(&scene, materials));
+        (scene, snapshot, None, factor, lod_ms, 0.0)
+    } else {
+        let PreparedScene {
+            scene,
+            mesh,
+            snapshot,
+            factor,
+            lod_ms,
+            mesh_ms,
+        } = prepare_scene(scene, materials.as_ref(), lod, &limits, args.threads)?;
+        (scene, snapshot, Some(mesh), factor, lod_ms, mesh_ms)
+    };
 
     let mut results = Vec::with_capacity(view_count);
     for yaw in views {
@@ -155,15 +174,44 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
         };
         apply_render_limits(args.limits.force_limits, &mut options);
 
-        let render_started = Instant::now();
-        let output = match &snapshot {
-            Some(snapshot) => {
-                render_mesh_with_textures(&scene, &mesh, &options, snapshot.textures())
-                    .map_err(CliError::from)?
-            }
-            None => render_mesh(&scene, &mesh, &options).map_err(CliError::from)?,
+        let (output, render_ms) = if let Some(mesh) = &mesh {
+            let render_started = Instant::now();
+            let output = match &snapshot {
+                Some(snapshot) => {
+                    render_mesh_with_textures(&scene, mesh, &options, snapshot.textures())
+                        .map_err(CliError::from)?
+                }
+                None => render_mesh(&scene, mesh, &options).map_err(CliError::from)?,
+            };
+            (output, render_started.elapsed().as_secs_f64() * 1000.0)
+        } else {
+            let mut renderer = StreamingRenderer::new(
+                &scene,
+                &options,
+                snapshot.as_ref().map(|snapshot| snapshot.textures()),
+            )
+            .map_err(CliError::from)?;
+            let mut render_chunk_ms = 0.0;
+            let build_started = Instant::now();
+            crate::build_scene_mesh_streaming(
+                &scene,
+                snapshot.as_ref(),
+                &limits,
+                args.threads,
+                |pages| {
+                    let chunk_started = Instant::now();
+                    renderer.render_pages(pages);
+                    render_chunk_ms += chunk_started.elapsed().as_secs_f64() * 1000.0;
+                },
+            )?;
+            let finish_started = Instant::now();
+            let output = renderer.finish();
+            let finish_ms = finish_started.elapsed().as_secs_f64() * 1000.0;
+            let total_stream_ms = build_started.elapsed().as_secs_f64() * 1000.0;
+            let build_ms = (total_stream_ms - render_chunk_ms - finish_ms).max(0.0);
+            mesh_ms_total += build_ms;
+            (output, total_stream_ms - build_ms)
         };
-        let render_ms = render_started.elapsed().as_secs_f64() * 1000.0;
 
         if let Some(term_options) = &term_options {
             if args.json {
@@ -243,7 +291,9 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
                 println!("render: {render_ms:.1} ms, png: {png_ms:.1} ms");
             }
         }
-        println!("timings: parse {parse_ms:.1} ms, mesh {mesh_ms:.1} ms, total {total_ms:.1} ms");
+        println!(
+            "timings: parse {parse_ms:.1} ms, mesh {mesh_ms_total:.1} ms, total {total_ms:.1} ms"
+        );
         if factor > 1 || matches!(lod, LodMode::Auto) {
             println!("lod: {lod_ms:.1} ms (factor {factor})");
         }

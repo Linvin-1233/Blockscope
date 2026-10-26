@@ -40,6 +40,7 @@ blockscope render model.litematic --output out.png --views 45,225
 # 超大结构
 blockscope render huge.litematic --output huge.png --lod auto
 blockscope render huge.litematic --output huge.png --lod 4
+blockscope render huge.litematic --output huge.png --lod 1 --stream-mesh
 
 # 材质覆盖率
 blockscope materials model.litematic --client-jar client.jar --json
@@ -72,6 +73,7 @@ blockscope preview model.litematic -t
 | `--lighting flat-v1\|simple-ao-v1` | 光照配置，默认 `simple-ao-v1` |
 | `--threads <N>` | mesh/rasterizer 线程数，`0` 使用可用并行度，最多 256 |
 | `--lod 1\|2-16\|auto` | LOD 因子，默认 `1`（关闭） |
+| `--stream-mesh` | 按页构建并渲染网格，不保留完整 Mesh；不能与 `--lod auto` 同用 |
 | `--force-limits` | 提高输入、场景、网格和像素上限；可能耗尽内存 |
 | `--ignore-block-entity-nbt` | 跳过容器 NBT；`mesh`/`render`/`bench` 默认开启 |
 | `-t, --terminal` | 在终端中直接渲染并显示图像 |

@@ -12,7 +12,7 @@ mod shape;
 mod view;
 mod voxel;
 
-pub use builder::{build_mesh, build_mesh_parallel};
+pub use builder::{build_mesh, build_mesh_parallel, build_mesh_streaming};
 pub use catalog::{
     BlockCatalog, CatalogError, CatalogErrorCode, ColorBlockCatalog, ColorSnapshot, ResolvedBlock,
 };

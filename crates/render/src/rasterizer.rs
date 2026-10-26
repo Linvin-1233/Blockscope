@@ -9,7 +9,8 @@ mod downsample;
 mod stream;
 
 use downsample::downsample;
-use stream::rasterize_streaming;
+pub use stream::StreamingRenderer;
+use stream::chunk_ranges;
 
 /// Render counters and effective output settings.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -68,6 +69,15 @@ fn render_mesh_internal(
     options.validate()?;
     let camera = Camera::new(&scene.bounds, options)?;
 
+    let streaming = options.force_streaming || table_bytes(mesh) > tile_buffer_bytes(options);
+    if streaming {
+        let mut renderer = StreamingRenderer::with_camera(camera, options, textures);
+        for range in chunk_ranges(&mesh.pages) {
+            renderer.render_pages(&mesh.pages[range]);
+        }
+        return Ok(renderer.finish());
+    }
+
     let mut statistics = RenderStatistics {
         width: options.width,
         height: options.height,
@@ -76,16 +86,9 @@ fn render_mesh_internal(
         internal_height: options.internal_height(),
         ..Default::default()
     };
-
-    let streaming = options.force_streaming || table_bytes(mesh) > tile_buffer_bytes(options);
-    let rgba = if streaming {
-        rasterize_streaming(mesh, &camera, options, &mut statistics, textures)
-    } else {
-        let threads = worker_count(options.threads, mesh.pages.len());
-        let (quads, translucent) =
-            project_mesh_pages(mesh, &camera, options, &mut statistics, threads);
-        rasterize(&quads, &translucent, options, &mut statistics, textures)
-    };
+    let threads = worker_count(options.threads, mesh.pages.len());
+    let (quads, translucent) = project_mesh_pages(mesh, &camera, options, &mut statistics, threads);
+    let rgba = rasterize(&quads, &translucent, options, &mut statistics, textures);
     Ok(RenderOutput {
         width: options.width,
         height: options.height,

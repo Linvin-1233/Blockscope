@@ -41,6 +41,7 @@ blockscope render model.litematic --output out.png --views 45,225
 # Huge structures
 blockscope render huge.litematic --output huge.png --lod auto
 blockscope render huge.litematic --output huge.png --lod 4
+blockscope render huge.litematic --output huge.png --lod 1 --stream-mesh
 
 # Material coverage
 blockscope materials model.litematic --client-jar client.jar --json
@@ -74,6 +75,7 @@ or `{id}-{yaw}.png` for multiple views.
 | `--lighting flat-v1\|simple-ao-v1` | Lighting profile; default `simple-ao-v1` |
 | `--threads <N>` | Mesh/rasterizer threads; `0` uses available parallelism, capped at 256 |
 | `--lod 1\|2-16\|auto` | LOD factor; default `1` (disabled) |
+| `--stream-mesh` | Build and render mesh in page chunks without retaining the full mesh; cannot be combined with `--lod auto` |
 | `--force-limits` | Raises input, scene, mesh, and pixel caps; can exhaust memory |
 | `--ignore-block-entity-nbt` | Skip container NBT; always on for `mesh`/`render`/`bench` |
 | `-t, --terminal` | Render and display the image directly in the terminal |

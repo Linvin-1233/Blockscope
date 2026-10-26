@@ -1,7 +1,10 @@
 use clap::{Args, Parser, Subcommand};
 use litematic_core::{DecodeLimits, LitematicError, LitematicFile, LitematicLimits};
 use litematic_material::{AssetSource, MaterialSet, MaterialSnapshot, TextureFilter};
-use litematic_mesh::{ColorBlockCatalog, Mesh, MeshError, MeshLimits, Rgba, build_mesh_parallel};
+use litematic_mesh::{
+    ColorBlockCatalog, Mesh, MeshError, MeshLimits, MeshPage, MeshStatistics, Rgba,
+    build_mesh_parallel, build_mesh_streaming,
+};
 use litematic_render::{Background, RenderError, RenderOptions};
 use litematic_scene::{Manifest, Scene, SceneError, aggregate_with_threads, sha256};
 use std::fmt;
@@ -279,6 +282,32 @@ fn build_scene_mesh(
                 .flat_map(|region| region.palette.iter().cloned());
             let snapshot = catalog.snapshot(states);
             build_mesh_parallel(scene, &snapshot, limits, threads).map_err(CliError::from)
+        }
+    }
+}
+
+fn build_scene_mesh_streaming<F>(
+    scene: &Scene,
+    snapshot: Option<&MaterialSnapshot>,
+    limits: &MeshLimits,
+    threads: u32,
+    sink: F,
+) -> Result<MeshStatistics, CliError>
+where
+    F: FnMut(&[MeshPage]),
+{
+    match snapshot {
+        Some(snapshot) => {
+            build_mesh_streaming(scene, snapshot, limits, threads, sink).map_err(CliError::from)
+        }
+        None => {
+            let catalog = ColorBlockCatalog::new().map_err(CliError::internal)?;
+            let states = scene
+                .regions
+                .iter()
+                .flat_map(|region| region.palette.iter().cloned());
+            let snapshot = catalog.snapshot(states);
+            build_mesh_streaming(scene, &snapshot, limits, threads, sink).map_err(CliError::from)
         }
     }
 }

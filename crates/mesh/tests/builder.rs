@@ -274,6 +274,39 @@ fn parallel_mesh_matches_serial_across_pages_and_regions() {
 }
 
 #[test]
+fn streaming_builder_matches_the_full_mesh() {
+    use litematic_mesh::{ColorSnapshot, build_mesh_streaming};
+
+    let values: Vec<u32> = (0..128 * 10 * 128)
+        .map(|index| (index % 3) as u32)
+        .collect();
+    let region = make_region(
+        "main",
+        [0, 0, 0],
+        [128, 10, 128],
+        &["minecraft:air", "minecraft:stone", "minecraft:glass"],
+        &values,
+    );
+    let scene = make_scene(vec![region]);
+    let catalog = ColorBlockCatalog::default();
+    let states = scene
+        .regions
+        .iter()
+        .flat_map(|region| region.palette.iter().cloned());
+    let snapshot: ColorSnapshot = catalog.snapshot(states);
+
+    let full = build_mesh(&scene, &snapshot, &MeshLimits::default()).unwrap();
+    let mut pages = Vec::new();
+    let statistics = build_mesh_streaming(&scene, &snapshot, &MeshLimits::default(), 4, |chunk| {
+        pages.extend_from_slice(chunk)
+    })
+    .unwrap();
+
+    assert_eq!(statistics, full.statistics);
+    assert_eq!(pages, full.pages);
+}
+
+#[test]
 fn all_air_scene_produces_an_empty_mesh() {
     let region = make_region("main", [0, 0, 0], [2, 1, 1], &["minecraft:air"], &[0, 0]);
     let mesh = build(&make_scene(vec![region]), &MeshLimits::default());

@@ -24,6 +24,12 @@ User-facing changes are recorded here. The format follows
   because their bounding box spans too many pages; scenes without air keep the
   bounding-box fast path. `blocksVisited` now counts scanned blocks in indexed
   pages, so an all-air mesh reports zero.
+- `render --stream-mesh` builds 32-page chunks and renders them immediately,
+  without retaining a full `Mesh`. On the test fixtures at 1024x1024 with
+  supersample 2, 12 threads, and color-only materials, peak working set drops
+  from 7.16 GB to 425 MB for `000001` exact and from 497 MB to 182 MB for
+  `000002` exact, with byte-identical PNG output. The mode cannot be combined
+  with `--lod auto`; multiple views rebuild the mesh per view.
 
 ## [0.2.0] - 2026-10-25
 

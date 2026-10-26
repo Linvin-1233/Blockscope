@@ -2,8 +2,8 @@ mod support;
 
 use litematic_mesh::{ColorBlockCatalog, Mesh, MeshLimits, Rgba, build_mesh};
 use litematic_render::{
-    Background, LightingProfile, RenderErrorCode, RenderOptions, RenderOutput, render_mesh,
-    write_png,
+    Background, LightingProfile, RenderErrorCode, RenderOptions, RenderOutput, StreamingRenderer,
+    render_mesh, write_png,
 };
 use litematic_scene::Scene;
 use support::*;
@@ -337,6 +337,39 @@ fn streaming_matches_the_table_path() {
 
     assert_eq!(table.rgba, streaming.rgba);
     assert_eq!(table.statistics, streaming.statistics);
+}
+
+#[test]
+fn streaming_renderer_matches_the_table_path_page_by_page() {
+    let scene = scene(vec![region(
+        "main",
+        [0, 0, 0],
+        [3, 2, 1],
+        &["minecraft:air", "minecraft:stone", "minecraft:water"],
+        &[1, 2, 1, 0, 2, 1],
+    )]);
+    let mesh = build_mesh(
+        &scene,
+        &ColorBlockCatalog::default(),
+        &MeshLimits::default(),
+    )
+    .unwrap();
+    let options = RenderOptions {
+        width: 96,
+        height: 96,
+        supersample: 2,
+        ..Default::default()
+    };
+
+    let table = render_mesh(&scene, &mesh, &options).unwrap();
+    let mut renderer = StreamingRenderer::new(&scene, &options, None).unwrap();
+    for page in &mesh.pages {
+        renderer.render_pages(std::slice::from_ref(page));
+    }
+    let streamed = renderer.finish();
+
+    assert_eq!(table.rgba, streamed.rgba);
+    assert_eq!(table.statistics, streamed.statistics);
 }
 
 #[test]

@@ -195,6 +195,23 @@ representation, so peak memory is still dominated by the resident `Mesh`. The
 PNG SHA-256 values for both exact fixtures and the `000001` LOD 4 render were
 unchanged.
 
+### Streaming mesh construction
+
+`--stream-mesh` builds 32-page chunks, renders them into the resident tile
+buffers, and drops the chunk before building the next one. The full `Mesh` is
+never materialized. `--lod auto` is rejected because choosing a factor needs a
+complete mesh; multiple views rebuild the mesh once per view.
+
+Measured end to end on the test host (parse + mesh + render + PNG, 1024x1024,
+supersample 2, 12 threads, color-only materials):
+
+| Scene | Peak working set (default / streamed) | Wall (default / streamed) |
+|---|---|---|
+| `000001` exact | 7.16 GB / **425 MB** | 10.2 s / 10.3 s |
+| `000002` exact | 497 MB / **182 MB** | 0.9 s / 1.25 s |
+
+The streamed PNG SHA-256 values are identical for both fixtures.
+
 ### Triangle binning
 
 Before rasterization, each triangle is inserted into every tile its screen-space

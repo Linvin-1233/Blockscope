@@ -4,9 +4,10 @@ use super::{
     bin_triangles, bounds, intersects, merge_page_statistics, push_page_quads, quad_bounds,
     tile_jobs, to_u8, worker_count,
 };
-use crate::{Background, Camera, RenderOptions};
+use crate::{Background, Camera, RenderError, RenderOptions, RenderOutput};
 use litematic_material::TextureSet;
-use litematic_mesh::{Mesh, MeshPage};
+use litematic_mesh::MeshPage;
+use litematic_scene::Scene;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Barrier, Mutex, OnceLock};
 
@@ -16,57 +17,105 @@ use std::sync::{Barrier, Mutex, OnceLock};
 /// while a byte-sized budget keeps the transient quad table bounded.
 const STREAM_QUADS_PER_CHUNK: usize = 600_000;
 
-pub(super) fn rasterize_streaming(
-    mesh: &Mesh,
-    camera: &Camera,
-    options: &RenderOptions,
-    statistics: &mut RenderStatistics,
-    textures: Option<&TextureSet>,
-) -> Vec<u8> {
-    let width = options.internal_width();
-    let height = options.internal_height();
-    let tile_size = options.tile_size;
-    let tiles_x = width.div_ceil(tile_size);
-    let tiles_y = height.div_ceil(tile_size);
-    statistics.tiles = u64::from(tiles_x) * u64::from(tiles_y);
+/// Incremental rasterizer for meshes that are built and rendered page by page.
+///
+/// The renderer owns the tile buffers for the whole image but only the pages
+/// passed to [`StreamingRenderer::render_pages`]. Callers must pass pages in
+/// mesh order and split only at page boundaries, which preserves the draw order
+/// and output of the non-streaming renderer.
+pub struct StreamingRenderer<'a> {
+    camera: Camera,
+    options: &'a RenderOptions,
+    textures: Option<&'a TextureSet>,
+    tiles: Vec<Mutex<StreamTile>>,
+    translucent: Vec<Triangle>,
+    statistics: RenderStatistics,
+    threads: usize,
+    width: u32,
+    height: u32,
+    tile_size: u32,
+}
 
-    let jobs = tile_jobs(width, height, tile_size);
-    let tiles: Vec<Mutex<StreamTile>> = jobs
-        .into_iter()
-        .map(|job| Mutex::new(StreamTile::new(job, options.background)))
-        .collect();
-    let threads = worker_count(options.threads, tiles.len());
+impl<'a> StreamingRenderer<'a> {
+    /// Create a renderer for `scene` and its precomputed camera.
+    pub fn new(
+        scene: &Scene,
+        options: &'a RenderOptions,
+        textures: Option<&'a TextureSet>,
+    ) -> Result<Self, RenderError> {
+        options.validate()?;
+        let camera = Camera::new(&scene.bounds, options)?;
+        Ok(Self::with_camera(camera, options, textures))
+    }
 
-    let mut translucent = Vec::new();
+    pub(crate) fn with_camera(
+        camera: Camera,
+        options: &'a RenderOptions,
+        textures: Option<&'a TextureSet>,
+    ) -> Self {
+        let width = options.internal_width();
+        let height = options.internal_height();
+        let tile_size = options.tile_size;
+        let tiles: Vec<Mutex<StreamTile>> = tile_jobs(width, height, tile_size)
+            .into_iter()
+            .map(|job| Mutex::new(StreamTile::new(job, options.background)))
+            .collect();
+        let threads = worker_count(options.threads, tiles.len());
+        let statistics = RenderStatistics {
+            width: options.width,
+            height: options.height,
+            supersample: options.supersample,
+            internal_width: width,
+            internal_height: height,
+            tiles: tiles.len() as u64,
+            ..Default::default()
+        };
 
-    for range in chunk_ranges(&mesh.pages) {
-        let pages = &mesh.pages[range];
+        Self {
+            camera,
+            options,
+            textures,
+            tiles,
+            translucent: Vec::new(),
+            statistics,
+            threads,
+            width,
+            height,
+            tile_size,
+        }
+    }
+
+    /// Project and rasterize the next contiguous run of mesh pages.
+    pub fn render_pages(&mut self, pages: &[MeshPage]) {
+        if pages.is_empty() {
+            return;
+        }
 
         // Each worker projects a contiguous run of pages, so merging the parts
         // in worker order keeps the draw order identical to the serial path.
-        let slices = page_slices(pages, threads);
-        let parts: Vec<OnceLock<ChunkPart>> = (0..threads).map(|_| OnceLock::new()).collect();
-        let barrier = Barrier::new(threads);
+        let slices = page_slices(pages, self.threads);
+        let parts: Vec<OnceLock<ChunkPart>> = (0..self.threads).map(|_| OnceLock::new()).collect();
+        let barrier = Barrier::new(self.threads);
         let cursor = AtomicUsize::new(0);
         {
             let chunk = ChunkContext {
                 pages,
                 slices: &slices,
-                camera,
-                options,
-                textures,
-                tiles: &tiles,
+                camera: &self.camera,
+                options: self.options,
+                textures: self.textures,
+                tiles: &self.tiles,
                 parts: &parts,
                 barrier: &barrier,
                 cursor: &cursor,
-                width,
-                height,
-                tile_size,
+                width: self.width,
+                height: self.height,
+                tile_size: self.tile_size,
             };
 
             std::thread::scope(|scope| {
-                let mut handles = Vec::with_capacity(threads.saturating_sub(1));
-                for worker in 1..threads {
+                let mut handles = Vec::with_capacity(self.threads.saturating_sub(1));
+                for worker in 1..self.threads {
                     let chunk = &chunk;
                     handles.push(scope.spawn(move || render_chunk(chunk, worker)));
                 }
@@ -79,50 +128,73 @@ pub(super) fn rasterize_streaming(
 
         for part in parts {
             let part = part.into_inner().expect("stream chunk part missing");
-            merge_page_statistics(statistics, &part.statistics);
-            translucent.extend(part.translucent);
+            merge_page_statistics(&mut self.statistics, &part.statistics);
+            self.translucent.extend(part.translucent);
         }
     }
 
-    if !translucent.is_empty() {
-        let triangle_bins = bin_triangles(&translucent, width, height, tile_size);
-        let touched: Vec<usize> = triangle_bins
-            .iter()
-            .enumerate()
-            .filter(|(_, bin)| !bin.is_empty())
-            .map(|(index, _)| index)
-            .collect();
-        render_stream_translucent(
-            &tiles,
-            &translucent,
-            &triangle_bins,
-            &touched,
+    /// Resolve translucent geometry, assemble tiles, and downsample.
+    pub fn finish(self) -> RenderOutput {
+        let Self {
             options,
-            threads,
             textures,
-        );
-    }
-
-    let mut output = vec![0u8; (u64::from(width) * u64::from(height) * 4) as usize];
-    for tile in tiles {
-        let tile = tile.into_inner().expect("stream tile mutex poisoned");
-        statistics.pixels_tested += tile.counters.pixels_tested;
-        statistics.pixels_written += tile.counters.pixels_written;
-        copy_tile(&tile.job, &tile.colors, &mut output, width);
-    }
-
-    if options.supersample > 1 {
-        downsample(
-            &output,
+            tiles,
+            translucent,
+            mut statistics,
+            threads,
             width,
             height,
-            options.width,
-            options.height,
-            options.supersample,
-            threads,
-        )
-    } else {
-        output
+            tile_size,
+            camera: _,
+        } = self;
+
+        if !translucent.is_empty() {
+            let triangle_bins = bin_triangles(&translucent, width, height, tile_size);
+            let touched: Vec<usize> = triangle_bins
+                .iter()
+                .enumerate()
+                .filter(|(_, bin)| !bin.is_empty())
+                .map(|(index, _)| index)
+                .collect();
+            render_stream_translucent(
+                &tiles,
+                &translucent,
+                &triangle_bins,
+                &touched,
+                options,
+                threads,
+                textures,
+            );
+        }
+
+        let mut output = vec![0u8; (u64::from(width) * u64::from(height) * 4) as usize];
+        for tile in tiles {
+            let tile = tile.into_inner().expect("stream tile mutex poisoned");
+            statistics.pixels_tested += tile.counters.pixels_tested;
+            statistics.pixels_written += tile.counters.pixels_written;
+            copy_tile(&tile.job, &tile.colors, &mut output, width);
+        }
+
+        let rgba = if options.supersample > 1 {
+            downsample(
+                &output,
+                width,
+                height,
+                options.width,
+                options.height,
+                options.supersample,
+                threads,
+            )
+        } else {
+            output
+        };
+
+        RenderOutput {
+            width: options.width,
+            height: options.height,
+            rgba,
+            statistics,
+        }
     }
 }
 
@@ -150,7 +222,7 @@ fn page_slices(pages: &[MeshPage], threads: usize) -> Vec<(usize, usize)> {
     slices
 }
 
-fn chunk_ranges(pages: &[MeshPage]) -> Vec<std::ops::Range<usize>> {
+pub(super) fn chunk_ranges(pages: &[MeshPage]) -> Vec<std::ops::Range<usize>> {
     let mut ranges = Vec::new();
     let mut start = 0;
     let mut quads = 0;

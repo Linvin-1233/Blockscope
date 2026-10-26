@@ -193,6 +193,66 @@ fn mesh_exports_obj_and_ply() {
 }
 
 #[test]
+fn streamed_mesh_matches_the_default_render() {
+    let file = write_fixture(&basic_fixture());
+    let path = file.path().to_str().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let normal_path = dir.path().join("normal.png");
+    let streamed_path = dir.path().join("streamed.png");
+
+    let normal = run(&[
+        "render",
+        path,
+        "--output",
+        normal_path.to_str().unwrap(),
+        "--width",
+        "64",
+        "--height",
+        "64",
+    ]);
+    let streamed = run(&[
+        "render",
+        path,
+        "--output",
+        streamed_path.to_str().unwrap(),
+        "--width",
+        "64",
+        "--height",
+        "64",
+        "--stream-mesh",
+    ]);
+
+    assert!(normal.status.success());
+    assert!(streamed.status.success());
+    assert_eq!(
+        fs::read(&normal_path).unwrap(),
+        fs::read(&streamed_path).unwrap()
+    );
+}
+
+#[test]
+fn streamed_mesh_rejects_auto_lod() {
+    let file = write_fixture(&basic_fixture());
+    let path = file.path().to_str().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let output_path = dir.path().join("streamed.png");
+
+    let output = run(&[
+        "render",
+        path,
+        "--output",
+        output_path.to_str().unwrap(),
+        "--stream-mesh",
+        "--lod",
+        "auto",
+    ]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("--stream-mesh cannot be combined with --lod auto"));
+}
+
+#[test]
 fn render_writes_png() {
     let file = write_fixture(&basic_fixture());
     let path = file.path().to_str().unwrap();

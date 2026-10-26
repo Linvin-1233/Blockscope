@@ -12,7 +12,9 @@ pub use error::{RenderError, RenderErrorCode};
 pub use litematic_material::TextureFilter;
 pub use options::{Background, LightingProfile, RenderOptions};
 pub use png::write_png;
-pub use rasterizer::{RenderOutput, RenderStatistics, render_mesh, render_mesh_with_textures};
+pub use rasterizer::{
+    RenderOutput, RenderStatistics, StreamingRenderer, render_mesh, render_mesh_with_textures,
+};
 pub use terminal::{
     TerminalOptions, TerminalProtocol, detect_terminal_protocol, detect_terminal_size,
     encode_halfblocks, encode_iterm2, encode_iterm2_png, encode_kitty, encode_kitty_png,
