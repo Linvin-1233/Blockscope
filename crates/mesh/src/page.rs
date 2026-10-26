@@ -92,10 +92,16 @@ impl PaletteTables {
 /// A 16x16x16 page plus its one-block border, resolved in one pass.
 pub(crate) struct PageGrid {
     cells: Vec<Cell>,
+    occludes: Vec<bool>,
 }
 
 impl PageGrid {
-    pub(crate) fn fill(scene: &Scene, view: &SceneBlockView<'_>, page_origin: [i32; 3]) -> Self {
+    pub(crate) fn fill(
+        scene: &Scene,
+        view: &SceneBlockView<'_>,
+        tables: &PaletteTables,
+        page_origin: [i32; 3],
+    ) -> Self {
         let base = [
             i64::from(page_origin[0]),
             i64::from(page_origin[1]),
@@ -124,6 +130,7 @@ impl PageGrid {
 
         let mut grid = Self {
             cells: vec![Cell::EMPTY; GRID * GRID * GRID],
+            occludes: vec![false; GRID * GRID * GRID],
         };
         for ly in 0..GRID {
             for lz in 0..GRID {
@@ -148,6 +155,7 @@ impl PageGrid {
                                     region: region_index as u32,
                                     palette,
                                 },
+                                tables,
                             );
                             break;
                         }
@@ -159,51 +167,48 @@ impl PageGrid {
     }
 
     pub(crate) fn get(&self, local: [usize; 3]) -> Cell {
-        self.cells[index(local)]
+        self.cells[Self::local_index(local)]
     }
 
-    /// The cell at `local + offset`, or `None` outside the page border.
-    pub(crate) fn at(&self, local: [usize; 3], offset: [i32; 3]) -> Option<Cell> {
-        let x = local[0] as i32 + offset[0];
-        let y = local[1] as i32 + offset[1];
-        let z = local[2] as i32 + offset[2];
-        if x < 0 || y < 0 || z < 0 || x >= GRID as i32 || y >= GRID as i32 || z >= GRID as i32 {
-            return None;
-        }
-        Some(self.get([x as usize, y as usize, z as usize]))
+    /// Flat index of a page-local cell.
+    pub(crate) fn local_index(local: [usize; 3]) -> usize {
+        local[0] + GRID * (local[2] + GRID * local[1])
     }
 
-    pub(crate) fn occludes_at(
-        &self,
-        local: [usize; 3],
-        offset: [i32; 3],
-        tables: &PaletteTables,
-    ) -> bool {
-        self.at(local, offset)
-            .and_then(|cell| tables.block(cell))
-            .is_some_and(|block| block.occludes)
+    /// Flat index delta for an offset whose components are in `-1..=1`.
+    pub(crate) fn offset_delta(offset: [i32; 3]) -> isize {
+        offset[0] as isize
+            + GRID as isize * (offset[2] as isize + GRID as isize * offset[1] as isize)
+    }
+
+    pub(crate) fn face_delta(face: FaceDirection) -> isize {
+        let offset = face.offset();
+        Self::offset_delta([offset[0] as i32, offset[1] as i32, offset[2] as i32])
+    }
+
+    pub(crate) fn cell_at_index(&self, index: usize) -> Cell {
+        self.cells[index]
+    }
+
+    pub(crate) fn occludes_index(&self, index: usize) -> bool {
+        self.occludes[index]
     }
 
     /// True when all six neighbours are present and occlude.
-    pub(crate) fn all_neighbors_occlude(&self, local: [usize; 3], tables: &PaletteTables) -> bool {
+    ///
+    /// `local_index` must belong to a block cell, not the page border, so every
+    /// face offset stays inside the grid.
+    pub(crate) fn all_neighbors_occlude(&self, local_index: usize) -> bool {
         FaceDirection::ALL.into_iter().all(|face| {
-            let offset = face.offset();
-            self.occludes_at(
-                local,
-                [offset[0] as i32, offset[1] as i32, offset[2] as i32],
-                tables,
-            )
+            self.occludes_index(local_index.wrapping_add_signed(Self::face_delta(face)))
         })
     }
 
-    fn set(&mut self, local: [usize; 3], cell: Cell) {
-        let index = index(local);
+    fn set(&mut self, local: [usize; 3], cell: Cell, tables: &PaletteTables) {
+        let index = Self::local_index(local);
         self.cells[index] = cell;
+        self.occludes[index] = tables.block(cell).is_some_and(|block| block.occludes);
     }
-}
-
-fn index(local: [usize; 3]) -> usize {
-    local[0] + GRID * (local[2] + GRID * local[1])
 }
 
 fn page_offset(index: usize) -> usize {

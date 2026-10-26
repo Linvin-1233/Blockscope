@@ -168,21 +168,23 @@ culling and AO from an array. Each region palette is also resolved to an
 immutable material table up front, so the inner loop indexes by palette id
 instead of hashing a block-state key and cloning a model `Arc`.
 
-A full-cube block whose six neighbours all occlude is skipped without visiting
-its model quads. Equal states are assigned one canonical id across regions, so
-the existing same-state culling still works across region and page boundaries.
-Region order and y/z/x block order are unchanged; mesh statistics and PNG output
-stay byte-identical.
+The grid also caches one occlusion bit per cell and converts culling and AO
+offsets to flat index deltas, so the inner loop does not re-check page bounds or
+chase the palette table. A full-cube block whose six neighbours all occlude is
+skipped without visiting its model quads. Equal states are assigned one
+canonical id across regions, so the existing same-state culling still works
+across region and page boundaries. Region order and y/z/x block order are
+unchanged; mesh statistics and PNG output stay byte-identical.
 
 Measured on the test host with the color-only catalog, 1024x1024, supersample 2,
 12 threads:
 
 | Scene | Before mesh | After mesh | Before/after render | Peak working set |
 |---|---|---|---|---|
-| `000001` exact, 77.6M quads | 17.3-20.4 s | 5.7-6.1 s | 4.6 s / 4.2 s | 7.16 GB / 7.17 GB |
-| `000002` exact, 50.7M blocks | 11.7 s | 0.36 s | 0.21 s / 0.21 s | 471 MB / 490 MB |
+| `000001` exact, 77.6M quads | 17.3-20.4 s | 5.5-5.7 s | 4.6 s / 4.0 s | 7.16 GB / 7.16 GB |
+| `000002` exact, 50.7M blocks | 11.7 s | 0.23-0.24 s | 0.21 s / 0.19 s | 471 MB / 497 MB |
 
-The page cache costs about 47 KB per worker and does not change the mesh
+The page cache costs about 53 KB per worker and does not change the mesh
 representation, so peak memory is still dominated by the resident `Mesh`. The
 PNG SHA-256 values for both exact fixtures and the `000001` LOD 4 render were
 unchanged.

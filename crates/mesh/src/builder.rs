@@ -182,7 +182,7 @@ fn build_page(
         i64::from(origin[2]),
     ];
     let end = [base[0] + 16, base[1] + 16, base[2] + 16];
-    let grid = PageGrid::fill(scene, view, origin);
+    let grid = PageGrid::fill(scene, view, tables, origin);
     let page_key = [
         origin[0].div_euclid(16),
         origin[1].div_euclid(16),
@@ -230,6 +230,7 @@ fn build_page(
                     let Some(palette_block) = tables.block(cell) else {
                         continue;
                     };
+                    let local_index = PageGrid::local_index(local);
 
                     page.statistics.blocks_visited += 1;
                     if palette_block.is_air {
@@ -243,7 +244,7 @@ fn build_page(
 
                     if palette_block.occludes
                         && palette_block.all_quads_cullable
-                        && grid.all_neighbors_occlude(local, tables)
+                        && grid.all_neighbors_occlude(local_index)
                     {
                         continue;
                     }
@@ -255,7 +256,7 @@ fn build_page(
                     ];
 
                     for model_quad in &palette_block.block.model.quads {
-                        if should_cull(&grid, tables, local, palette_block, model_quad) {
+                        if should_cull(&grid, tables, local_index, palette_block, model_quad) {
                             continue;
                         }
 
@@ -270,7 +271,7 @@ fn build_page(
                         let ao = if palette_block.block.model.ambient_occlusion {
                             std::array::from_fn(|index| {
                                 let corner = model_quad.vertices[index];
-                                vertex_ao(&grid, tables, local, model_quad, corner)
+                                vertex_ao(&grid, local_index, model_quad, corner)
                             })
                         } else {
                             [3, 3, 3, 3]
@@ -407,7 +408,7 @@ fn page_origin_of(coord: [i32; 3]) -> Result<[i32; 3], MeshError> {
 fn should_cull(
     grid: &PageGrid,
     tables: &PaletteTables,
-    local: [usize; 3],
+    local_index: usize,
     block: &PaletteBlock,
     quad: &ModelQuad,
 ) -> bool {
@@ -415,33 +416,21 @@ fn should_cull(
         return false;
     };
 
-    let offset = cullface.offset();
-    let Some(cell) = grid.at(
-        local,
-        [offset[0] as i32, offset[1] as i32, offset[2] as i32],
-    ) else {
-        return false;
-    };
-    let Some(neighbor) = tables.block(cell) else {
+    let index = local_index.wrapping_add_signed(PageGrid::face_delta(cullface));
+    if grid.occludes_index(index) {
+        return true;
+    }
+    let Some(neighbor) = tables.block(grid.cell_at_index(index)) else {
         return false;
     };
     if neighbor.is_air {
         return false;
     }
-    if neighbor.occludes {
-        return true;
-    }
 
     neighbor.state_id == block.state_id
 }
 
-fn vertex_ao(
-    grid: &PageGrid,
-    tables: &PaletteTables,
-    local: [usize; 3],
-    quad: &ModelQuad,
-    corner: [f32; 3],
-) -> u8 {
+fn vertex_ao(grid: &PageGrid, local_index: usize, quad: &ModelQuad, corner: [f32; 3]) -> u8 {
     let Some(face) = quad.cullface else {
         return 3;
     };
@@ -464,9 +453,9 @@ fn vertex_ao(
         offset
     };
 
-    let s1 = grid.occludes_at(local, side1, tables);
-    let s2 = grid.occludes_at(local, side2, tables);
-    let c = grid.occludes_at(local, corner_pos, tables);
+    let s1 = occludes_offset(grid, local_index, side1);
+    let s2 = occludes_offset(grid, local_index, side2);
+    let c = occludes_offset(grid, local_index, corner_pos);
     if s1 && s2 {
         return 0;
     }
@@ -477,6 +466,10 @@ fn vertex_ao(
         2 => 1,
         _ => 0,
     }
+}
+
+fn occludes_offset(grid: &PageGrid, local_index: usize, offset: [i32; 3]) -> bool {
+    grid.occludes_index(local_index.wrapping_add_signed(PageGrid::offset_delta(offset)))
 }
 
 fn shifted(base: [i64; 3], axis: usize, delta: i64) -> [i32; 3] {
