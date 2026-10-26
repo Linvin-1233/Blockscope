@@ -15,7 +15,8 @@ mod voxel;
 
 pub use builder::{
     build_mesh, build_mesh_parallel, build_mesh_parallel_with_options, build_mesh_streaming,
-    build_mesh_streaming_with_options, build_mesh_with_options,
+    build_mesh_streaming_with_options, build_mesh_with_options, count_mesh_quads,
+    estimate_mesh_quads,
 };
 pub use catalog::{
     BlockCatalog, CatalogError, CatalogErrorCode, ColorBlockCatalog, ColorSnapshot, ResolvedBlock,

@@ -166,6 +166,7 @@ pub(crate) fn run(args: BenchArgs) -> Result<(), CliError> {
             "pngMs": timing_json(&png),
             "totalMs": timing_json(&total),
             "mesh": mesh.statistics,
+            "meshBytes": mesh.heap_bytes(),
             "renderStatistics": output.statistics,
             "pngBytes": png_bytes,
             "rgbaBytes": output.rgba.len() as u64,
@@ -197,8 +198,11 @@ pub(crate) fn run(args: BenchArgs) -> Result<(), CliError> {
         print_timing("png", &png);
         print_timing("total", &total);
         println!(
-            "mesh: {} pages, {} quads, {} vertices",
-            mesh.statistics.pages, mesh.statistics.quads, mesh.statistics.vertices
+            "mesh: {} pages, {} quads, {} vertices, {} bytes",
+            mesh.statistics.pages,
+            mesh.statistics.quads,
+            mesh.statistics.vertices,
+            mesh.heap_bytes()
         );
         println!(
             "buffers: {} rgba bytes, {} png bytes",

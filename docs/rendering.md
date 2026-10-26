@@ -415,8 +415,18 @@ detail at a large memory cost.
 `--lod auto` starts with an exact mesh and falls back to 2, 4, 8, or 16 only
 when the quad budget does not fit. The budget is 80 percent of available memory
 divided by roughly 400 bytes per quad, so a file that can be rendered exactly
-is never degraded. On the 48 GB test host, `000003` (solid, 67M blocks) renders
-exactly in 7.5 s, while the porous `000001` falls back to LOD 2 in 16.4 s.
+is never degraded.
+
+Before building a factor, auto samples 128 evenly spaced pages and estimates
+the quad count. Only when the estimate is clearly above the budget does it run
+an exact count, which uses the same page cache and culling as the builder but
+allocates no vertices or ambient occlusion. The exact count decides the
+fallback, so a scene that fits is still built exactly. On the color-only
+fixture (`000001`, 1024x1024, supersample 2, 12 threads) the auto mesh pass
+drops from 5.0-5.2 s to 3.6-3.7 s. `000002` fits exactly and pays about 30 ms
+for the sample. On the 48 GB test host, `000003` (solid, 67M blocks) renders
+exactly in 7.5 s; the earlier client-jar run of `000001` fell back to LOD 2 in
+16.4 s.
 
 ## Known Limitations
 

@@ -1,6 +1,9 @@
 mod support;
 
-use litematic_mesh::{ColorBlockCatalog, MeshErrorCode, MeshLimits, build_mesh};
+use litematic_mesh::{
+    ColorBlockCatalog, MeshBuildOptions, MeshErrorCode, MeshLimits, build_mesh, count_mesh_quads,
+    estimate_mesh_quads,
+};
 use support::{region as make_region, scene as make_scene};
 
 fn build(scene: &litematic_scene::Scene, limits: &MeshLimits) -> litematic_mesh::Mesh {
@@ -51,6 +54,128 @@ fn single_cube_emits_six_quads() {
             "quad winding should match its normal"
         );
     }
+}
+
+#[test]
+fn quad_count_matches_the_built_mesh() {
+    let mut values = vec![0u32; 34 * 34];
+    for (index, value) in values.iter_mut().enumerate() {
+        if index % 3 == 0 {
+            *value = 1;
+        }
+    }
+    let scene = make_scene(vec![make_region(
+        "main",
+        [0, 0, 0],
+        [34, 34, 1],
+        &["minecraft:air", "minecraft:stone"],
+        &values,
+    )]);
+    let catalog = ColorBlockCatalog::default();
+    let snapshot = catalog.snapshot(
+        scene
+            .regions
+            .iter()
+            .flat_map(|region| region.palette.iter().cloned()),
+    );
+
+    for threads in [1, 4] {
+        let count = count_mesh_quads(
+            &scene,
+            &snapshot,
+            &MeshLimits::default(),
+            threads,
+            MeshBuildOptions::default(),
+        )
+        .unwrap();
+        let mesh = build_mesh(&scene, &catalog, &MeshLimits::default()).unwrap();
+        assert_eq!(count, Some(mesh.statistics.quads), "threads={threads}");
+
+        // Sampling every page must reproduce the exact count.
+        let estimate = estimate_mesh_quads(
+            &scene,
+            &snapshot,
+            &MeshLimits::default(),
+            usize::MAX,
+            threads,
+            MeshBuildOptions::default(),
+        )
+        .unwrap();
+        assert_eq!(estimate, mesh.statistics.quads, "threads={threads}");
+    }
+}
+
+#[test]
+fn sampled_quad_estimate_is_deterministic() {
+    let mut values = vec![0u32; 34 * 34];
+    for (index, value) in values.iter_mut().enumerate() {
+        if index % 3 == 0 {
+            *value = 1;
+        }
+    }
+    let scene = make_scene(vec![make_region(
+        "main",
+        [0, 0, 0],
+        [34, 34, 1],
+        &["minecraft:air", "minecraft:stone"],
+        &values,
+    )]);
+    let catalog = ColorBlockCatalog::default();
+    let snapshot = catalog.snapshot(
+        scene
+            .regions
+            .iter()
+            .flat_map(|region| region.palette.iter().cloned()),
+    );
+
+    let first = estimate_mesh_quads(
+        &scene,
+        &snapshot,
+        &MeshLimits::default(),
+        3,
+        4,
+        MeshBuildOptions::default(),
+    )
+    .unwrap();
+    let second = estimate_mesh_quads(
+        &scene,
+        &snapshot,
+        &MeshLimits::default(),
+        3,
+        4,
+        MeshBuildOptions::default(),
+    )
+    .unwrap();
+
+    assert!(first > 0);
+    assert_eq!(first, second);
+}
+
+#[test]
+fn quad_count_stops_at_the_quad_limit() {
+    let scene = make_scene(vec![make_region(
+        "main",
+        [0, 0, 0],
+        [1, 1, 1],
+        &["minecraft:air", "minecraft:stone"],
+        &[1],
+    )]);
+    let catalog = ColorBlockCatalog::default();
+    let snapshot = catalog.snapshot(
+        scene
+            .regions
+            .iter()
+            .flat_map(|region| region.palette.iter().cloned()),
+    );
+    let limits = MeshLimits {
+        max_quads: 5,
+        ..Default::default()
+    };
+
+    assert_eq!(
+        count_mesh_quads(&scene, &snapshot, &limits, 2, MeshBuildOptions::default()).unwrap(),
+        None
+    );
 }
 
 #[test]

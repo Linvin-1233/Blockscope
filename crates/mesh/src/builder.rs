@@ -19,6 +19,13 @@ const STREAM_PAGES_PER_CHUNK: usize = 32;
 /// so later pages reuse the previous page's count instead of growing from zero.
 const INITIAL_PAGE_QUADS: usize = 1024;
 
+/// Whether a page build emits geometry or only counts what it would emit.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PageMode {
+    Build,
+    Count,
+}
+
 /// Build a page-local mesh from a scene using the supplied catalog.
 pub fn build_mesh(
     scene: &Scene,
@@ -55,7 +62,7 @@ fn build_mesh_with_view<C: BlockCatalog + ?Sized>(
 
     for &coord in keys {
         let origin = page_origin_of(coord)?;
-        let page = build_page(scene, view, &tables, origin, options, hint)?;
+        let page = build_page(scene, view, &tables, origin, options, hint, PageMode::Build)?;
         hint = page_capacity_hint(hint, page.quads.len());
         add_page(&mut pages, &mut statistics, page, limits)?;
     }
@@ -134,7 +141,15 @@ where
                                 return Err(error);
                             }
                         };
-                        let page = match build_page(scene, &view, &tables, origin, options, hint) {
+                        let page = match build_page(
+                            scene,
+                            &view,
+                            &tables,
+                            origin,
+                            options,
+                            hint,
+                            PageMode::Build,
+                        ) {
                             Ok(page) => page,
                             Err(error) => {
                                 abort.store(true, Ordering::Relaxed);
@@ -195,6 +210,200 @@ where
     }
 
     Ok(finish(pages, statistics))
+}
+
+/// Count the quads a mesh would contain without allocating geometry.
+///
+/// Stops as soon as `limits` would be exceeded and returns `Ok(None)`, so an
+/// auto-LOD caller can reject a factor without paying for a full build. Greedy
+/// merging is not applied; with [`MeshBuildOptions::GREEDY`] the count is an
+/// upper bound on the merged mesh.
+pub fn count_mesh_quads<C>(
+    scene: &Scene,
+    catalog: &C,
+    limits: &MeshLimits,
+    threads: u32,
+    options: MeshBuildOptions,
+) -> Result<Option<u64>, MeshError>
+where
+    C: BlockCatalog + Sync + ?Sized,
+{
+    let view = SceneBlockView::new(scene, limits)?;
+    let keys = view.page_keys().collect::<Vec<_>>();
+    let tables = PaletteTables::new(scene, catalog);
+    let workers = worker_count(threads, keys.len());
+    let cursor = AtomicUsize::new(0);
+    let abort = AtomicBool::new(false);
+    let quads = AtomicU64::new(0);
+    let pages = AtomicU64::new(0);
+
+    let result = thread::scope(|scope| -> Result<(), MeshError> {
+        let mut handles = Vec::with_capacity(workers);
+        for _ in 0..workers {
+            let view = &view;
+            let tables = &tables;
+            let keys = &keys;
+            let cursor = &cursor;
+            let abort = &abort;
+            let quads = &quads;
+            let pages = &pages;
+            handles.push(scope.spawn(move || -> Result<(), MeshError> {
+                loop {
+                    if abort.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    let index = cursor.fetch_add(1, Ordering::Relaxed);
+                    let Some(&coord) = keys.get(index) else {
+                        break;
+                    };
+                    let origin = match page_origin_of(coord) {
+                        Ok(origin) => origin,
+                        Err(error) => {
+                            abort.store(true, Ordering::Relaxed);
+                            return Err(error);
+                        }
+                    };
+                    let page = match build_page(
+                        scene,
+                        view,
+                        tables,
+                        origin,
+                        options,
+                        0,
+                        PageMode::Count,
+                    ) {
+                        Ok(page) => page,
+                        Err(error) => {
+                            abort.store(true, Ordering::Relaxed);
+                            return Err(error);
+                        }
+                    };
+                    let count = page.statistics.quads;
+                    if count == 0 {
+                        continue;
+                    }
+                    let total = quads.fetch_add(count, Ordering::Relaxed) + count;
+                    let total_pages = pages.fetch_add(1, Ordering::Relaxed) + 1;
+                    if total > limits.max_quads as u64
+                        || total.saturating_mul(4) > limits.max_vertices as u64
+                        || total_pages > limits.max_pages as u64
+                    {
+                        abort.store(true, Ordering::Relaxed);
+                    }
+                }
+                Ok(())
+            }));
+        }
+        for handle in handles {
+            handle.join().expect("mesh count worker panicked")?;
+        }
+        Ok(())
+    });
+    result?;
+
+    if abort.load(Ordering::Relaxed) {
+        Ok(None)
+    } else {
+        Ok(Some(quads.load(Ordering::Relaxed)))
+    }
+}
+
+/// Estimate the quad count from a deterministic sample of pages.
+///
+/// The estimate exists to decide whether a full [`count_mesh_quads`] pass is
+/// worth running. It is not an exact bound: a caller that must not reject a
+/// mesh which actually fits should confirm with the full count. Sampling is
+/// spread evenly across page order, so dense regions are not over-weighted by
+/// the first pages.
+pub fn estimate_mesh_quads<C>(
+    scene: &Scene,
+    catalog: &C,
+    limits: &MeshLimits,
+    sample_pages: usize,
+    threads: u32,
+    options: MeshBuildOptions,
+) -> Result<u64, MeshError>
+where
+    C: BlockCatalog + Sync + ?Sized,
+{
+    let view = SceneBlockView::new(scene, limits)?;
+    let keys = view.page_keys().collect::<Vec<_>>();
+    let total_pages = keys.len();
+    if total_pages == 0 {
+        return Ok(0);
+    }
+
+    let sample = sample_pages.clamp(1, total_pages);
+    let tables = PaletteTables::new(scene, catalog);
+    let workers = worker_count(threads, sample);
+    let cursor = AtomicUsize::new(0);
+    let abort = AtomicBool::new(false);
+    let quads = AtomicU64::new(0);
+    let sampled = AtomicU64::new(0);
+
+    let result = thread::scope(|scope| -> Result<(), MeshError> {
+        let mut handles = Vec::with_capacity(workers);
+        for _ in 0..workers {
+            let view = &view;
+            let tables = &tables;
+            let keys = &keys;
+            let cursor = &cursor;
+            let abort = &abort;
+            let quads = &quads;
+            let sampled = &sampled;
+            handles.push(scope.spawn(move || -> Result<(), MeshError> {
+                loop {
+                    if abort.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    let position = cursor.fetch_add(1, Ordering::Relaxed);
+                    if position >= sample {
+                        break;
+                    }
+                    let index = sample_index(position, sample, total_pages);
+                    let origin = match page_origin_of(keys[index]) {
+                        Ok(origin) => origin,
+                        Err(error) => {
+                            abort.store(true, Ordering::Relaxed);
+                            return Err(error);
+                        }
+                    };
+                    let page = match build_page(
+                        scene,
+                        view,
+                        tables,
+                        origin,
+                        options,
+                        0,
+                        PageMode::Count,
+                    ) {
+                        Ok(page) => page,
+                        Err(error) => {
+                            abort.store(true, Ordering::Relaxed);
+                            return Err(error);
+                        }
+                    };
+                    quads.fetch_add(page.statistics.quads, Ordering::Relaxed);
+                    sampled.fetch_add(1, Ordering::Relaxed);
+                }
+                Ok(())
+            }));
+        }
+        for handle in handles {
+            handle.join().expect("mesh estimate worker panicked")?;
+        }
+        Ok(())
+    });
+    result?;
+
+    let sampled = u128::from(sampled.load(Ordering::Relaxed)).max(1);
+    let total = u128::from(quads.load(Ordering::Relaxed)) * total_pages as u128;
+    Ok(u64::try_from(total.div_ceil(sampled)).unwrap_or(u64::MAX))
+}
+
+/// Midpoint of one of `sample` equal strata over `total` pages.
+fn sample_index(position: usize, sample: usize, total: usize) -> usize {
+    (((2 * position + 1) * total) / (2 * sample)).min(total - 1)
 }
 
 /// Build a mesh in bounded page chunks and hand each chunk to `sink`.
@@ -303,7 +512,7 @@ fn build_page_chunk(
     if workers <= 1 {
         let mut hint = INITIAL_PAGE_QUADS;
         for (index, &origin) in origins.iter().enumerate() {
-            let page = build_page(scene, view, tables, origin, options, hint)?;
+            let page = build_page(scene, view, tables, origin, options, hint, PageMode::Build)?;
             hint = page_capacity_hint(hint, page.quads.len());
             slots[index]
                 .set(page)
@@ -323,7 +532,15 @@ fn build_page_chunk(
                         let Some(&origin) = origins.get(index) else {
                             break;
                         };
-                        match build_page(scene, view, tables, origin, options, hint) {
+                        match build_page(
+                            scene,
+                            view,
+                            tables,
+                            origin,
+                            options,
+                            hint,
+                            PageMode::Build,
+                        ) {
                             Ok(page) => {
                                 hint = page_capacity_hint(hint, page.quads.len());
                                 assert!(slots[index].set(page).is_ok(), "mesh page slot set twice");
@@ -384,6 +601,7 @@ fn build_page(
     origin: [i32; 3],
     options: MeshBuildOptions,
     capacity_hint: usize,
+    mode: PageMode,
 ) -> Result<PageBuild, MeshError> {
     let base = [
         i64::from(origin[0]),
@@ -471,6 +689,9 @@ fn build_page(
 
                         let layer = model_quad.layer.unwrap_or(palette_block.block.layer);
                         page.statistics.add_quad(layer);
+                        if mode == PageMode::Count {
+                            continue;
+                        }
 
                         let color = if model_quad.texture == NO_TEXTURE {
                             palette_block.block.color
@@ -512,7 +733,7 @@ fn build_page(
         }
     }
 
-    if options.greedy {
+    if options.greedy && mode == PageMode::Build {
         merge_page_quads(&mut page.quads, &mut page.statistics);
     }
 

@@ -2,8 +2,9 @@ use clap::{Args, Parser, Subcommand};
 use litematic_core::{DecodeLimits, LitematicError, LitematicFile, LitematicLimits};
 use litematic_material::{AssetSource, MaterialSet, MaterialSnapshot, TextureFilter};
 use litematic_mesh::{
-    ColorBlockCatalog, Mesh, MeshBuildOptions, MeshError, MeshLimits, MeshPage, MeshStatistics,
-    Rgba, build_mesh_parallel_with_options, build_mesh_streaming_with_options,
+    BlockCatalog, ColorBlockCatalog, Mesh, MeshBuildOptions, MeshError, MeshLimits, MeshPage,
+    MeshStatistics, Rgba, build_mesh_parallel_with_options, build_mesh_streaming_with_options,
+    count_mesh_quads, estimate_mesh_quads,
 };
 use litematic_render::{
     Background, RenderError, RenderOptions, RenderOutput, render_mesh, render_mesh_with_textures,
@@ -24,6 +25,9 @@ pub(crate) use file_io::read_file_limited;
 
 /// Upper bound for mesh, LOD, and rasterizer worker threads.
 pub(crate) const MAX_THREADS: u32 = 256;
+
+/// Pages sampled to decide whether an exact quad count is worth running.
+const AUTO_LOD_SAMPLE_PAGES: usize = 128;
 
 /// Litematic parser and render service.
 #[derive(Debug, Parser)]
@@ -303,6 +307,71 @@ fn build_scene_mesh(
             let snapshot = catalog.snapshot(states);
             build_mesh_parallel_with_options(scene, &snapshot, limits, threads, options)
                 .map_err(CliError::from)
+        }
+    }
+}
+
+/// Count against the limit first so an oversized exact attempt is not meshed.
+///
+/// Greedy merging is skipped because a merged page can fit budgets the
+/// unmerged count rejects.
+fn count_and_build_mesh<C>(
+    scene: &Scene,
+    catalog: &C,
+    limits: &MeshLimits,
+    threads: u32,
+    options: MeshBuildOptions,
+) -> Result<Option<Mesh>, CliError>
+where
+    C: BlockCatalog + Sync,
+{
+    if !options.greedy {
+        let estimate = estimate_mesh_quads(
+            scene,
+            catalog,
+            limits,
+            AUTO_LOD_SAMPLE_PAGES,
+            threads,
+            options,
+        )
+        .map_err(CliError::from)?;
+        let budget = limits.max_quads as u64;
+        if estimate.saturating_mul(10) > budget.saturating_mul(11)
+            && count_mesh_quads(scene, catalog, limits, threads, options)
+                .map_err(CliError::from)?
+                .is_none()
+        {
+            return Ok(None);
+        }
+    }
+
+    build_mesh_parallel_with_options(scene, catalog, limits, threads, options)
+        .map(Some)
+        .map_err(CliError::from)
+}
+
+fn count_and_build_scene_mesh(
+    scene: &Scene,
+    materials: Option<&MaterialSet>,
+    limits: &MeshLimits,
+    threads: u32,
+    options: MeshBuildOptions,
+) -> Result<(Option<Mesh>, Option<MaterialSnapshot>), CliError> {
+    match materials {
+        Some(materials) => {
+            let snapshot = material_snapshot(scene, materials);
+            let mesh = count_and_build_mesh(scene, &snapshot, limits, threads, options)?;
+            Ok((mesh, Some(snapshot)))
+        }
+        None => {
+            let catalog = ColorBlockCatalog::new().map_err(CliError::internal)?;
+            let states = scene
+                .regions
+                .iter()
+                .flat_map(|region| region.palette.iter().cloned());
+            let snapshot = catalog.snapshot(states);
+            let mesh = count_and_build_mesh(scene, &snapshot, limits, threads, options)?;
+            Ok((mesh, None))
         }
     }
 }
@@ -647,15 +716,15 @@ fn prepare_auto(
 
         let attempt = {
             let candidate = aggregated.as_ref().unwrap_or(&scene);
-            let snapshot = materials.map(|materials| material_snapshot(candidate, materials));
             let mesh_started = Instant::now();
-            let result = build_scene_mesh(candidate, snapshot.as_ref(), &limits, threads, options);
+            let result =
+                count_and_build_scene_mesh(candidate, materials, &limits, threads, options);
             mesh_total += mesh_started.elapsed().as_secs_f64() * 1000.0;
-            result.map(|mesh| (mesh, snapshot))
+            result
         };
 
         match attempt {
-            Ok((mesh, snapshot)) => {
+            Ok((Some(mesh), snapshot)) => {
                 let scene = aggregated.unwrap_or(scene);
                 return Ok(PreparedScene {
                     scene,
@@ -666,6 +735,7 @@ fn prepare_auto(
                     mesh_ms: mesh_total,
                 });
             }
+            Ok((None, _)) => continue,
             Err(error) if is_mesh_limit_error(&error) => last_error = Some(error),
             Err(error) => return Err(error),
         }

@@ -65,6 +65,13 @@ User-facing changes are recorded here. The format follows
 - Release builds enable thin LTO and a single codegen unit. On the test host
   `000001` mesh and render are about 4-5% faster and `000002` parse is about 20%
   faster; release build time grows accordingly.
+- `--lod auto` samples 128 evenly spaced pages before building a factor and
+  only runs an exact count when the estimate is clearly above the budget. The
+  count reuses the page cache and culling but allocates no vertices, ambient
+  occlusion, or quads, so an oversized exact mesh is no longer built before
+  falling back. On `000001` the auto mesh pass drops from 5.0-5.2 s to
+  3.6-3.7 s with the same factor and output; a scene that fits, such as
+  `000002`, pays about 30 ms for the sample.
 
 ## [0.2.0] - 2026-10-25
 
