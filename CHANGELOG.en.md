@@ -6,7 +6,7 @@ User-facing changes are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.3.0] - 2026-10-27
 
 ### Added
 
@@ -18,6 +18,10 @@ User-facing changes are recorded here. The format follows
 
 ### Changed
 
+- `render`, `bench`, `serve`, and library callers now reject output dimensions above
+  4096 pixels per side, matching the engine protocol document; the total pixel
+  budget is unchanged. Previously only the pixel count was checked, so extreme
+  aspect ratios could bypass the protocol contract.
 - Mesh building now caches each 16x16x16 page and its border, and pre-resolves
   every region palette into an immutable material table, so culling and ambient
   occlusion are array reads. Each cell also caches an occlusion bit and offsets

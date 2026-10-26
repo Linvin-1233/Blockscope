@@ -42,7 +42,7 @@ supervisor                          worker
 ### Messages
 
 ```json
-{"type":"hello","protocolVersion":1,"engineVersion":"0.2.0","platform":"windows","cores":12,
+{"type":"hello","protocolVersion":1,"engineVersion":"0.3.0","platform":"windows","cores":12,
  "cpuQuota":null,"memoryLimitBytes":51401564160,"memoryAvailableBytes":21526179840,
  "suggestedWorkers":4,"suggestedThreads":3,"suggestedMaxQuads":54313181,
  "cacheBytes":10763089920,
@@ -81,6 +81,9 @@ budget; `0` means the worker derives it from available memory.
 | `threads` | integer | `0` | Mesh and rasterizer threads; `0` uses all cores, capped at 256 |
 | `lod` | integer or `"auto"` | `1` | `1` disables; `2..=16` is a fixed factor; `auto` picks the smallest factor that fits the memory budget |
 | `elevation` | number | `30` | Degrees, `-89.9..=89.9` |
+
+`width * height` must not exceed 16,777,216 output pixels. Supersampling
+multiplies both sides, so the internal image must not exceed 33,554,432 pixels.
 
 Paths must be absolute. The worker rejects relative paths with
 `INVALID_REQUEST`, so behaviour does not depend on the worker's working
@@ -172,7 +175,7 @@ rasterizer mid-tile.
 |---|---|---|
 | `INVALID_REQUEST` | no | Malformed JSON, missing field, relative path, non-regular input |
 | `INVALID_RENDER_OPTIONS` | no | Bad size, elevation, lighting, background, or thread count |
-| `OUTPUT_TOO_LARGE` | no | Output or supersampled pixel limit exceeded |
+| `OUTPUT_TOO_LARGE` | no | Output pixel limit, supersampled limit, or 4096-per-side limit exceeded |
 | `INPUT_TOO_LARGE` | no | Raw input exceeds the parser input cap |
 | `INVALID_NBT` | no | NBT decode failure |
 | `RESOURCE_LIMIT` | no | Parser or scene resource limit |
@@ -205,7 +208,7 @@ to a fresh directory or overwritten in place, and no state survives a job.
 `blockscope serve` children:
 
 ```json
-{"type":"hello","protocolVersion":1,"engineVersion":"0.2.0","platform":"linux",
+{"type":"hello","protocolVersion":1,"engineVersion":"0.3.0","platform":"linux",
  "cores":4,"memoryLimitBytes":8589934592,"workers":2,"threadsPerWorker":2,
  "queueLimit":4,"cacheEntries":1,"timeoutSeconds":60,
  "memoryLimitPerWorkerBytes":3650722201,"suggestedMaxQuads":17000000,
@@ -239,7 +242,7 @@ to a fresh directory or overwritten in place, and no state survives a job.
 | Graceful stop | stdin EOF or `shutdown` | stdin EOF or `shutdown` | stdin EOF or `shutdown` |
 | Kill policy | `SIGKILL` after a 10 s grace | `TerminateProcess` after a 10 s grace | `SIGKILL` after a 10 s grace |
 | Child cleanup | reaped by supervisor; exit on pipe close | reaped by supervisor; exit on pipe close | reaped by supervisor; exit on pipe close |
-| Peak RSS | `/proc/self/status` `VmHWM` | not reported in v1 | `getrusage` `ru_maxrss` |
+| RSS source | `/proc/self/status` `VmHWM` | `K32GetProcessMemoryInfo` working set | `getrusage` `ru_maxrss` |
 | Temp directory | `$TMPDIR` | `%TEMP%` | `$TMPDIR` |
 | Path separator | `/` | `/` or `\`; absolute drive paths required | `/` |
 | Non-UTF-8 paths | rejected | not possible; all paths are UTF-16, sent as UTF-8 | rejected |
@@ -279,7 +282,6 @@ prompts, no reading from a TTY.
 - Streaming or progressive output.
 - Non-PNG formats.
 - In-process job queues or multi-job batching.
-- Windows peak RSS accounting.
 
 ## Overrides
 

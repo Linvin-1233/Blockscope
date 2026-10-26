@@ -5,7 +5,7 @@
 本文件记录面向用户的变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased]
+## [0.3.0] - 2026-10-27
 
 ### Added
 
@@ -15,6 +15,8 @@
 
 ### Changed
 
+- `render`、`bench`、`serve` 和库调用现在拒绝单边超过 4096 像素的输出请求，与协议
+  文档一致；总像素预算不变。此前只检查总像素数，极端长宽比可能绕过协议约定。
 - 网格构建按 16x16x16 页缓存方块及其边界，并把每个 region 的 palette 预解析为
   不可变材质表，剔除和环境光遮蔽改为数组索引；缓存每个格子的遮挡位并用扁平索引
   偏移访问邻居，完整不透明方块在六个邻居都遮挡时直接跳过模型。测试夹具
