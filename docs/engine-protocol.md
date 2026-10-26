@@ -148,6 +148,9 @@ rasterizer mid-tile.
   multiple views. The engine never overwrites a result from another job.
 - `cacheHit` is `true` when the worker reused a parsed scene and mesh for the
   same `inputHash` **and** `lod`; `parseMs`, `lodMs`, and `meshMs` are then `0`.
+  When the request includes `input.hash`, a cache hit is resolved before reading
+  the file. The supervisor fills `input.hash` with the hash it computed for
+  routing when the caller omitted it.
 - `sceneHash` describes the scene that was rendered. With `lod > 1` it is the
   aggregated scene, not the original projection.
 - `lod` echoes the effective factor. With `"lod": "auto"` the worker reports the

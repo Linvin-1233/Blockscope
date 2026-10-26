@@ -57,7 +57,9 @@ blockscope preview model.litematic -t
 
 A single view writes `out.png`. Multiple views write `out-45.png`,
 `out-225.png`, and so on. In `serve` mode the names are `{id}.png` for one view
-or `{id}-{yaw}.png` for multiple views.
+or `{id}-{yaw}.png` for multiple views. When a complete mesh is available,
+multiple views render concurrently within the `--threads` budget; output order
+is preserved, while each concurrent view holds its own tile buffers.
 
 ## Common Options
 

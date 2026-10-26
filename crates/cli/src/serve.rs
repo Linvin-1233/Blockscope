@@ -4,9 +4,7 @@ use clap::Args;
 use litematic_core::LitematicFile;
 use litematic_material::{MaterialSet, MaterialSnapshot};
 use litematic_mesh::Mesh;
-use litematic_render::{
-    LightingProfile, RenderOptions, render_mesh, render_mesh_with_textures, write_png,
-};
+use litematic_render::{LightingProfile, RenderOptions, write_png};
 use litematic_scene::{Scene, sha256};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -243,17 +241,6 @@ fn process(
     }
 
     let limits = crate::decode_limits(force_limits, ignore_block_entity_nbt);
-    let input = crate::read_file_limited(&request.input.path, limits.max_input_bytes)?;
-    let input_hash = sha256(&input).to_hex();
-
-    if let Some(expected) = &request.input.hash
-        && !input_hash.eq_ignore_ascii_case(expected)
-    {
-        return Err(CliError::input(format!(
-            "INPUT_HASH_MISMATCH: expected {expected}, got {input_hash}"
-        )));
-    }
-
     let lod_mode = match request.lod.as_ref() {
         None => crate::LodMode::Fixed(1),
         Some(LodRequest::Factor(factor)) => {
@@ -276,65 +263,94 @@ fn process(
         crate::LodMode::Auto => "auto".to_string(),
     };
 
-    let cached = cache
-        .iter()
-        .position(|entry| entry.hash == input_hash && entry.lod_key == lod_key)
-        .map(|index| cache.remove(index));
+    // A caller-supplied hash is an identity, so a cache hit must not re-read the
+    // file. The supervisor already hashes inputs for routing and forwards it.
+    let requested_hash = request
+        .input
+        .hash
+        .as_ref()
+        .map(|hash| hash.to_ascii_lowercase());
+    let cached = requested_hash
+        .as_deref()
+        .and_then(|hash| take_cached(cache, hash, &lod_key));
 
-    let (scene, mesh, snapshot, factor, parse_ms, lod_ms, mesh_ms, cache_hit) = match cached {
-        Some(entry) => {
+    let (scene, mesh, snapshot, factor, parse_ms, lod_ms, mesh_ms, cache_hit, input_hash) =
+        if let Some(entry) = cached {
+            let input_hash = entry.hash.clone();
+            let factor = entry.lod;
             let scene = Arc::clone(&entry.scene);
             let mesh = Arc::clone(&entry.mesh);
             let snapshot = entry.snapshot.clone();
-            let factor = entry.lod;
             cache.insert(0, entry);
-            (scene, mesh, snapshot, factor, 0.0, 0.0, 0.0, true)
-        }
-        None => {
-            let parse_started = Instant::now();
-            let file =
-                LitematicFile::parse_bytes(&input, &limits, &crate::scene_limits(force_limits))
-                    .map_err(CliError::from)?;
-            let scene = file.into_scene().map_err(CliError::from)?;
-            let parse_ms = parse_started.elapsed().as_secs_f64() * 1000.0;
+            (
+                scene, mesh, snapshot, factor, 0.0, 0.0, 0.0, true, input_hash,
+            )
+        } else {
+            let input = crate::read_file_limited(&request.input.path, limits.max_input_bytes)?;
+            let input_hash = sha256(&input).to_hex();
 
-            let prepared = crate::prepare_scene(
-                scene,
-                materials,
-                lod_mode,
-                &crate::mesh_limits(force_limits),
-                request.threads.unwrap_or(default_threads),
-            )?;
-            let crate::PreparedScene {
-                scene,
-                mesh,
-                snapshot,
-                factor,
-                lod_ms,
-                mesh_ms,
-            } = prepared;
-
-            let scene = Arc::new(scene);
-            let mesh = Arc::new(mesh);
-            let snapshot = snapshot.map(Arc::new);
-            let entry = CachedScene {
-                hash: input_hash.clone(),
-                lod_key,
-                lod: factor,
-                scene: Arc::clone(&scene),
-                mesh: Arc::clone(&mesh),
-                snapshot: snapshot.clone(),
-            };
-            if cache_limit > 0 {
-                cache.insert(0, entry);
-                cache.truncate(cache_limit);
+            if let Some(expected) = &request.input.hash
+                && !input_hash.eq_ignore_ascii_case(expected)
+            {
+                return Err(CliError::input(format!(
+                    "INPUT_HASH_MISMATCH: expected {expected}, got {input_hash}"
+                )));
             }
 
-            (
-                scene, mesh, snapshot, factor, parse_ms, lod_ms, mesh_ms, false,
-            )
-        }
-    };
+            if let Some(entry) = take_cached(cache, &input_hash, &lod_key) {
+                let factor = entry.lod;
+                let scene = Arc::clone(&entry.scene);
+                let mesh = Arc::clone(&entry.mesh);
+                let snapshot = entry.snapshot.clone();
+                cache.insert(0, entry);
+                (
+                    scene, mesh, snapshot, factor, 0.0, 0.0, 0.0, true, input_hash,
+                )
+            } else {
+                let parse_started = Instant::now();
+                let file =
+                    LitematicFile::parse_bytes(&input, &limits, &crate::scene_limits(force_limits))
+                        .map_err(CliError::from)?;
+                let scene = file.into_scene().map_err(CliError::from)?;
+                let parse_ms = parse_started.elapsed().as_secs_f64() * 1000.0;
+
+                let prepared = crate::prepare_scene(
+                    scene,
+                    materials,
+                    lod_mode,
+                    &crate::mesh_limits(force_limits),
+                    request.threads.unwrap_or(default_threads),
+                )?;
+                let crate::PreparedScene {
+                    scene,
+                    mesh,
+                    snapshot,
+                    factor,
+                    lod_ms,
+                    mesh_ms,
+                } = prepared;
+
+                let scene = Arc::new(scene);
+                let mesh = Arc::new(mesh);
+                let snapshot = snapshot.map(Arc::new);
+                let entry = CachedScene {
+                    hash: input_hash.clone(),
+                    lod_key,
+                    lod: factor,
+                    scene: Arc::clone(&scene),
+                    mesh: Arc::clone(&mesh),
+                    snapshot: snapshot.clone(),
+                };
+                if cache_limit > 0 {
+                    cache.insert(0, entry);
+                    cache.truncate(cache_limit);
+                }
+
+                (
+                    scene, mesh, snapshot, factor, parse_ms, lod_ms, mesh_ms, false, input_hash,
+                )
+            }
+        };
 
     let views = if request.views.is_empty() {
         vec![DEFAULT_YAW]
@@ -367,42 +383,43 @@ fn process(
         ))
     })?;
 
-    let view_count = views.len();
+    let view_options: Vec<RenderOptions> = views
+        .iter()
+        .map(|&yaw| {
+            let mut options = RenderOptions {
+                width: request.width.unwrap_or(DEFAULT_SIZE),
+                height: request.height.unwrap_or(DEFAULT_SIZE),
+                yaw,
+                elevation: request.elevation.unwrap_or(DEFAULT_ELEVATION),
+                background,
+                lighting,
+                supersample: request.supersample.unwrap_or(DEFAULT_SUPERSAMPLE),
+                threads: request.threads.unwrap_or(default_threads),
+                texture_filter,
+                ..Default::default()
+            };
+            crate::apply_render_limits(force_limits, &mut options);
+            options
+        })
+        .collect();
+
+    let view_count = view_options.len();
+    let (rendered, render_times, render_total) = crate::render_views(
+        &scene,
+        &mesh,
+        snapshot.as_deref(),
+        &view_options,
+        request.threads.unwrap_or(default_threads),
+    )?;
     let mut outputs = Vec::with_capacity(view_count);
-    let mut render_total = 0.0;
     let mut png_total = 0.0;
     let mut last_statistics = None;
 
-    for yaw in views {
-        let mut options = RenderOptions {
-            width: request.width.unwrap_or(DEFAULT_SIZE),
-            height: request.height.unwrap_or(DEFAULT_SIZE),
-            yaw,
-            elevation: request.elevation.unwrap_or(DEFAULT_ELEVATION),
-            background,
-            lighting,
-            supersample: request.supersample.unwrap_or(DEFAULT_SUPERSAMPLE),
-            threads: request.threads.unwrap_or(default_threads),
-            texture_filter,
-            ..Default::default()
-        };
-        crate::apply_render_limits(force_limits, &mut options);
-
-        let render_started = Instant::now();
-        let output = match &snapshot {
-            Some(snapshot) => {
-                render_mesh_with_textures(&scene, &mesh, &options, snapshot.textures())
-                    .map_err(CliError::from)?
-            }
-            None => render_mesh(&scene, &mesh, &options).map_err(CliError::from)?,
-        };
-        let render_ms = render_started.elapsed().as_secs_f64() * 1000.0;
-        render_total += render_ms;
-
+    for ((output, render_ms), options) in rendered.into_iter().zip(render_times).zip(view_options) {
         let name = if view_count == 1 {
             format!("{}.png", request.id)
         } else {
-            format!("{}-{yaw}.png", request.id)
+            format!("{}-{}.png", request.id, options.yaw)
         };
         let path = request.output_dir.join(name);
 
@@ -421,7 +438,7 @@ fn process(
         last_statistics = Some(output.statistics);
         outputs.push(json!({
             "path": path.display().to_string(),
-            "yaw": yaw,
+            "yaw": options.yaw,
             "width": output.width,
             "height": output.height,
             "bytes": bytes,
@@ -454,6 +471,13 @@ fn process(
             "textures": snapshot.as_ref().map(|value| value.textures().len()).unwrap_or(0),
         },
     }))
+}
+
+fn take_cached(cache: &mut Vec<CachedScene>, hash: &str, lod_key: &str) -> Option<CachedScene> {
+    let index = cache
+        .iter()
+        .position(|entry| entry.hash.eq_ignore_ascii_case(hash) && entry.lod_key == lod_key)?;
+    Some(cache.remove(index))
 }
 
 fn validate_id(id: &str) -> Result<(), CliError> {

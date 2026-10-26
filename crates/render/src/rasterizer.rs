@@ -860,6 +860,11 @@ impl TileBuffer<'_> {
         let local_y0 = self.y0 as i32;
         let width = self.width as usize;
         let textures = self.textures;
+        let sampled_texture = if texture == NO_TEXTURE {
+            None
+        } else {
+            textures.and_then(|textures| textures.get(texture))
+        };
         let filter = self.filter;
         let mut tested = 0u64;
         let mut written = 0u64;
@@ -976,16 +981,14 @@ impl TileBuffer<'_> {
                         as f32,
                 ];
 
-                if texture != NO_TEXTURE
-                    && let Some(textures) = textures
-                {
+                if let Some(texture) = sampled_texture {
                     let uv = [
                         (uvs[0][0] as f64 * b0 + uvs[1][0] as f64 * b1 + uvs[2][0] as f64 * b2)
                             as f32,
                         (uvs[0][1] as f64 * b0 + uvs[1][1] as f64 * b1 + uvs[2][1] as f64 * b2)
                             as f32,
                     ];
-                    if let Some(texel) = textures.sample(texture, uv, filter) {
+                    if let Some(texel) = texture.sample(uv, filter) {
                         color[0] *= texel[0];
                         color[1] *= texel[1];
                         color[2] *= texel[2];

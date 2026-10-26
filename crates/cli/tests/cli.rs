@@ -280,6 +280,71 @@ fn render_writes_png() {
 }
 
 #[test]
+fn parallel_views_match_sequential_outputs() {
+    let file = write_fixture(&basic_fixture());
+    let path = file.path().to_str().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let parallel_path = dir.path().join("parallel.png");
+    let single_45 = dir.path().join("single-45.png");
+    let single_225 = dir.path().join("single-225.png");
+
+    let parallel = run(&[
+        "render",
+        path,
+        "--output",
+        parallel_path.to_str().unwrap(),
+        "--views",
+        "45,225",
+        "--width",
+        "64",
+        "--height",
+        "64",
+        "--threads",
+        "2",
+    ]);
+    let sequential_45 = run(&[
+        "render",
+        path,
+        "--output",
+        single_45.to_str().unwrap(),
+        "--yaw",
+        "45",
+        "--width",
+        "64",
+        "--height",
+        "64",
+        "--threads",
+        "2",
+    ]);
+    let sequential_225 = run(&[
+        "render",
+        path,
+        "--output",
+        single_225.to_str().unwrap(),
+        "--yaw",
+        "225",
+        "--width",
+        "64",
+        "--height",
+        "64",
+        "--threads",
+        "2",
+    ]);
+
+    assert!(parallel.status.success());
+    assert!(sequential_45.status.success());
+    assert!(sequential_225.status.success());
+    assert_eq!(
+        fs::read(dir.path().join("parallel-45.png")).unwrap(),
+        fs::read(&single_45).unwrap()
+    );
+    assert_eq!(
+        fs::read(dir.path().join("parallel-225.png")).unwrap(),
+        fs::read(&single_225).unwrap()
+    );
+}
+
+#[test]
 fn render_multi_view_writes_two_files() {
     let file = write_fixture(&basic_fixture());
     let path = file.path().to_str().unwrap();

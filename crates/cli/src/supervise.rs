@@ -423,8 +423,15 @@ fn dispatch(
             sticky.insert(job.hash.clone(), index);
         }
 
+        let line = job
+            .hash
+            .split_once(':')
+            .map(|(hash, _)| hash)
+            .filter(|hash| !hash.is_empty())
+            .map(|hash| inject_input_hash(&job.line, hash))
+            .unwrap_or_else(|| job.line.clone());
         let worker = &mut pool[index];
-        if writeln!(worker.stdin, "{}", job.line)
+        if writeln!(worker.stdin, "{line}")
             .and_then(|_| worker.stdin.flush())
             .is_err()
         {
@@ -436,6 +443,22 @@ fn dispatch(
         worker.deadline = spec.timeout.map(|timeout| Instant::now() + timeout);
         worker.busy = Some(job);
     }
+}
+
+/// Add the supervisor's already-computed hash when the caller omitted it, so
+/// the worker can answer cache hits without re-reading the input file.
+fn inject_input_hash(line: &str, hash: &str) -> String {
+    let Ok(mut value) = serde_json::from_str::<Value>(line) else {
+        return line.to_string();
+    };
+    let Some(input) = value.get_mut("input").and_then(Value::as_object_mut) else {
+        return line.to_string();
+    };
+    if input.contains_key("hash") {
+        return line.to_string();
+    }
+    input.insert("hash".to_string(), Value::String(hash.to_string()));
+    serde_json::to_string(&value).unwrap_or_else(|_| line.to_string())
 }
 
 fn fail_job(
@@ -814,6 +837,38 @@ mod tests {
         let key = route_key(&line);
         assert!(key.ends_with(":2"), "{key}");
         assert_eq!(key.len(), 66, "{key}");
+    }
+
+    #[test]
+    fn injects_hash_when_the_request_omits_it() {
+        let line = json!({
+            "type": "render",
+            "input": { "path": "/tmp/model.litematic" },
+        })
+        .to_string();
+
+        let injected = inject_input_hash(&line, "abc123");
+        let value: Value = serde_json::from_str(&injected).unwrap();
+        assert_eq!(
+            value.pointer("/input/hash").and_then(Value::as_str),
+            Some("abc123")
+        );
+    }
+
+    #[test]
+    fn keeps_a_caller_supplied_hash() {
+        let line = json!({
+            "type": "render",
+            "input": { "path": "/tmp/model.litematic", "hash": "caller" },
+        })
+        .to_string();
+
+        let injected = inject_input_hash(&line, "supervisor");
+        let value: Value = serde_json::from_str(&injected).unwrap();
+        assert_eq!(
+            value.pointer("/input/hash").and_then(Value::as_str),
+            Some("caller")
+        );
     }
 
     #[test]

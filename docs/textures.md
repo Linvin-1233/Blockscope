@@ -62,6 +62,10 @@ resource-pack overlay -> base jar/assets -> built-in name mapping -> color palet
   not implemented.
 - Nearest-neighbor sampling is the default. `--texture-filter linear` enables
   bilinear sampling for HD packs.
+- The rasterizer resolves a face's texture once and reuses it for every covered
+  pixel. The sampler is inlined across the material/render crate boundary; a
+  synthetic 16x16 microbenchmark measured 1.7-2.7x higher sampling throughput
+  for nearest and bilinear filters.
 - Texture alpha drives cutout and translucent rendering.
 - Textures are indexed per face; there is no atlas, so no atlas bleeding.
 

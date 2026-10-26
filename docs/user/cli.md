@@ -56,6 +56,8 @@ blockscope preview model.litematic -t
 
 多视角渲染时，单视角输出 `out.png`，多视角输出 `out-45.png`、`out-225.png`
 等。`serve` 模式的输出命名为 `{id}.png`（单视角）或 `{id}-{yaw}.png`（多视角）。
+有完整 mesh 时，多视角会按 `--threads` 预算并行渲染；输出顺序不变，但每个
+并发视角各自持有 tile buffer，内存会相应增加。
 
 ## 常用选项
 

@@ -227,6 +227,15 @@ assembly, so pixel output and statistics do not depend on scheduling order.
 
 `threads = 0` chooses `available_parallelism()`. The default is 0.
 
+### Parallel views
+
+When a complete mesh is available and a request has multiple yaw angles, views
+render concurrently. The `threads` budget is split across the views in a batch,
+so `12` threads and two views means about six threads per view. Outputs keep the
+requested view order. Each active view owns its tile buffers, so peak memory
+grows with the number of concurrent views; streaming mesh mode remains
+sequential and rebuilds the mesh per view.
+
 ### Supersampling
 
 `supersample` renders at `width * factor` by `height * factor`, then box-filters

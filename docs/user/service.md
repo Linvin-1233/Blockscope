@@ -35,8 +35,10 @@ worker 在资源包准备完成后输出一行 `hello`，之后才接受 job。
 
 - `input.path` 和 `outputDir` 必须是绝对路径
 - 输入必须是普通文件
-- `input.hash` 可选，用于校验 SHA-256
-- `views` 为空时默认 `[45]`
+- `input.hash` 可选，用于校验 SHA-256；命中缓存时 worker 不再读取或哈希文件
+- `supervise` 会把为路由计算出的 hash 注入请求，因此经 supervisor 的重复输入
+  也能走免读缓存路径
+- `views` 为空时默认 `[45]`；有完整 mesh 时多视角并行渲染
 - 输出文件为 `{id}.png` 或 `{id}-{yaw}.png`
 - 完整字段、结果和错误码见 [引擎协议 v1](../engine-protocol.md)
 

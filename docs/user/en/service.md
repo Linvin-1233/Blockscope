@@ -37,8 +37,12 @@ The worker prints one `hello` line after materials are ready, then accepts jobs.
 
 - `input.path` and `outputDir` must be absolute
 - The input must be a regular file
-- `input.hash` is optional and verifies SHA-256
-- An empty `views` array defaults to `[45]`
+- `input.hash` is optional and verifies SHA-256; on a cache hit the worker does
+  not read or hash the file again
+- `supervise` injects the hash it computed for routing, so repeated inputs also
+  take the no-read cache path
+- An empty `views` array defaults to `[45]`; multiple views render concurrently
+  when a complete mesh is available
 - Output files are `{id}.png` or `{id}-{yaw}.png`
 - Full fields, results, and error codes are in
   [Engine protocol v1](../../engine-protocol.md)

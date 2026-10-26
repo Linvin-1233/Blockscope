@@ -6,8 +6,7 @@ use crate::{
 use clap::Args;
 use litematic_render::{
     LightingProfile, RenderOptions, RenderStatistics, StreamingRenderer, TerminalOptions,
-    TerminalProtocol, detect_terminal_protocol, render_mesh, render_mesh_with_textures,
-    render_to_terminal, write_png,
+    TerminalProtocol, detect_terminal_protocol, render_to_terminal, write_png,
 };
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -158,36 +157,37 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
         (scene, snapshot, Some(mesh), factor, lod_ms, mesh_ms)
     };
 
-    let mut results = Vec::with_capacity(view_count);
-    for yaw in views {
-        let mut options = RenderOptions {
-            width: args.width,
-            height: args.height,
-            yaw,
-            elevation: args.elevation,
-            background,
-            lighting,
-            supersample: args.supersample,
-            threads: args.threads,
-            texture_filter,
-            ..Default::default()
-        };
-        apply_render_limits(args.limits.force_limits, &mut options);
-
-        let (output, render_ms) = if let Some(mesh) = &mesh {
-            let render_started = Instant::now();
-            let output = match &snapshot {
-                Some(snapshot) => {
-                    render_mesh_with_textures(&scene, mesh, &options, snapshot.textures())
-                        .map_err(CliError::from)?
-                }
-                None => render_mesh(&scene, mesh, &options).map_err(CliError::from)?,
+    let view_options: Vec<RenderOptions> = views
+        .iter()
+        .map(|&yaw| {
+            let mut options = RenderOptions {
+                width: args.width,
+                height: args.height,
+                yaw,
+                elevation: args.elevation,
+                background,
+                lighting,
+                supersample: args.supersample,
+                threads: args.threads,
+                texture_filter,
+                ..Default::default()
             };
-            (output, render_started.elapsed().as_secs_f64() * 1000.0)
-        } else {
+            apply_render_limits(args.limits.force_limits, &mut options);
+            options
+        })
+        .collect();
+
+    let (rendered, render_times) = if let Some(mesh) = &mesh {
+        let (outputs, times, _) =
+            crate::render_views(&scene, mesh, snapshot.as_ref(), &view_options, args.threads)?;
+        (outputs, times)
+    } else {
+        let mut outputs = Vec::with_capacity(view_count);
+        let mut times = Vec::with_capacity(view_count);
+        for options in &view_options {
             let mut renderer = StreamingRenderer::new(
                 &scene,
-                &options,
+                options,
                 snapshot.as_ref().map(|snapshot| snapshot.textures()),
             )
             .map_err(CliError::from)?;
@@ -210,9 +210,14 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
             let total_stream_ms = build_started.elapsed().as_secs_f64() * 1000.0;
             let build_ms = (total_stream_ms - render_chunk_ms - finish_ms).max(0.0);
             mesh_ms_total += build_ms;
-            (output, total_stream_ms - build_ms)
-        };
+            outputs.push(output);
+            times.push(total_stream_ms - build_ms);
+        }
+        (outputs, times)
+    };
 
+    let mut results = Vec::with_capacity(view_count);
+    for ((output, render_ms), options) in rendered.into_iter().zip(render_times).zip(view_options) {
         if let Some(term_options) = &term_options {
             if args.json {
                 render_to_terminal(&output, term_options, &mut std::io::stderr())
@@ -226,7 +231,7 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
         let output_path = if view_count == 1 {
             args.output.clone()
         } else {
-            output_path_for_yaw(&args.output, yaw)
+            output_path_for_yaw(&args.output, options.yaw)
         };
         let mut png_ms = 0.0;
         if !args.no_file {

@@ -30,6 +30,15 @@ User-facing changes are recorded here. The format follows
   from 7.16 GB to 425 MB for `000001` exact and from 497 MB to 182 MB for
   `000002` exact, with byte-identical PNG output. The mode cannot be combined
   with `--lod auto`; multiple views rebuild the mesh per view.
+- Texture sampling resolves the face texture once and inlines the sampler; UVs
+  inside `0..1` skip the repeat path. A synthetic 16x16 microbenchmark measured
+  1.7-2.7x higher nearest/bilinear sampling throughput.
+- Multiple views render concurrently within the `--threads` budget when a full
+  mesh is available. CLI and `serve` preserve request order, while each
+  concurrent view owns its tile buffers.
+- `serve` skips input reads and re-hashing when `input.hash` is present and the
+  cache hits. `supervise` injects the hash it already computed for routing, so
+  repeated inputs take the no-read cache path.
 
 ## [0.2.0] - 2026-10-25
 

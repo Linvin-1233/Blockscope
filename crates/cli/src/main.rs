@@ -5,7 +5,9 @@ use litematic_mesh::{
     ColorBlockCatalog, Mesh, MeshError, MeshLimits, MeshPage, MeshStatistics, Rgba,
     build_mesh_parallel, build_mesh_streaming,
 };
-use litematic_render::{Background, RenderError, RenderOptions};
+use litematic_render::{
+    Background, RenderError, RenderOptions, RenderOutput, render_mesh, render_mesh_with_textures,
+};
 use litematic_scene::{Manifest, Scene, SceneError, aggregate_with_threads, sha256};
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -309,6 +311,100 @@ where
             let snapshot = catalog.snapshot(states);
             build_mesh_streaming(scene, &snapshot, limits, threads, sink).map_err(CliError::from)
         }
+    }
+}
+
+/// Render independent views concurrently, splitting the thread budget.
+///
+/// Returns outputs and per-view render times in input order, plus the wall time
+/// for the whole batch.
+pub(crate) fn render_views(
+    scene: &Scene,
+    mesh: &Mesh,
+    snapshot: Option<&MaterialSnapshot>,
+    options: &[RenderOptions],
+    total_threads: u32,
+) -> Result<(Vec<RenderOutput>, Vec<f64>, f64), CliError> {
+    if options.is_empty() {
+        return Ok((Vec::new(), Vec::new(), 0.0));
+    }
+
+    let total_threads = effective_threads(total_threads);
+    let mut outputs = Vec::with_capacity(options.len());
+    let mut times = Vec::with_capacity(options.len());
+    let wall_started = Instant::now();
+    let mut start = 0;
+
+    while start < options.len() {
+        let end = (start + total_threads.min(options.len() - start)).min(options.len());
+        let batch = &options[start..end];
+        let per_view = (total_threads / batch.len()).max(1) as u32;
+
+        if batch.len() == 1 {
+            let mut options = batch[0].clone();
+            options.threads = per_view;
+            let render_started = Instant::now();
+            let output = render_one(scene, mesh, snapshot, &options)?;
+            outputs.push(output);
+            times.push(render_started.elapsed().as_secs_f64() * 1000.0);
+        } else {
+            let batch_results: Vec<Result<(RenderOutput, f64), CliError>> =
+                std::thread::scope(|scope| {
+                    let handles: Vec<_> = batch
+                        .iter()
+                        .map(|base| {
+                            let mut options = base.clone();
+                            options.threads = per_view;
+                            scope.spawn(move || {
+                                let render_started = Instant::now();
+                                let output = render_one(scene, mesh, snapshot, &options)?;
+                                Ok((output, render_started.elapsed().as_secs_f64() * 1000.0))
+                            })
+                        })
+                        .collect();
+                    handles
+                        .into_iter()
+                        .map(|handle| handle.join().expect("view render worker panicked"))
+                        .collect()
+                });
+
+            for result in batch_results {
+                let (output, render_ms) = result?;
+                outputs.push(output);
+                times.push(render_ms);
+            }
+        }
+
+        start = end;
+    }
+
+    Ok((
+        outputs,
+        times,
+        wall_started.elapsed().as_secs_f64() * 1000.0,
+    ))
+}
+
+fn render_one(
+    scene: &Scene,
+    mesh: &Mesh,
+    snapshot: Option<&MaterialSnapshot>,
+    options: &RenderOptions,
+) -> Result<RenderOutput, CliError> {
+    match snapshot {
+        Some(snapshot) => render_mesh_with_textures(scene, mesh, options, snapshot.textures())
+            .map_err(CliError::from),
+        None => render_mesh(scene, mesh, options).map_err(CliError::from),
+    }
+}
+
+fn effective_threads(requested: u32) -> usize {
+    if requested == 0 {
+        std::thread::available_parallelism()
+            .map(std::num::NonZeroUsize::get)
+            .unwrap_or(1)
+    } else {
+        requested as usize
     }
 }
 
