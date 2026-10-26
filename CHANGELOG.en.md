@@ -16,9 +16,14 @@ User-facing changes are recorded here. The format follows
   resolve to flat index deltas, so the inner loop does not re-check page bounds.
   A full opaque block is skipped when all six neighbours occlude it. On the test
   fixtures (1024x1024, supersample 2, 12 threads, color-only materials) mesh
-  time drops from 17.3-20.4 s to 5.5-5.7 s for `000001` exact and from 11.7 s to
-  0.23-0.24 s for `000002` exact. Mesh statistics and PNG SHA-256 values are
+  time drops from 17.3-20.4 s to 5.7-5.9 s for `000001` exact and from 11.7 s to
+  0.24-0.25 s for `000002` exact. Mesh statistics and PNG SHA-256 values are
   unchanged.
+- Mesh page discovery now indexes only pages that contain a non-air block.
+  Sparse structures no longer scan empty pages or fail `PAGE_LIMIT_EXCEEDED`
+  because their bounding box spans too many pages; scenes without air keep the
+  bounding-box fast path. `blocksVisited` now counts scanned blocks in indexed
+  pages, so an all-air mesh reports zero.
 
 ## [0.2.0] - 2026-10-25
 

@@ -166,6 +166,29 @@ fn cross_page_glass_culls_across_region_boundaries() {
 }
 
 #[test]
+fn sparse_pages_are_not_counted_against_the_page_limit() {
+    let mut values = vec![0u32; 64];
+    values[63] = 1;
+    let region = make_region(
+        "sparse",
+        [0, 0, 0],
+        [64, 1, 1],
+        &["minecraft:air", "minecraft:stone"],
+        &values,
+    );
+    let limits = MeshLimits {
+        max_pages: 1,
+        max_quads: 100,
+        max_vertices: 400,
+    };
+    let mesh = build(&make_scene(vec![region]), &limits);
+
+    assert_eq!(mesh.statistics.pages, 1);
+    assert_eq!(mesh.statistics.quads, 6);
+    assert_eq!(mesh.statistics.blocks_visited, 16);
+}
+
+#[test]
 fn negative_page_glass_culls_across_region_boundaries() {
     let west = make_region("west", [-1, 0, 0], [1, 1, 1], &["minecraft:glass"], &[0]);
     let east = make_region("east", [0, 0, 0], [1, 1, 1], &["minecraft:glass"], &[0]);
@@ -257,7 +280,7 @@ fn all_air_scene_produces_an_empty_mesh() {
 
     assert_eq!(mesh.statistics.quads, 0);
     assert_eq!(mesh.statistics.pages, 0);
-    assert_eq!(mesh.statistics.blocks_visited, 2);
+    assert_eq!(mesh.statistics.blocks_visited, 0);
     assert_eq!(mesh.statistics.blocks_rendered, 0);
     assert!(mesh.pages.is_empty());
 }

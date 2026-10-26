@@ -174,15 +174,21 @@ chase the palette table. A full-cube block whose six neighbours all occlude is
 skipped without visiting its model quads. Equal states are assigned one
 canonical id across regions, so the existing same-state culling still works
 across region and page boundaries. Region order and y/z/x block order are
-unchanged; mesh statistics and PNG output stay byte-identical.
+unchanged; mesh statistics and PNG output stay byte-identical for dense scenes.
+
+Page discovery scans the packed block stream once and indexes only pages that
+contain a non-air block. Sparse structures therefore no longer scan empty pages
+or count them against `max_pages`; a scene with no air keeps the bounding-box
+fast path. `blocksVisited` now counts cells in indexed pages, so an all-air mesh
+reports zero visited blocks.
 
 Measured on the test host with the color-only catalog, 1024x1024, supersample 2,
 12 threads:
 
 | Scene | Before mesh | After mesh | Before/after render | Peak working set |
 |---|---|---|---|---|
-| `000001` exact, 77.6M quads | 17.3-20.4 s | 5.5-5.7 s | 4.6 s / 4.0 s | 7.16 GB / 7.16 GB |
-| `000002` exact, 50.7M blocks | 11.7 s | 0.23-0.24 s | 0.21 s / 0.19 s | 471 MB / 497 MB |
+| `000001` exact, 77.6M quads | 17.3-20.4 s | 5.7-5.9 s | 4.6 s / 4.0 s | 7.16 GB / 7.16 GB |
+| `000002` exact, 50.7M blocks | 11.7 s | 0.24-0.25 s | 0.21 s / 0.19 s | 471 MB / 497 MB |
 
 The page cache costs about 53 KB per worker and does not change the mesh
 representation, so peak memory is still dominated by the resident `Mesh`. The
