@@ -57,6 +57,40 @@ fn single_cube_emits_six_quads() {
 }
 
 #[test]
+fn page_capacity_tracks_density() {
+    let size = [32u32, 16, 16];
+    let mut values = vec![0u32; (size[0] * size[1] * size[2]) as usize];
+    let index = |x: u32, y: u32, z: u32| (x + size[0] * (z + size[2] * y)) as usize;
+    for y in 0..16 {
+        for z in 0..16 {
+            for x in 0..16 {
+                values[index(x, y, z)] = 1;
+            }
+        }
+    }
+    values[index(16, 0, 0)] = 1;
+
+    let scene = make_scene(vec![make_region(
+        "main",
+        [0, 0, 0],
+        size,
+        &["minecraft:air", "minecraft:stone"],
+        &values,
+    )]);
+    let mesh = build(&scene, &MeshLimits::default());
+
+    assert_eq!(mesh.pages.len(), 2);
+    for page in &mesh.pages {
+        assert!(
+            page.quads.capacity() <= page.quads.len() * 4 + 64,
+            "{} quads reserved {} slots",
+            page.quads.len(),
+            page.quads.capacity()
+        );
+    }
+}
+
+#[test]
 fn quad_count_matches_the_built_mesh() {
     let mut values = vec![0u32; 34 * 34];
     for (index, value) in values.iter_mut().enumerate() {

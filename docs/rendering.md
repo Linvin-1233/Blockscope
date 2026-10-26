@@ -201,11 +201,13 @@ or count them against `max_pages`; a scene with no air keeps the bounding-box
 fast path. `blocksVisited` now counts cells in indexed pages, so an all-air mesh
 reports zero visited blocks.
 
-Each worker reuses the previous page's quad count as the capacity hint for the
-next page. Pages in one scene usually have similar density, so dense pages stop
-growing through a dozen reallocations while sparse pages still reserve little.
-On `000001` the mesh pass dropped from 5.1-5.3 s to 4.35-4.38 s; `000002` stayed
-at about 0.25 s and the resident mesh capacity is unchanged.
+Each worker estimates the next page's capacity from the median of the last
+eight quads-per-non-air-block ratios plus a 15% margin. Growth adds a quarter of
+the current capacity instead of doubling, and a page that still ends up far
+below its reservation is shrunk. On `000001` the mesh pass dropped from
+4.0-4.3 s to 3.1-3.2 s and the resident mesh from 10.7 GB to 7.9 GB; `000002`
+dropped from 310 MB to 261 MB while the mesh pass moved from 0.20-0.21 s to
+about 0.22 s.
 
 Measured on the test host with the color-only catalog, 1024x1024, supersample 2,
 12 threads:

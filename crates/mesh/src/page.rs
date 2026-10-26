@@ -93,6 +93,7 @@ impl PaletteTables {
 pub(crate) struct PageGrid {
     cells: Vec<Cell>,
     occludes: Vec<bool>,
+    inner_non_air: u32,
 }
 
 impl PageGrid {
@@ -131,6 +132,7 @@ impl PageGrid {
         let mut grid = Self {
             cells: vec![Cell::EMPTY; GRID * GRID * GRID],
             occludes: vec![false; GRID * GRID * GRID],
+            inner_non_air: 0,
         };
         for ly in 0..GRID {
             for lz in 0..GRID {
@@ -207,7 +209,17 @@ impl PageGrid {
     fn set(&mut self, local: [usize; 3], cell: Cell, tables: &PaletteTables) {
         let index = Self::local_index(local);
         self.cells[index] = cell;
-        self.occludes[index] = tables.block(cell).is_some_and(|block| block.occludes);
+        let block = tables.block(cell);
+        self.occludes[index] = block.is_some_and(|block| block.occludes);
+        let inner = local.iter().all(|value| (1..GRID - 1).contains(value));
+        if inner && block.is_some_and(|block| !block.is_air) {
+            self.inner_non_air += 1;
+        }
+    }
+
+    /// Non-air blocks inside the page, excluding the one-block border.
+    pub(crate) fn inner_non_air(&self) -> u32 {
+        self.inner_non_air
     }
 }
 

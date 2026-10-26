@@ -58,10 +58,12 @@ User-facing changes are recorded here. The format follows
   4.5-4.6 s to 3.4-3.6 s; 1024x1024/ss2 is unchanged. RGBA and every statistic
   except `tiles` stay identical, and `tiles` no longer depends on the worker
   count.
-- Mesh building reuses the previous page's quad count as the capacity hint for
-  the next 16x16x16 page, avoiding repeated grow-and-copy on dense pages.
-  `000001` mesh time drops from 5.1-5.3 s to 4.35-4.38 s; `000002` stays at
-  about 0.25 s and resident mesh capacity is unchanged.
+- Mesh page capacity now follows the median quads-per-non-air-block ratio of the
+  last few pages with a 15% margin. Growth adds a quarter of the current
+  capacity instead of doubling, and pages far below their reservation shrink at
+  the end. `000001` mesh time drops from 4.0-4.3 s to 3.1-3.2 s and resident
+  mesh from 10.7 GB to 7.9 GB; `000002` drops from 310 MB to 261 MB while its
+  mesh pass stays at about 0.22 s.
 - Release builds enable thin LTO and a single codegen unit. On the test host
   `000001` mesh and render are about 4-5% faster and `000002` parse is about 20%
   faster; release build time grows accordingly.
