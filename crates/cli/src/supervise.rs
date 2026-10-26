@@ -11,8 +11,15 @@ use std::sync::mpsc::{self, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
 
+mod rss;
+
+use self::rss::process_rss_bytes;
+
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
 const MIB: u64 = 1024 * 1024;
+/// The sticky map is only a cache-locality hint; cap it so a long-lived
+/// supervisor does not grow with every distinct input file.
+const MAX_STICKY_ENTRIES: usize = 4096;
 
 #[derive(Debug, Args)]
 pub struct SuperviseArgs {
@@ -430,7 +437,7 @@ fn dispatch(
         };
 
         if !job.hash.is_empty() {
-            sticky.insert(job.hash.clone(), index);
+            remember_sticky(sticky, &job.hash, index);
         }
 
         let line = job
@@ -453,6 +460,14 @@ fn dispatch(
         worker.deadline = spec.timeout.map(|timeout| Instant::now() + timeout);
         worker.busy = Some(job);
     }
+}
+
+/// Remember a routing hint while keeping the map bounded.
+fn remember_sticky(sticky: &mut HashMap<String, usize>, hash: &str, index: usize) {
+    if sticky.len() >= MAX_STICKY_ENTRIES && !sticky.contains_key(hash) {
+        sticky.clear();
+    }
+    sticky.insert(hash.to_string(), index);
 }
 
 /// Add the supervisor's already-computed hash when the caller omitted it, so
@@ -657,126 +672,6 @@ fn route_key(line: &str) -> String {
     format!("{hash}:{lod}")
 }
 
-#[cfg(target_os = "linux")]
-fn process_rss_bytes(child: &Child) -> Option<u64> {
-    let status = std::fs::read_to_string(format!("/proc/{}/status", child.id())).ok()?;
-    for line in status.lines() {
-        if let Some(value) = line.strip_prefix("VmRSS:") {
-            let kb = value.split_whitespace().next()?.parse::<u64>().ok()?;
-            return Some(kb * 1024);
-        }
-    }
-    None
-}
-
-#[cfg(windows)]
-fn process_rss_bytes(child: &Child) -> Option<u64> {
-    use std::os::windows::io::AsRawHandle;
-
-    #[repr(C)]
-    struct ProcessMemoryCounters {
-        cb: u32,
-        page_fault_count: u32,
-        peak_working_set_size: usize,
-        working_set_size: usize,
-        quota_peak_paged_pool_usage: usize,
-        quota_paged_pool_usage: usize,
-        quota_peak_non_paged_pool_usage: usize,
-        quota_non_paged_pool_usage: usize,
-        pagefile_usage: usize,
-        peak_pagefile_usage: usize,
-    }
-
-    #[link(name = "kernel32")]
-    unsafe extern "system" {
-        fn K32GetProcessMemoryInfo(
-            process: *mut std::ffi::c_void,
-            counters: *mut ProcessMemoryCounters,
-            cb: u32,
-        ) -> i32;
-    }
-
-    let mut counters = ProcessMemoryCounters {
-        cb: std::mem::size_of::<ProcessMemoryCounters>() as u32,
-        page_fault_count: 0,
-        peak_working_set_size: 0,
-        working_set_size: 0,
-        quota_peak_paged_pool_usage: 0,
-        quota_paged_pool_usage: 0,
-        quota_peak_non_paged_pool_usage: 0,
-        quota_non_paged_pool_usage: 0,
-        pagefile_usage: 0,
-        peak_pagefile_usage: 0,
-    };
-
-    let handle = child.as_raw_handle();
-    let ok = unsafe { K32GetProcessMemoryInfo(handle, &mut counters, counters.cb) };
-    if ok == 0 {
-        None
-    } else {
-        Some(counters.working_set_size as u64)
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn process_rss_bytes(child: &Child) -> Option<u64> {
-    #[repr(C)]
-    struct ProcTaskInfo {
-        pti_virtual_size: u64,
-        pti_resident_size: u64,
-        pti_total_user: u64,
-        pti_total_system: u64,
-        pti_threads_user: u64,
-        pti_threads_system: u64,
-        pti_policy: i32,
-        pti_faults: i32,
-        pti_pageins: i32,
-        pti_cow_faults: i32,
-        pti_messages_sent: i32,
-        pti_messages_received: i32,
-        pti_syscalls_mach: i32,
-        pti_syscalls_unix: i32,
-        pti_csw: i32,
-        pti_threadnum: i32,
-        pti_numrunning: i32,
-        pti_priority: i32,
-    }
-
-    const PROC_PIDTASKINFO: i32 = 4;
-
-    unsafe extern "C" {
-        fn proc_pidinfo(
-            pid: i32,
-            flavor: i32,
-            arg: u64,
-            buffer: *mut std::ffi::c_void,
-            buffersize: i32,
-        ) -> i32;
-    }
-
-    let mut info: ProcTaskInfo = unsafe { std::mem::zeroed() };
-    let size = std::mem::size_of::<ProcTaskInfo>() as i32;
-    let ret = unsafe {
-        proc_pidinfo(
-            child.id() as i32,
-            PROC_PIDTASKINFO,
-            0,
-            &mut info as *mut _ as *mut std::ffi::c_void,
-            size,
-        )
-    };
-    if ret == size {
-        Some(info.pti_resident_size)
-    } else {
-        None
-    }
-}
-
-#[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
-fn process_rss_bytes(_child: &Child) -> Option<u64> {
-    None
-}
-
 fn write_error(out: &mut impl Write, id: &str, code: &str, message: &str) -> Result<(), CliError> {
     let retryable = !matches!(code, "INVALID_REQUEST" | "INVALID_RENDER_OPTIONS");
     write_line(
@@ -798,102 +693,4 @@ fn write_line(out: &mut impl Write, value: &Value) -> Result<(), CliError> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn capacity_with_memory(available: u64) -> Capacity {
-        Capacity {
-            platform: "test".to_string(),
-            cores: 4,
-            cpu_quota_milli: None,
-            memory_limit_bytes: available,
-            memory_available_bytes: available,
-            suggested_workers: 2,
-            suggested_threads: 2,
-            suggested_max_quads: 20_000_000,
-            default_width: 1024,
-            default_height: 1024,
-            default_supersample: 2,
-        }
-    }
-
-    #[test]
-    fn memory_limit_keeps_headroom() {
-        let capacity = capacity_with_memory(8 * 1024 * MIB);
-        let limit = memory_limit(&capacity, 2, 0).unwrap();
-        // 4 GiB per worker minus 15 percent headroom.
-        assert!(limit > 3 * 1024 * MIB && limit < 4 * 1024 * MIB, "{limit}");
-    }
-
-    #[test]
-    fn memory_limit_override_wins() {
-        let capacity = capacity_with_memory(8 * 1024 * MIB);
-        assert_eq!(memory_limit(&capacity, 2, 512), Some(512 * MIB));
-    }
-
-    #[test]
-    fn unknown_memory_disables_the_limit() {
-        let capacity = capacity_with_memory(0);
-        assert_eq!(memory_limit(&capacity, 2, 0), None);
-    }
-
-    #[test]
-    fn route_key_hashes_regular_files_and_preserves_lod() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("input.litematic");
-        std::fs::write(&path, b"data").unwrap();
-        let line = json!({
-            "type": "render",
-            "input": { "path": path },
-            "lod": 2,
-        })
-        .to_string();
-
-        let key = route_key(&line);
-        assert!(key.ends_with(":2"), "{key}");
-        assert_eq!(key.len(), 66, "{key}");
-    }
-
-    #[test]
-    fn injects_hash_when_the_request_omits_it() {
-        let line = json!({
-            "type": "render",
-            "input": { "path": "/tmp/model.litematic" },
-        })
-        .to_string();
-
-        let injected = inject_input_hash(&line, "abc123");
-        let value: Value = serde_json::from_str(&injected).unwrap();
-        assert_eq!(
-            value.pointer("/input/hash").and_then(Value::as_str),
-            Some("abc123")
-        );
-    }
-
-    #[test]
-    fn keeps_a_caller_supplied_hash() {
-        let line = json!({
-            "type": "render",
-            "input": { "path": "/tmp/model.litematic", "hash": "caller" },
-        })
-        .to_string();
-
-        let injected = inject_input_hash(&line, "supervisor");
-        let value: Value = serde_json::from_str(&injected).unwrap();
-        assert_eq!(
-            value.pointer("/input/hash").and_then(Value::as_str),
-            Some("caller")
-        );
-    }
-
-    #[test]
-    fn route_key_returns_empty_hash_for_unreadable_paths() {
-        let line = json!({
-            "type": "render",
-            "input": { "path": "definitely-not-a-file" },
-        })
-        .to_string();
-
-        assert_eq!(route_key(&line), ":1");
-    }
-}
+mod tests;

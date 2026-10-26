@@ -1,9 +1,9 @@
+use super::RenderStatistics;
+use super::bin::{TileJob, bin_quads, bin_triangles, effective_tile_size, tile_jobs, worker_count};
 use super::downsample::downsample;
-use super::{
-    QuadRender, RenderStatistics, TileBuffer, TileCounters, TileJob, Triangle, bin_quads,
-    bin_triangles, bounds, effective_tile_size, intersects, merge_page_statistics, push_page_quads,
-    quad_bounds, tile_jobs, to_u8, worker_count,
-};
+use super::geometry::{bounds, intersects, quad_bounds, to_u8};
+use super::project::{QuadRender, Triangle, merge_page_statistics, push_page_quads};
+use super::tile::{TileBuffer, TileCounters};
 use crate::{Background, Camera, RenderError, RenderOptions, RenderOutput};
 use litematic_material::TextureSet;
 use litematic_mesh::{MeshPage, NO_TEXTURE};

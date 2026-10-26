@@ -1,5 +1,11 @@
 #![allow(dead_code)]
 
+use std::fs;
+use std::io::{BufWriter, Write};
+use std::path::Path;
+use std::process::{Command, Output};
+use tempfile::NamedTempFile;
+
 pub fn named(tag: u8, name: &str, payload: &[u8]) -> Vec<u8> {
     let mut out = vec![tag];
     out.extend_from_slice(&(name.len() as u16).to_be_bytes());
@@ -217,4 +223,99 @@ pub fn v1_block_entity(id: &str, position: [i32; 3]) -> Vec<u8> {
     wrapper.extend(int("y", position[1]));
     wrapper.extend(int("z", position[2]));
     compound_payload(&wrapper)
+}
+
+pub fn write_fixture(bytes: &[u8]) -> NamedTempFile {
+    let mut file = NamedTempFile::new().unwrap();
+    file.write_all(bytes).unwrap();
+    file.flush().unwrap();
+    file
+}
+
+pub fn stone_pair_fixture() -> Vec<u8> {
+    let region = region_with_palette(
+        "main",
+        [0, 0, 0],
+        [2, 1, 1],
+        None,
+        &[
+            palette_entry("minecraft:air"),
+            palette_entry("minecraft:stone"),
+        ],
+        &[5],
+    );
+    litematic(
+        7,
+        None,
+        3700,
+        &metadata("cli-greedy", [2, 1, 1], 1, 2, 2),
+        &[region],
+    )
+}
+
+pub fn run(args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_blockscope"))
+        .args(args)
+        .output()
+        .unwrap()
+}
+
+pub fn write_material_pack(root: &Path) {
+    let assets = root.join("assets/minecraft");
+    fs::create_dir_all(assets.join("blockstates")).unwrap();
+    fs::create_dir_all(assets.join("models/block")).unwrap();
+    fs::create_dir_all(assets.join("textures/block")).unwrap();
+
+    fs::write(
+        assets.join("blockstates/stone.json"),
+        r##"{ "variants": { "": { "model": "block/test_cube" } } }"##,
+    )
+    .unwrap();
+    fs::write(
+        assets.join("models/block/cube.json"),
+        r##"{
+            "elements": [{
+                "from": [0, 0, 0],
+                "to": [16, 16, 16],
+                "faces": {
+                    "down":  { "texture": "#all", "cullface": "down" },
+                    "up":    { "texture": "#all", "cullface": "up" },
+                    "north": { "texture": "#all", "cullface": "north" },
+                    "south": { "texture": "#all", "cullface": "south" },
+                    "west":  { "texture": "#all", "cullface": "west" },
+                    "east":  { "texture": "#all", "cullface": "east" }
+                }
+            }]
+        }"##,
+    )
+    .unwrap();
+    fs::write(
+        assets.join("models/block/cube_all.json"),
+        r##"{
+            "parent": "block/cube",
+            "textures": {
+                "down": "#all", "up": "#all", "north": "#all",
+                "south": "#all", "west": "#all", "east": "#all"
+            }
+        }"##,
+    )
+    .unwrap();
+    fs::write(
+        assets.join("models/block/test_cube.json"),
+        r##"{
+            "parent": "block/cube_all",
+            "textures": { "all": "block/test_texture" }
+        }"##,
+    )
+    .unwrap();
+
+    let file = fs::File::create(assets.join("textures/block/test_texture.png")).unwrap();
+    let mut encoder = png::Encoder::new(BufWriter::new(file), 16, 16);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder.write_header().unwrap();
+    writer
+        .write_image_data(&[200, 40, 40, 255].repeat(16 * 16))
+        .unwrap();
+    writer.finish().unwrap();
 }

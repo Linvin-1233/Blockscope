@@ -11,12 +11,15 @@ pub fn enable_windows_virtual_terminal() {
         const STD_OUTPUT_HANDLE: u32 = 0xFFFFFFF5; // -11i32 as u32
         const ENABLE_VIRTUAL_TERMINAL_PROCESSING: u32 = 0x0004;
 
+        // SAFETY: the signatures match the Win32 console exports.
         unsafe extern "system" {
             fn GetStdHandle(nStdHandle: u32) -> *mut std::ffi::c_void;
             fn GetConsoleMode(hConsoleHandle: *mut std::ffi::c_void, lpMode: *mut u32) -> i32;
             fn SetConsoleMode(hConsoleHandle: *mut std::ffi::c_void, dwMode: u32) -> i32;
         }
 
+        // SAFETY: the handle is checked for null/INVALID_HANDLE_VALUE, and
+        // `mode` is a live u32 buffer for `GetConsoleMode`.
         unsafe {
             let handle = GetStdHandle(STD_OUTPUT_HANDLE);
             if !handle.is_null() && handle as isize != -1 {
@@ -95,10 +98,13 @@ pub fn detect_terminal_size() -> Option<(u16, u16)> {
         #[cfg(not(target_os = "macos"))]
         const TIOCGWINSZ: std::ffi::c_ulong = 0x5413;
 
+        // SAFETY: the variadic signature matches the platform libc `ioctl`.
         unsafe extern "C" {
             fn ioctl(fd: i32, request: std::ffi::c_ulong, ...) -> i32;
         }
 
+        // SAFETY: `WinSize` is a plain C-layout struct, and `ioctl` writes a
+        // `winsize` into the live buffer when `TIOCGWINSZ` succeeds.
         unsafe {
             let mut ws: WinSize = std::mem::zeroed();
             // 1 is STDOUT_FILENO
@@ -134,6 +140,7 @@ pub fn detect_terminal_size() -> Option<(u16, u16)> {
             dw_maximum_window_size: Coord,
         }
 
+        // SAFETY: the signatures match the Win32 console exports.
         unsafe extern "system" {
             fn GetStdHandle(nStdHandle: u32) -> *mut std::ffi::c_void;
             fn GetConsoleScreenBufferInfo(
@@ -142,6 +149,8 @@ pub fn detect_terminal_size() -> Option<(u16, u16)> {
             ) -> i32;
         }
 
+        // SAFETY: the handle is checked for null/INVALID_HANDLE_VALUE, and
+        // `csbi` is a live `ConsoleScreenBufferInfo` buffer.
         unsafe {
             let handle = GetStdHandle(STD_OUTPUT_HANDLE);
             if !handle.is_null() && handle as isize != -1 {

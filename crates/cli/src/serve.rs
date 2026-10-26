@@ -5,7 +5,7 @@ use crate::{
 use clap::Args;
 use litematic_core::LitematicFile;
 use litematic_material::{MaterialSet, MaterialSnapshot};
-use litematic_mesh::Mesh;
+use litematic_mesh::{Mesh, MeshLimits};
 use litematic_render::{LightingProfile, RenderOptions, write_png};
 use litematic_scene::{Scene, sha256};
 use serde::Deserialize;
@@ -60,6 +60,7 @@ struct ServeContext<'a> {
     cache_limit: usize,
     cache_bytes: u64,
     mesh_options: litematic_mesh::MeshBuildOptions,
+    mesh_limits: MeshLimits,
 }
 
 #[derive(Debug, Deserialize)]
@@ -134,6 +135,9 @@ pub fn run(args: ServeArgs) -> Result<(), CliError> {
         cache_limit,
         cache_bytes,
         mesh_options: args.mesh.options(),
+        // Capacity is fixed for the process lifetime, so detect the mesh cap
+        // once instead of once per uncached job.
+        mesh_limits: crate::mesh_limits(args.limits.force_limits),
     };
 
     let stdout = std::io::stdout();
@@ -324,7 +328,7 @@ fn process(
                     scene,
                     context.materials,
                     lod_mode,
-                    &crate::mesh_limits(context.force_limits),
+                    &context.mesh_limits,
                     request.threads.unwrap_or(context.default_threads),
                     context.mesh_options,
                 )?;

@@ -314,10 +314,14 @@ fn peak_rss_bytes() -> Option<u64> {
             ru_nivcsw: i64,
         }
         const RUSAGE_SELF: i32 = 0;
+        // SAFETY: the signature matches the platform libc `getrusage`.
         unsafe extern "C" {
             fn getrusage(who: i32, usage: *mut RUsage) -> i32;
         }
+        // SAFETY: `RUsage` is a plain C-layout struct, and an all-zero value is
+        // a valid starting point for the call.
         let mut usage: RUsage = unsafe { std::mem::zeroed() };
+        // SAFETY: `usage` points to a live `RUsage` buffer.
         let ret = unsafe { getrusage(RUSAGE_SELF, &mut usage) };
         if ret == 0 && usage.ru_maxrss > 0 {
             Some(usage.ru_maxrss as u64)
