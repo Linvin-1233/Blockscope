@@ -2,8 +2,8 @@ use clap::{Args, Parser, Subcommand};
 use litematic_core::{DecodeLimits, LitematicError, LitematicFile, LitematicLimits};
 use litematic_material::{AssetSource, MaterialSet, MaterialSnapshot, TextureFilter};
 use litematic_mesh::{
-    ColorBlockCatalog, Mesh, MeshError, MeshLimits, MeshPage, MeshStatistics, Rgba,
-    build_mesh_parallel, build_mesh_streaming,
+    ColorBlockCatalog, Mesh, MeshBuildOptions, MeshError, MeshLimits, MeshPage, MeshStatistics,
+    Rgba, build_mesh_parallel_with_options, build_mesh_streaming_with_options,
 };
 use litematic_render::{
     Background, RenderError, RenderOptions, RenderOutput, render_mesh, render_mesh_with_textures,
@@ -61,6 +61,22 @@ enum Command {
     Serve(serve::ServeArgs),
     /// Spawn and route jobs across a pool of worker processes.
     Supervise(supervise::SuperviseArgs),
+}
+
+#[derive(Debug, Args, Clone, Copy, Default)]
+pub(crate) struct MeshOptionArgs {
+    /// Merge coplanar faces with identical material and lighting into larger
+    /// quads. Most useful for large flat or repetitive surfaces.
+    #[arg(long)]
+    greedy_mesh: bool,
+}
+
+impl MeshOptionArgs {
+    pub(crate) const fn options(self) -> MeshBuildOptions {
+        MeshBuildOptions {
+            greedy: self.greedy_mesh,
+        }
+    }
 }
 
 #[derive(Debug, Args, Clone, Copy, Default)]
@@ -271,10 +287,12 @@ fn build_scene_mesh(
     snapshot: Option<&MaterialSnapshot>,
     limits: &MeshLimits,
     threads: u32,
+    options: MeshBuildOptions,
 ) -> Result<Mesh, CliError> {
     match snapshot {
         Some(snapshot) => {
-            build_mesh_parallel(scene, snapshot, limits, threads).map_err(CliError::from)
+            build_mesh_parallel_with_options(scene, snapshot, limits, threads, options)
+                .map_err(CliError::from)
         }
         None => {
             let catalog = ColorBlockCatalog::new().map_err(CliError::internal)?;
@@ -283,7 +301,8 @@ fn build_scene_mesh(
                 .iter()
                 .flat_map(|region| region.palette.iter().cloned());
             let snapshot = catalog.snapshot(states);
-            build_mesh_parallel(scene, &snapshot, limits, threads).map_err(CliError::from)
+            build_mesh_parallel_with_options(scene, &snapshot, limits, threads, options)
+                .map_err(CliError::from)
         }
     }
 }
@@ -293,6 +312,7 @@ fn build_scene_mesh_streaming<F>(
     snapshot: Option<&MaterialSnapshot>,
     limits: &MeshLimits,
     threads: u32,
+    options: MeshBuildOptions,
     sink: F,
 ) -> Result<MeshStatistics, CliError>
 where
@@ -300,7 +320,8 @@ where
 {
     match snapshot {
         Some(snapshot) => {
-            build_mesh_streaming(scene, snapshot, limits, threads, sink).map_err(CliError::from)
+            build_mesh_streaming_with_options(scene, snapshot, limits, threads, options, sink)
+                .map_err(CliError::from)
         }
         None => {
             let catalog = ColorBlockCatalog::new().map_err(CliError::internal)?;
@@ -309,7 +330,8 @@ where
                 .iter()
                 .flat_map(|region| region.palette.iter().cloned());
             let snapshot = catalog.snapshot(states);
-            build_mesh_streaming(scene, &snapshot, limits, threads, sink).map_err(CliError::from)
+            build_mesh_streaming_with_options(scene, &snapshot, limits, threads, options, sink)
+                .map_err(CliError::from)
         }
     }
 }
@@ -563,6 +585,7 @@ fn prepare_scene(
     lod: LodMode,
     limits: &MeshLimits,
     threads: u32,
+    options: MeshBuildOptions,
 ) -> Result<PreparedScene, CliError> {
     if threads > MAX_THREADS {
         return Err(CliError::input(format!(
@@ -578,7 +601,7 @@ fn prepare_scene(
 
             let mesh_started = Instant::now();
             let snapshot = materials.map(|materials| material_snapshot(&scene, materials));
-            let mesh = build_scene_mesh(&scene, snapshot.as_ref(), limits, threads)?;
+            let mesh = build_scene_mesh(&scene, snapshot.as_ref(), limits, threads, options)?;
             let mesh_ms = mesh_started.elapsed().as_secs_f64() * 1000.0;
 
             Ok(PreparedScene {
@@ -590,7 +613,7 @@ fn prepare_scene(
                 mesh_ms,
             })
         }
-        LodMode::Auto => prepare_auto(scene, materials, limits, threads),
+        LodMode::Auto => prepare_auto(scene, materials, limits, threads, options),
     }
 }
 
@@ -599,6 +622,7 @@ fn prepare_auto(
     materials: Option<&MaterialSet>,
     base_limits: &MeshLimits,
     threads: u32,
+    options: MeshBuildOptions,
 ) -> Result<PreparedScene, CliError> {
     let capacity = capacity::Capacity::detect();
     let budget_quads = usize::try_from(capacity.suggested_max_quads).unwrap_or(usize::MAX);
@@ -625,7 +649,7 @@ fn prepare_auto(
             let candidate = aggregated.as_ref().unwrap_or(&scene);
             let snapshot = materials.map(|materials| material_snapshot(candidate, materials));
             let mesh_started = Instant::now();
-            let result = build_scene_mesh(candidate, snapshot.as_ref(), &limits, threads);
+            let result = build_scene_mesh(candidate, snapshot.as_ref(), &limits, threads, options);
             mesh_total += mesh_started.elapsed().as_secs_f64() * 1000.0;
             result.map(|mesh| (mesh, snapshot))
         };
@@ -800,6 +824,7 @@ mod tests {
             LodMode::Fixed(1),
             &MeshLimits::default(),
             100_000,
+            MeshBuildOptions::default(),
         ) {
             Ok(_) => panic!("oversized thread request must be rejected"),
             Err(error) => error,

@@ -1,8 +1,12 @@
 use crate::catalog::BlockCatalog;
+use crate::greedy::merge_page_quads;
 use crate::model::{ModelQuad, NO_TEXTURE};
 use crate::page::{PageGrid, PaletteBlock, PaletteTables};
 use crate::view::SceneBlockView;
-use crate::{Mesh, MeshError, MeshLimits, MeshPage, MeshStatistics, Quad, Vertex, encode_uv};
+use crate::{
+    Mesh, MeshBuildOptions, MeshError, MeshLimits, MeshPage, MeshStatistics, Quad, Vertex,
+    encode_uv,
+};
 use litematic_scene::Scene;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
@@ -18,9 +22,19 @@ pub fn build_mesh(
     catalog: &dyn BlockCatalog,
     limits: &MeshLimits,
 ) -> Result<Mesh, MeshError> {
+    build_mesh_with_options(scene, catalog, limits, MeshBuildOptions::default())
+}
+
+/// Build a page-local mesh with explicit construction options.
+pub fn build_mesh_with_options(
+    scene: &Scene,
+    catalog: &dyn BlockCatalog,
+    limits: &MeshLimits,
+    options: MeshBuildOptions,
+) -> Result<Mesh, MeshError> {
     let view = SceneBlockView::new(scene, limits)?;
     let keys = view.page_keys().collect::<Vec<_>>();
-    build_mesh_with_view(scene, &view, catalog, &keys, limits)
+    build_mesh_with_view(scene, &view, catalog, &keys, limits, options)
 }
 
 fn build_mesh_with_view<C: BlockCatalog + ?Sized>(
@@ -29,6 +43,7 @@ fn build_mesh_with_view<C: BlockCatalog + ?Sized>(
     catalog: &C,
     keys: &[[i32; 3]],
     limits: &MeshLimits,
+    options: MeshBuildOptions,
 ) -> Result<Mesh, MeshError> {
     let tables = PaletteTables::new(scene, catalog);
     let mut pages: BTreeMap<[i32; 3], Vec<Quad>> = BTreeMap::new();
@@ -36,7 +51,7 @@ fn build_mesh_with_view<C: BlockCatalog + ?Sized>(
 
     for &coord in keys {
         let origin = page_origin_of(coord)?;
-        let page = build_page(scene, view, &tables, origin)?;
+        let page = build_page(scene, view, &tables, origin, options)?;
         add_page(&mut pages, &mut statistics, page, limits)?;
     }
 
@@ -58,16 +73,30 @@ pub fn build_mesh_parallel<C>(
 where
     C: BlockCatalog + Sync,
 {
+    build_mesh_parallel_with_options(scene, catalog, limits, threads, MeshBuildOptions::default())
+}
+
+/// Build a mesh in parallel with explicit construction options.
+pub fn build_mesh_parallel_with_options<C>(
+    scene: &Scene,
+    catalog: &C,
+    limits: &MeshLimits,
+    threads: u32,
+    options: MeshBuildOptions,
+) -> Result<Mesh, MeshError>
+where
+    C: BlockCatalog + Sync,
+{
     // Avoid building the page index twice when the request is effectively serial.
     if worker_count(threads, usize::MAX) <= 1 {
-        return build_mesh(scene, catalog, limits);
+        return build_mesh_with_options(scene, catalog, limits, options);
     }
 
     let view = SceneBlockView::new(scene, limits)?;
     let keys = view.page_keys().collect::<Vec<_>>();
     let workers = worker_count(threads, keys.len());
     if workers <= 1 {
-        return build_mesh_with_view(scene, &view, catalog, &keys, limits);
+        return build_mesh_with_view(scene, &view, catalog, &keys, limits, options);
     }
 
     let tables = PaletteTables::new(scene, catalog);
@@ -99,7 +128,7 @@ where
                                 return Err(error);
                             }
                         };
-                        let page = match build_page(scene, &view, &tables, origin) {
+                        let page = match build_page(scene, &view, &tables, origin, options) {
                             Ok(page) => page,
                             Err(error) => {
                                 abort.store(true, Ordering::Relaxed);
@@ -171,6 +200,29 @@ pub fn build_mesh_streaming<C, F>(
     catalog: &C,
     limits: &MeshLimits,
     threads: u32,
+    sink: F,
+) -> Result<MeshStatistics, MeshError>
+where
+    C: BlockCatalog + Sync,
+    F: FnMut(&[MeshPage]),
+{
+    build_mesh_streaming_with_options(
+        scene,
+        catalog,
+        limits,
+        threads,
+        MeshBuildOptions::default(),
+        sink,
+    )
+}
+
+/// Build a streaming mesh with explicit construction options.
+pub fn build_mesh_streaming_with_options<C, F>(
+    scene: &Scene,
+    catalog: &C,
+    limits: &MeshLimits,
+    threads: u32,
+    options: MeshBuildOptions,
     mut sink: F,
 ) -> Result<MeshStatistics, MeshError>
 where
@@ -183,7 +235,7 @@ where
     let mut statistics = MeshStatistics::default();
 
     for chunk in keys.chunks(STREAM_PAGES_PER_CHUNK) {
-        let pages = build_page_chunk(scene, &view, &tables, chunk, threads)?;
+        let pages = build_page_chunk(scene, &view, &tables, chunk, threads, options)?;
         let mut mesh_pages = Vec::new();
         for page in pages {
             accumulate_statistics(&mut statistics, &page.statistics);
@@ -230,6 +282,7 @@ fn build_page_chunk(
     tables: &PaletteTables,
     keys: &[[i32; 3]],
     threads: u32,
+    options: MeshBuildOptions,
 ) -> Result<Vec<PageBuild>, MeshError> {
     let origins = keys
         .iter()
@@ -242,7 +295,7 @@ fn build_page_chunk(
 
     if workers <= 1 {
         for (index, &origin) in origins.iter().enumerate() {
-            let page = build_page(scene, view, tables, origin)?;
+            let page = build_page(scene, view, tables, origin, options)?;
             slots[index]
                 .set(page)
                 .map_err(|_| MeshError::limit("duplicate mesh page slot"))?;
@@ -260,7 +313,7 @@ fn build_page_chunk(
                         let Some(&origin) = origins.get(index) else {
                             break;
                         };
-                        match build_page(scene, view, tables, origin) {
+                        match build_page(scene, view, tables, origin, options) {
                             Ok(page) => {
                                 assert!(slots[index].set(page).is_ok(), "mesh page slot set twice");
                             }
@@ -308,6 +361,7 @@ fn build_page(
     view: &SceneBlockView<'_>,
     tables: &PaletteTables,
     origin: [i32; 3],
+    options: MeshBuildOptions,
 ) -> Result<PageBuild, MeshError> {
     let base = [
         i64::from(origin[0]),
@@ -434,6 +488,10 @@ fn build_page(
                 }
             }
         }
+    }
+
+    if options.greedy {
+        merge_page_quads(&mut page.quads, &mut page.statistics);
     }
 
     Ok(page)

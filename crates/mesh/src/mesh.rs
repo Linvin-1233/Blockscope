@@ -115,6 +115,20 @@ pub struct MeshStatistics {
     pub translucent_quads: u64,
 }
 
+/// Optional mesh construction behavior.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MeshBuildOptions {
+    /// Merge coplanar unit faces with identical material, lighting, and UV
+    /// mapping into larger quads. Disabled by default because it only pays off
+    /// on builds with contiguous surfaces.
+    pub greedy: bool,
+}
+
+impl MeshBuildOptions {
+    /// Enable conservative greedy merging.
+    pub const GREEDY: Self = Self { greedy: true };
+}
+
 /// Hard limits for a single mesh build.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MeshLimits {

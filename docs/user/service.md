@@ -13,6 +13,7 @@ blockscope serve --client-jar client.jar --threads 4 --cache 2
 - `--cache`：缓存的 scene/mesh 条数上限
 - `--cache-bytes`：缓存预算（估算字节）；`0` 使用可用内存的一半。超出预算时
   按最旧优先淘汰，单个超大条目仍允许单独保留
+- `--greedy-mesh`：合并同材质、同光照的共面单位面；默认关闭
 - `--force-limits`：提高资源上限；只应对可信输入使用
 - `--ignore-block-entity-nbt`：跳过容器 NBT
 
@@ -68,6 +69,7 @@ blockscope supervise \
 | `--queue` | 等待队列长度；`0` 使用 `workers * 2` |
 | `--cache` | 每个 worker 缓存的 scene/mesh 条数上限 |
 | `--cache-bytes` | 每个 worker 的缓存预算（估算字节）；`0` 使用可用内存的一半 |
+| `--greedy-mesh` | 在每个 worker 中启用贪心网格合并；默认关闭 |
 
 ## 安全边界
 

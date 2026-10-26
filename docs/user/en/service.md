@@ -16,6 +16,8 @@ blockscope serve --client-jar client.jar --threads 4 --cache 2
 - `--cache-bytes`: estimated cache budget in bytes; `0` uses half of available
   memory. The oldest entries are evicted first; one oversized entry is still
   allowed to remain
+- `--greedy-mesh`: merge coplanar unit faces with identical material and
+  lighting; disabled by default
 - `--force-limits`: raise resource caps; trusted input only
 - `--ignore-block-entity-nbt`: skip container NBT
 
@@ -74,6 +76,7 @@ blockscope supervise \
 | `--queue` | Queue length; `0` uses `workers * 2` |
 | `--cache` | Maximum cached scenes/meshes per worker |
 | `--cache-bytes` | Estimated cache budget per worker in bytes; `0` uses half of available memory |
+| `--greedy-mesh` | Enable greedy mesh merging in every worker; disabled by default |
 
 ## Security Boundary
 

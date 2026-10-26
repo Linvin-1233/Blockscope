@@ -78,6 +78,7 @@ is preserved, while each concurrent view holds its own tile buffers.
 | `--threads <N>` | Mesh/rasterizer threads; `0` uses available parallelism, capped at 256 |
 | `--lod 1\|2-16\|auto` | LOD factor; default `1` (disabled) |
 | `--stream-mesh` | Build and render mesh in page chunks without retaining the full mesh; cannot be combined with `--lod auto` |
+| `--greedy-mesh` | Merge coplanar unit faces with identical material and lighting; useful for large flat or repetitive surfaces, disabled by default |
 | `--force-limits` | Raises input, scene, mesh, and pixel caps; can exhaust memory |
 | `--ignore-block-entity-nbt` | Skip container NBT; always on for `mesh`/`render`/`bench` |
 | `-t, --terminal` | Render and display the image directly in the terminal |

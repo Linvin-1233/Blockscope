@@ -57,6 +57,24 @@ The rasterizer consumes the Phase 2 mesh:
 - render layer and shade flag,
 - per-vertex ambient occlusion.
 
+### Greedy merging
+
+`--greedy-mesh` runs a conservative merge pass after face culling. It only
+combines axis-aligned unit faces that share the same normal direction, plane,
+texture, color, render layer, shade flag, uniform ambient-occlusion value, and
+UV mapping. Translucent faces are never merged because their draw order matters.
+
+Textured merges are capped at seven blocks per axis so Q12 UVs stay inside
+`i16`; untextured faces can merge across a whole 16-block page. Plane merging is
+page-local, so a flat surface is split at 16-block boundaries.
+
+The pass is opt-in: random-palette stress scenes see less than 1% fewer quads
+and pay extra mesh time, while large flat or repetitive builds can drop quads
+by about 28x on a full textured 16x16 page (up to 49x for a 7x7 rectangle) and
+up to 256x for untextured pages. Merged quads may change a small number of edge
+pixels because rasterization and UV rounding differ from the original
+per-block quads.
+
 Backface culling uses the camera forward vector:
 
 ```text

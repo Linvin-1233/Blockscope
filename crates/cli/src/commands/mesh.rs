@@ -1,6 +1,6 @@
 use crate::{
-    CliError, GEOMETRY_IGNORES_BLOCK_ENTITY_NBT, LimitArgs, PreparedScene, load_scene, mesh_limits,
-    parse_lod, prepare_scene, warn_forced,
+    CliError, GEOMETRY_IGNORES_BLOCK_ENTITY_NBT, LimitArgs, MeshOptionArgs, PreparedScene,
+    load_scene, mesh_limits, parse_lod, prepare_scene, warn_forced,
 };
 use clap::Args;
 use litematic_mesh::{MeshStatistics, write_obj, write_ply};
@@ -27,6 +27,8 @@ pub(crate) struct MeshArgs {
     #[arg(long, default_value = "1")]
     lod: String,
     #[command(flatten)]
+    mesh: MeshOptionArgs,
+    #[command(flatten)]
     limits: LimitArgs,
 }
 
@@ -44,6 +46,7 @@ pub(crate) fn run(args: MeshArgs) -> Result<(), CliError> {
         lod,
         &mesh_limits(args.limits.force_limits),
         args.threads,
+        args.mesh.options(),
     )?;
 
     if let Some(path) = &args.obj {

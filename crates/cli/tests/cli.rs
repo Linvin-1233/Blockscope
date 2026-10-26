@@ -17,6 +17,27 @@ fn write_fixture(bytes: &[u8]) -> NamedTempFile {
     file
 }
 
+fn stone_pair_fixture() -> Vec<u8> {
+    let region = region_with_palette(
+        "main",
+        [0, 0, 0],
+        [2, 1, 1],
+        None,
+        &[
+            palette_entry("minecraft:air"),
+            palette_entry("minecraft:stone"),
+        ],
+        &[5],
+    );
+    litematic(
+        7,
+        None,
+        3700,
+        &metadata("cli-greedy", [2, 1, 1], 1, 2, 2),
+        &[region],
+    )
+}
+
 fn run(args: &[&str]) -> Output {
     Command::new(env!("CARGO_BIN_EXE_blockscope"))
         .args(args)
@@ -161,6 +182,23 @@ fn mesh_json_parses() {
     assert_eq!(stats.pages, 1);
     assert_eq!(stats.blocks_visited, 2);
     assert_eq!(stats.blocks_rendered, 1);
+}
+
+#[test]
+fn greedy_mesh_flag_merges_flat_faces() {
+    let file = write_fixture(&stone_pair_fixture());
+    let path = file.path().to_str().unwrap();
+
+    let plain = run(&["mesh", path, "--json"]);
+    assert!(plain.status.success());
+    let plain: MeshStatistics = serde_json::from_slice(&plain.stdout).unwrap();
+    assert_eq!(plain.quads, 10);
+
+    let greedy = run(&["mesh", path, "--json", "--greedy-mesh"]);
+    assert!(greedy.status.success());
+    let greedy: MeshStatistics = serde_json::from_slice(&greedy.stdout).unwrap();
+    assert_eq!(greedy.quads, 6);
+    assert_eq!(greedy.vertices, 24);
 }
 
 #[test]

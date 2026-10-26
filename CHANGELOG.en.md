@@ -8,6 +8,14 @@ User-facing changes are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Add `--greedy-mesh`, which merges coplanar unit faces inside a page when they
+  share the same normal, plane, material, lighting, and uniform ambient
+  occlusion. This reduces quad counts and mesh memory on flat or repetitive
+  structures. It is disabled by default because random-palette scenes gain
+  little and still pay the merge cost.
+
 ### Changed
 
 - Mesh building now caches each 16x16x16 page and its border, and pre-resolves

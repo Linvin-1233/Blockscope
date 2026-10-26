@@ -1,5 +1,7 @@
 use crate::capacity::Capacity;
-use crate::{AssetArgs, CliError, load_materials, parse_background, parse_texture_filter};
+use crate::{
+    AssetArgs, CliError, MeshOptionArgs, load_materials, parse_background, parse_texture_filter,
+};
 use clap::Args;
 use litematic_core::LitematicFile;
 use litematic_material::{MaterialSet, MaterialSnapshot};
@@ -34,6 +36,8 @@ pub struct ServeArgs {
     #[arg(long, default_value_t = 0)]
     cache_bytes: u64,
     #[command(flatten)]
+    mesh: MeshOptionArgs,
+    #[command(flatten)]
     limits: crate::LimitArgs,
 }
 
@@ -55,6 +59,7 @@ struct ServeContext<'a> {
     ignore_block_entity_nbt: bool,
     cache_limit: usize,
     cache_bytes: u64,
+    mesh_options: litematic_mesh::MeshBuildOptions,
 }
 
 #[derive(Debug, Deserialize)]
@@ -128,6 +133,7 @@ pub fn run(args: ServeArgs) -> Result<(), CliError> {
         ignore_block_entity_nbt: args.limits.ignore_block_entity_nbt,
         cache_limit,
         cache_bytes,
+        mesh_options: args.mesh.options(),
     };
 
     let stdout = std::io::stdout();
@@ -320,6 +326,7 @@ fn process(
                     lod_mode,
                     &crate::mesh_limits(context.force_limits),
                     request.threads.unwrap_or(context.default_threads),
+                    context.mesh_options,
                 )?;
                 let crate::PreparedScene {
                     scene,

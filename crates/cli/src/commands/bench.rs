@@ -1,7 +1,7 @@
 use crate::{
-    AssetArgs, CliError, GEOMETRY_IGNORES_BLOCK_ENTITY_NBT, LimitArgs, LodMode, PreparedScene,
-    apply_render_limits, load_materials, load_scene, mesh_limits, parse_lod, parse_texture_filter,
-    prepare_scene, warn_forced,
+    AssetArgs, CliError, GEOMETRY_IGNORES_BLOCK_ENTITY_NBT, LimitArgs, LodMode, MeshOptionArgs,
+    PreparedScene, apply_render_limits, load_materials, load_scene, mesh_limits, parse_lod,
+    parse_texture_filter, prepare_scene, warn_forced,
 };
 use clap::Args;
 use litematic_render::{
@@ -42,6 +42,8 @@ pub(crate) struct BenchArgs {
     json: bool,
     #[command(flatten)]
     assets: AssetArgs,
+    #[command(flatten)]
+    mesh: MeshOptionArgs,
     #[command(flatten)]
     limits: LimitArgs,
 }
@@ -94,6 +96,7 @@ pub(crate) fn run(args: BenchArgs) -> Result<(), CliError> {
         lod,
         &mesh_limits(args.limits.force_limits),
         args.threads,
+        args.mesh.options(),
     )?;
 
     let mut options = RenderOptions {

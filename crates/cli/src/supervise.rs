@@ -1,6 +1,6 @@
 use crate::capacity::Capacity;
 use crate::serve::PROTOCOL_VERSION;
-use crate::{AssetArgs, CliError};
+use crate::{AssetArgs, CliError, MeshOptionArgs};
 use clap::Args;
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
@@ -40,6 +40,8 @@ pub struct SuperviseArgs {
     #[arg(long, default_value_t = 0)]
     memory: u64,
     #[command(flatten)]
+    mesh: MeshOptionArgs,
+    #[command(flatten)]
     limits: crate::LimitArgs,
 }
 
@@ -63,6 +65,7 @@ struct Spec {
     threads: u32,
     cache: u32,
     cache_bytes: u64,
+    greedy_mesh: bool,
     assets: Vec<OsString>,
     timeout: Option<Duration>,
     memory_limit: Option<u64>,
@@ -127,6 +130,7 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
         threads,
         cache: args.cache,
         cache_bytes: args.cache_bytes,
+        greedy_mesh: args.mesh.options().greedy,
         assets: args.assets.cli_args(),
         timeout,
         memory_limit,
@@ -522,6 +526,9 @@ fn spawn_worker(
     }
     if spec.ignore_block_entity_nbt {
         command.arg("--ignore-block-entity-nbt");
+    }
+    if spec.greedy_mesh {
+        command.arg("--greedy-mesh");
     }
 
     let mut child = command

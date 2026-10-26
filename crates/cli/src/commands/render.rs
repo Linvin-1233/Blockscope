@@ -1,7 +1,7 @@
 use crate::{
-    AssetArgs, CliError, GEOMETRY_IGNORES_BLOCK_ENTITY_NBT, LimitArgs, LodMode, PreparedScene,
-    apply_render_limits, load_materials, load_scene, mesh_limits, parse_background, parse_lod,
-    parse_texture_filter, prepare_scene, warn_forced,
+    AssetArgs, CliError, GEOMETRY_IGNORES_BLOCK_ENTITY_NBT, LimitArgs, LodMode, MeshOptionArgs,
+    PreparedScene, apply_render_limits, load_materials, load_scene, mesh_limits, parse_background,
+    parse_lod, parse_texture_filter, prepare_scene, warn_forced,
 };
 use clap::Args;
 use litematic_render::{
@@ -73,6 +73,8 @@ pub(crate) struct RenderArgs {
     stream_mesh: bool,
     #[command(flatten)]
     assets: AssetArgs,
+    #[command(flatten)]
+    mesh: MeshOptionArgs,
     #[command(flatten)]
     limits: LimitArgs,
 }
@@ -153,7 +155,14 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
             factor,
             lod_ms,
             mesh_ms,
-        } = prepare_scene(scene, materials.as_ref(), lod, &limits, args.threads)?;
+        } = prepare_scene(
+            scene,
+            materials.as_ref(),
+            lod,
+            &limits,
+            args.threads,
+            args.mesh.options(),
+        )?;
         (scene, snapshot, Some(mesh), factor, lod_ms, mesh_ms)
     };
 
@@ -198,6 +207,7 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
                 snapshot.as_ref(),
                 &limits,
                 args.threads,
+                args.mesh.options(),
                 |pages| {
                     let chunk_started = Instant::now();
                     renderer.render_pages(pages);

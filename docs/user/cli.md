@@ -76,6 +76,7 @@ blockscope preview model.litematic -t
 | `--threads <N>` | mesh/rasterizer 线程数，`0` 使用可用并行度，最多 256 |
 | `--lod 1\|2-16\|auto` | LOD 因子，默认 `1`（关闭） |
 | `--stream-mesh` | 按页构建并渲染网格，不保留完整 Mesh；不能与 `--lod auto` 同用 |
+| `--greedy-mesh` | 合并同材质、同光照的共面单位面；适合大平面和重复结构，默认关闭 |
 | `--force-limits` | 提高输入、场景、网格和像素上限；可能耗尽内存 |
 | `--ignore-block-entity-nbt` | 跳过容器 NBT；`mesh`/`render`/`bench` 默认开启 |
 | `-t, --terminal` | 在终端中直接渲染并显示图像 |
