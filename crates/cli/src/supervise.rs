@@ -30,6 +30,9 @@ pub struct SuperviseArgs {
     /// Parsed scenes each worker keeps for repeated inputs.
     #[arg(long, default_value_t = 1)]
     cache: u32,
+    /// Estimated cache budget per worker in bytes; 0 uses half available memory.
+    #[arg(long, default_value_t = 0)]
+    cache_bytes: u64,
     /// Per-job timeout in seconds; 0 disables it.
     #[arg(long, default_value_t = 60)]
     timeout: u64,
@@ -59,6 +62,7 @@ struct Worker {
 struct Spec {
     threads: u32,
     cache: u32,
+    cache_bytes: u64,
     assets: Vec<OsString>,
     timeout: Option<Duration>,
     memory_limit: Option<u64>,
@@ -122,6 +126,7 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
     let spec = Spec {
         threads,
         cache: args.cache,
+        cache_bytes: args.cache_bytes,
         assets: args.assets.cli_args(),
         timeout,
         memory_limit,
@@ -163,6 +168,7 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
             "threadsPerWorker": threads,
             "queueLimit": queue_limit,
             "cacheEntries": spec.cache,
+            "cacheBytes": spec.cache_bytes,
             "defaultLod": 1,
             "suggestedMaxQuads": capacity.suggested_max_quads,
             "timeoutSeconds": timeout.map(|value| value.as_secs()),
@@ -505,6 +511,8 @@ fn spawn_worker(
         .arg(spec.threads.to_string())
         .arg("--cache")
         .arg(spec.cache.to_string())
+        .arg("--cache-bytes")
+        .arg(spec.cache_bytes.to_string())
         .args(&spec.assets)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

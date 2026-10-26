@@ -30,6 +30,9 @@ pub struct ServeArgs {
     /// Parsed scenes and meshes to keep for repeated inputs.
     #[arg(long, default_value_t = 1)]
     cache: u32,
+    /// Estimated cache budget in bytes; 0 uses half of available memory.
+    #[arg(long, default_value_t = 0)]
+    cache_bytes: u64,
     #[command(flatten)]
     limits: crate::LimitArgs,
 }
@@ -42,6 +45,16 @@ struct CachedScene {
     scene: Arc<Scene>,
     mesh: Arc<Mesh>,
     snapshot: Option<Arc<MaterialSnapshot>>,
+    bytes: u64,
+}
+
+struct ServeContext<'a> {
+    materials: Option<&'a MaterialSet>,
+    default_threads: u32,
+    force_limits: bool,
+    ignore_block_entity_nbt: bool,
+    cache_limit: usize,
+    cache_bytes: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -107,12 +120,19 @@ pub fn run(args: ServeArgs) -> Result<(), CliError> {
     let materials = load_materials(&args.assets)?;
     let mut cache: Vec<CachedScene> = Vec::new();
     let cache_limit = args.cache as usize;
-    let force_limits = args.limits.force_limits;
-    let ignore_block_entity_nbt = args.limits.ignore_block_entity_nbt;
+    let cache_bytes = cache_budget(args.cache_bytes, &capacity);
+    let context = ServeContext {
+        materials: materials.as_ref(),
+        default_threads: args.threads,
+        force_limits: args.limits.force_limits,
+        ignore_block_entity_nbt: args.limits.ignore_block_entity_nbt,
+        cache_limit,
+        cache_bytes,
+    };
 
     let stdout = std::io::stdout();
     let mut out = BufWriter::new(stdout.lock());
-    write_line(&mut out, &hello(&capacity))?;
+    write_line(&mut out, &hello(&capacity, cache_bytes))?;
 
     let stdin = std::io::stdin();
     for line in stdin.lock().lines() {
@@ -128,15 +148,7 @@ pub fn run(args: ServeArgs) -> Result<(), CliError> {
                 return Ok(());
             }
             Ok(Message::Render(request)) => {
-                let response = handle(
-                    *request,
-                    materials.as_ref(),
-                    args.threads,
-                    force_limits,
-                    ignore_block_entity_nbt,
-                    &mut cache,
-                    cache_limit,
-                );
+                let response = handle(*request, &mut cache, &context);
                 write_line(&mut out, &response)?;
             }
             Err(error) => {
@@ -152,7 +164,7 @@ pub fn run(args: ServeArgs) -> Result<(), CliError> {
     Ok(())
 }
 
-fn hello(capacity: &Capacity) -> Value {
+fn hello(capacity: &Capacity, cache_bytes: u64) -> Value {
     json!({
         "type": "hello",
         "protocolVersion": PROTOCOL_VERSION,
@@ -162,6 +174,7 @@ fn hello(capacity: &Capacity) -> Value {
         "cpuQuota": capacity.cpu_quota_milli.map(|milli| f64::from(milli) / 1000.0),
         "memoryLimitBytes": capacity.memory_limit_bytes,
         "memoryAvailableBytes": capacity.memory_available_bytes,
+        "cacheBytes": cache_bytes,
         "suggestedWorkers": capacity.suggested_workers,
         "suggestedThreads": capacity.suggested_threads,
         "suggestedMaxQuads": capacity.suggested_max_quads,
@@ -176,23 +189,11 @@ fn hello(capacity: &Capacity) -> Value {
 
 fn handle(
     request: RenderRequest,
-    materials: Option<&MaterialSet>,
-    default_threads: u32,
-    force_limits: bool,
-    ignore_block_entity_nbt: bool,
     cache: &mut Vec<CachedScene>,
-    cache_limit: usize,
+    context: &ServeContext<'_>,
 ) -> Value {
     let id = request.id.clone();
-    match process(
-        &request,
-        materials,
-        default_threads,
-        force_limits,
-        ignore_block_entity_nbt,
-        cache,
-        cache_limit,
-    ) {
+    match process(&request, cache, context) {
         Ok(result) => result,
         Err(error) => {
             let code = error_code(&error.message);
@@ -212,12 +213,8 @@ fn handle(
 
 fn process(
     request: &RenderRequest,
-    materials: Option<&MaterialSet>,
-    default_threads: u32,
-    force_limits: bool,
-    ignore_block_entity_nbt: bool,
     cache: &mut Vec<CachedScene>,
-    cache_limit: usize,
+    context: &ServeContext<'_>,
 ) -> Result<Value, CliError> {
     let started = Instant::now();
     validate_id(&request.id)?;
@@ -240,7 +237,7 @@ fn process(
         ));
     }
 
-    let limits = crate::decode_limits(force_limits, ignore_block_entity_nbt);
+    let limits = crate::decode_limits(context.force_limits, context.ignore_block_entity_nbt);
     let lod_mode = match request.lod.as_ref() {
         None => crate::LodMode::Fixed(1),
         Some(LodRequest::Factor(factor)) => {
@@ -308,18 +305,21 @@ fn process(
                 )
             } else {
                 let parse_started = Instant::now();
-                let file =
-                    LitematicFile::parse_bytes(&input, &limits, &crate::scene_limits(force_limits))
-                        .map_err(CliError::from)?;
+                let file = LitematicFile::parse_bytes(
+                    &input,
+                    &limits,
+                    &crate::scene_limits(context.force_limits),
+                )
+                .map_err(CliError::from)?;
                 let scene = file.into_scene().map_err(CliError::from)?;
                 let parse_ms = parse_started.elapsed().as_secs_f64() * 1000.0;
 
                 let prepared = crate::prepare_scene(
                     scene,
-                    materials,
+                    context.materials,
                     lod_mode,
-                    &crate::mesh_limits(force_limits),
-                    request.threads.unwrap_or(default_threads),
+                    &crate::mesh_limits(context.force_limits),
+                    request.threads.unwrap_or(context.default_threads),
                 )?;
                 let crate::PreparedScene {
                     scene,
@@ -340,11 +340,9 @@ fn process(
                     scene: Arc::clone(&scene),
                     mesh: Arc::clone(&mesh),
                     snapshot: snapshot.clone(),
+                    bytes: estimated_cache_bytes(&scene, &mesh, snapshot.as_deref()),
                 };
-                if cache_limit > 0 {
-                    cache.insert(0, entry);
-                    cache.truncate(cache_limit);
-                }
+                cache_insert(cache, entry, context.cache_limit, context.cache_bytes);
 
                 (
                     scene, mesh, snapshot, factor, parse_ms, lod_ms, mesh_ms, false, input_hash,
@@ -394,11 +392,11 @@ fn process(
                 background,
                 lighting,
                 supersample: request.supersample.unwrap_or(DEFAULT_SUPERSAMPLE),
-                threads: request.threads.unwrap_or(default_threads),
+                threads: request.threads.unwrap_or(context.default_threads),
                 texture_filter,
                 ..Default::default()
             };
-            crate::apply_render_limits(force_limits, &mut options);
+            crate::apply_render_limits(context.force_limits, &mut options);
             options
         })
         .collect();
@@ -409,7 +407,7 @@ fn process(
         &mesh,
         snapshot.as_deref(),
         &view_options,
-        request.threads.unwrap_or(default_threads),
+        request.threads.unwrap_or(context.default_threads),
     )?;
     let mut outputs = Vec::with_capacity(view_count);
     let mut png_total = 0.0;
@@ -471,6 +469,54 @@ fn process(
             "textures": snapshot.as_ref().map(|value| value.textures().len()).unwrap_or(0),
         },
     }))
+}
+
+fn estimated_cache_bytes(scene: &Scene, mesh: &Mesh, snapshot: Option<&MaterialSnapshot>) -> u64 {
+    scene
+        .heap_bytes()
+        .saturating_add(mesh.heap_bytes())
+        .saturating_add(
+            snapshot
+                .map(|snapshot| snapshot.textures().bytes())
+                .unwrap_or(0),
+        )
+        .saturating_add(std::mem::size_of::<CachedScene>() as u64)
+}
+
+fn cache_insert(
+    cache: &mut Vec<CachedScene>,
+    entry: CachedScene,
+    cache_limit: usize,
+    cache_bytes: u64,
+) {
+    if cache_limit == 0 {
+        return;
+    }
+
+    let mut total = cache.iter().map(|entry| entry.bytes).sum::<u64>();
+    while !cache.is_empty() {
+        let count_over = cache.len() + 1 > cache_limit;
+        let bytes_over = cache_bytes != u64::MAX && total.saturating_add(entry.bytes) > cache_bytes;
+        if !count_over && !bytes_over {
+            break;
+        }
+        if let Some(removed) = cache.pop() {
+            total = total.saturating_sub(removed.bytes);
+        }
+    }
+
+    cache.insert(0, entry);
+    cache.truncate(cache_limit);
+}
+
+fn cache_budget(requested: u64, capacity: &Capacity) -> u64 {
+    if requested > 0 {
+        requested
+    } else if capacity.memory_available_bytes > 0 {
+        capacity.memory_available_bytes / 2
+    } else {
+        u64::MAX
+    }
 }
 
 fn take_cached(cache: &mut Vec<CachedScene>, hash: &str, lod_key: &str) -> Option<CachedScene> {

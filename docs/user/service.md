@@ -10,7 +10,9 @@ blockscope serve --client-jar client.jar --threads 4 --cache 2
 ```
 
 - `--threads`：请求未指定 `threads` 时使用的默认线程数；最多 256
-- `--cache`：缓存的 scene/mesh 数量
+- `--cache`：缓存的 scene/mesh 条数上限
+- `--cache-bytes`：缓存预算（估算字节）；`0` 使用可用内存的一半。超出预算时
+  按最旧优先淘汰，单个超大条目仍允许单独保留
 - `--force-limits`：提高资源上限；只应对可信输入使用
 - `--ignore-block-entity-nbt`：跳过容器 NBT
 
@@ -64,7 +66,8 @@ blockscope supervise \
 | `--timeout` | 每个 job 的超时秒数；`0` 关闭 |
 | `--memory` | 每个 worker 的内存上限（MiB）；`0` 根据可用内存推导 |
 | `--queue` | 等待队列长度；`0` 使用 `workers * 2` |
-| `--cache` | 每个 worker 缓存的 scene/mesh 数量 |
+| `--cache` | 每个 worker 缓存的 scene/mesh 条数上限 |
+| `--cache-bytes` | 每个 worker 的缓存预算（估算字节）；`0` 使用可用内存的一半 |
 
 ## 安全边界
 

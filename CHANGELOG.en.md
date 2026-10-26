@@ -39,6 +39,10 @@ User-facing changes are recorded here. The format follows
 - `serve` skips input reads and re-hashing when `input.hash` is present and the
   cache hits. `supervise` injects the hash it already computed for routing, so
   repeated inputs take the no-read cache path.
+- `serve` and `supervise` add an estimated cache byte budget via
+  `--cache-bytes`, defaulting to half of available memory. The oldest entries
+  are evicted first; a single oversized entry is still allowed to remain, so
+  two huge meshes do not stay resident together.
 
 ## [0.2.0] - 2026-10-25
 

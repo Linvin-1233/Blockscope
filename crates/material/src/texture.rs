@@ -60,6 +60,11 @@ impl TextureSet {
         self.missing
     }
 
+    /// Decoded texture bytes currently held by this set.
+    pub const fn bytes(&self) -> u64 {
+        self.bytes
+    }
+
     /// Load a texture path such as `block/stone` or `minecraft:block/stone`.
     /// Returns `None` when the asset is missing or cannot be decoded.
     pub fn load(&mut self, source: &AssetSource, path: &str) -> Option<u16> {

@@ -71,6 +71,11 @@ impl PackedIndices {
         self.volume
     }
 
+    /// Estimated heap bytes held by the packed words.
+    pub fn heap_bytes(&self) -> u64 {
+        self.longs.capacity() as u64 * std::mem::size_of::<i64>() as u64
+    }
+
     /// Read one entry. `index` must be lower than `volume`.
     pub fn get(&self, index: u64) -> u32 {
         assert!(index < self.volume, "packed index out of range");

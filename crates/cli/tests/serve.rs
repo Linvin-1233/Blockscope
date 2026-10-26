@@ -4,9 +4,10 @@ use serde_json::{Value, json};
 use std::io::{BufRead, BufReader, Lines, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
-fn start() -> (Child, ChildStdin, Lines<BufReader<ChildStdout>>) {
+fn start_with(args: &[&str]) -> (Child, ChildStdin, Lines<BufReader<ChildStdout>>) {
     let mut child = Command::new(env!("CARGO_BIN_EXE_blockscope"))
         .arg("serve")
+        .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -16,6 +17,10 @@ fn start() -> (Child, ChildStdin, Lines<BufReader<ChildStdout>>) {
     let stdin = child.stdin.take().unwrap();
     let stdout = child.stdout.take().unwrap();
     (child, stdin, BufReader::new(stdout).lines())
+}
+
+fn start() -> (Child, ChildStdin, Lines<BufReader<ChildStdout>>) {
+    start_with(&[])
 }
 
 fn read_json(lines: &mut Lines<BufReader<ChildStdout>>) -> Value {
@@ -133,6 +138,43 @@ fn serve_reuses_cached_scene_and_mesh() {
     assert_eq!(second["cacheHit"], true);
     assert_eq!(second["timings"]["meshMs"], 0.0);
     assert_eq!(second["timings"]["parseMs"], 0.0);
+
+    send(&mut stdin, &json!({ "type": "shutdown" }));
+    assert_eq!(read_json(&mut lines)["type"], "bye");
+    assert!(child.wait().unwrap().success());
+}
+
+#[test]
+fn serve_cache_evicts_to_stay_within_its_byte_budget() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = fixture(dir.path());
+    let out_dir = dir.path().join("out");
+
+    let (mut child, mut stdin, mut lines) = start_with(&["--cache", "2", "--cache-bytes", "1"]);
+    let _hello = read_json(&mut lines);
+
+    let request = |id: &str, lod: u32| {
+        json!({
+            "type": "render",
+            "id": id,
+            "input": { "path": input.display().to_string() },
+            "views": [45],
+            "width": 64,
+            "height": 64,
+            "supersample": 1,
+            "lod": lod,
+            "outputDir": out_dir.display().to_string(),
+        })
+    };
+
+    send(&mut stdin, &request("byte-1", 1));
+    assert_eq!(read_json(&mut lines)["cacheHit"], false);
+    send(&mut stdin, &request("byte-1-repeat", 1));
+    assert_eq!(read_json(&mut lines)["cacheHit"], true);
+    send(&mut stdin, &request("byte-2", 2));
+    assert_eq!(read_json(&mut lines)["cacheHit"], false);
+    send(&mut stdin, &request("byte-3", 1));
+    assert_eq!(read_json(&mut lines)["cacheHit"], false);
 
     send(&mut stdin, &json!({ "type": "shutdown" }));
     assert_eq!(read_json(&mut lines)["type"], "bye");

@@ -12,7 +12,10 @@ blockscope serve --client-jar client.jar --threads 4 --cache 2
 
 - `--threads`: default thread count for requests that omit `threads`; capped at
   256
-- `--cache`: number of parsed scenes/meshes to keep
+- `--cache`: maximum number of parsed scenes/meshes to keep
+- `--cache-bytes`: estimated cache budget in bytes; `0` uses half of available
+  memory. The oldest entries are evicted first; one oversized entry is still
+  allowed to remain
 - `--force-limits`: raise resource caps; trusted input only
 - `--ignore-block-entity-nbt`: skip container NBT
 
@@ -69,7 +72,8 @@ blockscope supervise \
 | `--timeout` | Per-job timeout in seconds; `0` disables |
 | `--memory` | Per-worker memory ceiling in MiB; `0` derives it from capacity |
 | `--queue` | Queue length; `0` uses `workers * 2` |
-| `--cache` | Cached scenes/meshes per worker |
+| `--cache` | Maximum cached scenes/meshes per worker |
+| `--cache-bytes` | Estimated cache budget per worker in bytes; `0` uses half of available memory |
 
 ## Security Boundary
 

@@ -1,6 +1,7 @@
 use crate::error::SceneError;
 use crate::{
-    BlockStatistics, Bounds, Diagnostic, DiagnosticCode, DiagnosticSeverity, Region, SceneMetadata,
+    BlockEntity, BlockStateKey, BlockStatistics, Bounds, Diagnostic, DiagnosticCode,
+    DiagnosticSeverity, Region, SceneMetadata,
 };
 
 const MAX_OVERLAP_DIAGNOSTICS: usize = 64;
@@ -16,6 +17,25 @@ pub struct Scene {
 }
 
 impl Scene {
+    /// Estimated heap bytes held by the packed regions and their palettes.
+    pub fn heap_bytes(&self) -> u64 {
+        let mut total = self.regions.capacity() as u64 * std::mem::size_of::<Region>() as u64;
+        for region in &self.regions {
+            total += region.states.heap_bytes();
+            total += region.palette.capacity() as u64 * std::mem::size_of::<BlockStateKey>() as u64;
+            for state in &region.palette {
+                total += state.name.capacity() as u64;
+                for (key, value) in &state.properties {
+                    total += (key.capacity() + value.capacity()) as u64;
+                }
+            }
+            total +=
+                region.block_entities.capacity() as u64 * std::mem::size_of::<BlockEntity>() as u64;
+        }
+        total += self.diagnostics.capacity() as u64 * std::mem::size_of::<Diagnostic>() as u64;
+        total
+    }
+
     pub fn new(
         metadata: SceneMetadata,
         regions: Vec<Region>,

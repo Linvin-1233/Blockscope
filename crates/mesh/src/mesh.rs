@@ -89,6 +89,17 @@ pub struct Mesh {
     pub statistics: MeshStatistics,
 }
 
+impl Mesh {
+    /// Estimated heap bytes held by page vectors and quad storage.
+    pub fn heap_bytes(&self) -> u64 {
+        let mut total = self.pages.capacity() as u64 * std::mem::size_of::<MeshPage>() as u64;
+        for page in &self.pages {
+            total += page.quads.capacity() as u64 * std::mem::size_of::<Quad>() as u64;
+        }
+        total
+    }
+}
+
 /// Mesh counters used by the CLI and golden tests.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

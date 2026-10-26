@@ -45,6 +45,7 @@ supervisor                          worker
 {"type":"hello","protocolVersion":1,"engineVersion":"0.2.0","platform":"windows","cores":12,
  "cpuQuota":null,"memoryLimitBytes":51401564160,"memoryAvailableBytes":21526179840,
  "suggestedWorkers":4,"suggestedThreads":3,"suggestedMaxQuads":54313181,
+ "cacheBytes":10763089920,
  "defaultTier":{"width":2048,"height":2048,"supersample":2}}
 {"type":"render","id":"...","input":{...},...}
 {"type":"result","id":"...","ok":true,...}
@@ -57,7 +58,8 @@ supervisor                          worker
 size its pool from `suggestedWorkers` and `suggestedThreads` instead of guessing
 from the host. Values come from cgroup limits on Linux and
 `GlobalMemoryStatusEx` on Windows; see `blockscope capacity --json` for the same
-data from the command line.
+data from the command line. `cacheBytes` is the estimated scene/mesh cache
+budget; `0` means the worker derives it from available memory.
 
 ## Render request
 
