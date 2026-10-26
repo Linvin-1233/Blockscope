@@ -28,3 +28,9 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 [profile.dev]
 # Disables debuginfo to improve dev and test compile and link times.
 debug = false
+
+[profile.release]
+# Thin LTO and one codegen unit trade build time for runtime throughput in the
+# CPU-bound mesh builder and rasterizer.
+lto = "thin"
+codegen-units = 1

@@ -51,6 +51,20 @@ User-facing changes are recorded here. The format follows
   `--cache-bytes`, defaulting to half of available memory. The oldest entries
   are evicted first; a single oversized entry is still allowed to remain, so
   two huge meshes do not stay resident together.
+- Rasterizer tiles are no longer fixed at 64x64: small outputs shrink the tile
+  so the image keeps about 256 tiles, instead of leaving 12 workers to finish
+  16-64 tiles in two straggling rounds. On `000001` (77.6M quads, 12 threads)
+  the 256x256/ss1 render drops from 5.7-6.4 s to 3.4-3.7 s and 512x512/ss1 from
+  4.5-4.6 s to 3.4-3.6 s; 1024x1024/ss2 is unchanged. RGBA and every statistic
+  except `tiles` stay identical, and `tiles` no longer depends on the worker
+  count.
+- Mesh building reuses the previous page's quad count as the capacity hint for
+  the next 16x16x16 page, avoiding repeated grow-and-copy on dense pages.
+  `000001` mesh time drops from 5.1-5.3 s to 4.35-4.38 s; `000002` stays at
+  about 0.25 s and resident mesh capacity is unchanged.
+- Release builds enable thin LTO and a single codegen unit. On the test host
+  `000001` mesh and render are about 4-5% faster and `000002` parse is about 20%
+  faster; release build time grows accordingly.
 
 ## [0.2.0] - 2026-10-25
 

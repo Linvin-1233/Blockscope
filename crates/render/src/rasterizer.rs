@@ -346,7 +346,7 @@ fn rasterize(
 ) -> Vec<u8> {
     let width = options.internal_width();
     let height = options.internal_height();
-    let tile_size = options.tile_size;
+    let tile_size = effective_tile_size(width, height, options.tile_size);
     let tiles_x = width.div_ceil(tile_size);
     let tiles_y = height.div_ceil(tile_size);
     statistics.tiles = u64::from(tiles_x) * u64::from(tiles_y);
@@ -526,6 +526,22 @@ pub(super) fn worker_count(requested: u32, jobs: usize) -> usize {
     };
 
     available.clamp(1, jobs.max(1))
+}
+
+/// Pick a tile size that leaves enough independent tiles to balance workers.
+///
+/// Tiling does not change the output: every pixel sees the same candidate
+/// quads in the same order. But the configured 64px tile leaves only 16 tiles
+/// at 256x256, so with 12 workers the slowest runs two tiles while the rest
+/// idle. Target a fixed 256 tiles so statistics stay independent of the thread
+/// count, and never exceed the configured size.
+pub(super) fn effective_tile_size(width: u32, height: u32, requested: u32) -> u32 {
+    let requested = requested.max(1);
+    let pixels = f64::from(width) * f64::from(height);
+    let side = (pixels / 256.0).sqrt().ceil() as u32;
+    let floor = requested.min(8);
+
+    side.clamp(floor, requested)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1083,4 +1099,18 @@ fn dot3(left: [f64; 3], right: [f64; 3]) -> f64 {
 
 pub(super) fn to_u8(value: f32) -> u8 {
     (value.clamp(0.0, 1.0) * 255.0).round() as u8
+}
+
+#[cfg(test)]
+mod tests {
+    use super::effective_tile_size;
+
+    #[test]
+    fn tile_size_keeps_small_outputs_parallel() {
+        assert_eq!(effective_tile_size(256, 256, 64), 16);
+        assert_eq!(effective_tile_size(512, 512, 64), 32);
+        assert_eq!(effective_tile_size(2048, 2048, 64), 64);
+        assert_eq!(effective_tile_size(96, 96, 64), 8);
+        assert_eq!(effective_tile_size(64, 64, 1), 1);
+    }
 }

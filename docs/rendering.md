@@ -86,7 +86,8 @@ cull.
 
 ## Rasterizer
 
-- The image is split into square tiles; default 64x64.
+- The image is split into square tiles, at most 64x64. Small outputs shrink
+  the tile so the image still splits into about 256 tiles.
 - Each tile owns an RGBA f32 color buffer and an f64 depth buffer.
 - Triangles are rasterized with edge functions and barycentric weights.
 - Depth is interpolated linearly, which is correct for orthographic projection.
@@ -200,6 +201,12 @@ or count them against `max_pages`; a scene with no air keeps the bounding-box
 fast path. `blocksVisited` now counts cells in indexed pages, so an all-air mesh
 reports zero visited blocks.
 
+Each worker reuses the previous page's quad count as the capacity hint for the
+next page. Pages in one scene usually have similar density, so dense pages stop
+growing through a dozen reallocations while sparse pages still reserve little.
+On `000001` the mesh pass dropped from 5.1-5.3 s to 4.35-4.38 s; `000002` stayed
+at about 0.25 s and the resident mesh capacity is unchanged.
+
 Measured on the test host with the color-only catalog, 1024x1024, supersample 2,
 12 threads:
 
@@ -242,6 +249,22 @@ Tiles are independent. The rasterizer takes work from a shared atomic cursor and
 spawns up to `threads` scoped workers; each worker owns its tile color and depth
 buffers and returns a finished tile. Results are sorted by tile index before
 assembly, so pixel output and statistics do not depend on scheduling order.
+
+The tiling is an implementation detail: every pixel sees the same candidate
+quads in the same order, so shrinking tiles does not change the image. The
+rasterizer therefore targets about 256 tiles instead of always using 64x64. A
+fixed 64px tile leaves only 16 tiles at 256x256 and 64 at 512x512; with 12
+workers the slowest runs two tiles while the rest idle, and small previews came
+out slower than 1024x1024. Measured on the 77.6M-quad fixture at 12 threads:
+
+| Output | Tiles before/after | Render before/after |
+|---|---|---|
+| 256x256, ss1 | 16 / 256 | 5.7-6.4 s / **3.4-3.7 s** |
+| 512x512, ss1 | 64 / 256 | 4.5-4.6 s / **3.4-3.6 s** |
+| 1024x1024, ss2 | 1024 / 1024 | 4.1-4.7 s / 4.1-4.7 s |
+
+The `tiles` statistic reports the effective tiling. It stays independent of the
+worker count because the target is fixed.
 
 `threads = 0` chooses `available_parallelism()`. The default is 0.
 
@@ -295,7 +318,7 @@ shadows, or biome tinting. It is stable and deterministic.
 | elevation | 30° |
 | background | transparent |
 | lighting | simple-ao-v1 |
-| tile size | 64 |
+| tile size (maximum) | 64 |
 | padding | 16 px |
 | supersample | 2 |
 | threads | 0 (auto) |
@@ -335,6 +358,16 @@ Reference run on a 12-core Windows host (`tile_bench` synthetic scene, 96,882
 quads, 1024x1024 output, supersample 2, median of 3): 1 thread 300 ms, 2 threads
 174 ms, auto threads 81 ms. Treat these as a scaling sanity check, not a CI
 threshold.
+
+Measured and rejected on the same host:
+
+- Replacing `chunks_mut(..).skip(row_start)` with a pre-sliced row iterator:
+  within run-to-run noise.
+- Greedy merging on the 77.6M-quad stress fixture: 77.58M to 77.45M quads
+  (-0.16%) for about 1 s more mesh time, so it stays opt-in.
+- Front-to-back opaque ordering: pixel writes are about 12% of render time
+  (supersample 1 vs 2 on the same scene), so sorting cost is unlikely to pay
+  back.
 
 ## Render Statistics
 

@@ -15,6 +15,9 @@ use std::thread;
 
 const MAX_WORKERS: usize = 256;
 const STREAM_PAGES_PER_CHUNK: usize = 32;
+/// First per-page quad capacity. Pages in a scene usually have similar density,
+/// so later pages reuse the previous page's count instead of growing from zero.
+const INITIAL_PAGE_QUADS: usize = 1024;
 
 /// Build a page-local mesh from a scene using the supplied catalog.
 pub fn build_mesh(
@@ -48,10 +51,12 @@ fn build_mesh_with_view<C: BlockCatalog + ?Sized>(
     let tables = PaletteTables::new(scene, catalog);
     let mut pages: BTreeMap<[i32; 3], Vec<Quad>> = BTreeMap::new();
     let mut statistics = MeshStatistics::default();
+    let mut hint = INITIAL_PAGE_QUADS;
 
     for &coord in keys {
         let origin = page_origin_of(coord)?;
-        let page = build_page(scene, view, &tables, origin, options)?;
+        let page = build_page(scene, view, &tables, origin, options, hint)?;
+        hint = page_capacity_hint(hint, page.quads.len());
         add_page(&mut pages, &mut statistics, page, limits)?;
     }
 
@@ -112,6 +117,7 @@ where
                 scope.spawn(|| -> Result<WorkerBuild, MeshError> {
                     let mut local_pages = Vec::new();
                     let mut local_stats = MeshStatistics::default();
+                    let mut hint = INITIAL_PAGE_QUADS;
                     loop {
                         if abort.load(Ordering::Relaxed) {
                             break;
@@ -128,13 +134,14 @@ where
                                 return Err(error);
                             }
                         };
-                        let page = match build_page(scene, &view, &tables, origin, options) {
+                        let page = match build_page(scene, &view, &tables, origin, options, hint) {
                             Ok(page) => page,
                             Err(error) => {
                                 abort.store(true, Ordering::Relaxed);
                                 return Err(error);
                             }
                         };
+                        hint = page_capacity_hint(hint, page.quads.len());
 
                         accumulate_statistics(&mut local_stats, &page.statistics);
 
@@ -294,8 +301,10 @@ fn build_page_chunk(
     let error = Mutex::new(None);
 
     if workers <= 1 {
+        let mut hint = INITIAL_PAGE_QUADS;
         for (index, &origin) in origins.iter().enumerate() {
-            let page = build_page(scene, view, tables, origin, options)?;
+            let page = build_page(scene, view, tables, origin, options, hint)?;
+            hint = page_capacity_hint(hint, page.quads.len());
             slots[index]
                 .set(page)
                 .map_err(|_| MeshError::limit("duplicate mesh page slot"))?;
@@ -308,13 +317,15 @@ fn build_page_chunk(
                 let error = &error;
                 let origins = &origins;
                 scope.spawn(move || {
+                    let mut hint = INITIAL_PAGE_QUADS;
                     loop {
                         let index = cursor.fetch_add(1, Ordering::Relaxed);
                         let Some(&origin) = origins.get(index) else {
                             break;
                         };
-                        match build_page(scene, view, tables, origin, options) {
+                        match build_page(scene, view, tables, origin, options, hint) {
                             Ok(page) => {
+                                hint = page_capacity_hint(hint, page.quads.len());
                                 assert!(slots[index].set(page).is_ok(), "mesh page slot set twice");
                             }
                             Err(page_error) => {
@@ -356,12 +367,23 @@ struct PageBuild {
     statistics: MeshStatistics,
 }
 
+/// Capacity hint for the next page in the same worker: reuse the last page's
+/// quad count, halving it for empty pages so sparse regions stop reserving.
+fn page_capacity_hint(previous: usize, quads: usize) -> usize {
+    if quads == 0 {
+        (previous / 2).max(64)
+    } else {
+        quads
+    }
+}
+
 fn build_page(
     scene: &Scene,
     view: &SceneBlockView<'_>,
     tables: &PaletteTables,
     origin: [i32; 3],
     options: MeshBuildOptions,
+    capacity_hint: usize,
 ) -> Result<PageBuild, MeshError> {
     let base = [
         i64::from(origin[0]),
@@ -377,7 +399,7 @@ fn build_page(
     ];
     let mut page = PageBuild {
         origin,
-        quads: Vec::new(),
+        quads: Vec::with_capacity(capacity_hint),
         statistics: MeshStatistics::default(),
     };
 

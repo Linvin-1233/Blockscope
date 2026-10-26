@@ -1,8 +1,8 @@
 use super::downsample::downsample;
 use super::{
     QuadRender, RenderStatistics, TileBuffer, TileCounters, TileJob, Triangle, bin_quads,
-    bin_triangles, bounds, intersects, merge_page_statistics, push_page_quads, quad_bounds,
-    tile_jobs, to_u8, worker_count,
+    bin_triangles, bounds, effective_tile_size, intersects, merge_page_statistics, push_page_quads,
+    quad_bounds, tile_jobs, to_u8, worker_count,
 };
 use crate::{Background, Camera, RenderError, RenderOptions, RenderOutput};
 use litematic_material::TextureSet;
@@ -55,7 +55,7 @@ impl<'a> StreamingRenderer<'a> {
     ) -> Self {
         let width = options.internal_width();
         let height = options.internal_height();
-        let tile_size = options.tile_size;
+        let tile_size = effective_tile_size(width, height, options.tile_size);
         let tiles: Vec<Mutex<StreamTile>> = tile_jobs(width, height, tile_size)
             .into_iter()
             .map(|job| Mutex::new(StreamTile::new(job, options.background)))

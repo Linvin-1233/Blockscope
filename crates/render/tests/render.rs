@@ -203,6 +203,45 @@ fn parallel_tiles_match_single_thread() {
     assert_eq!(single.rgba, parallel.rgba);
     assert_eq!(single.statistics, parallel.statistics);
 }
+
+#[test]
+fn tile_size_does_not_change_output() {
+    let scene = scene(vec![region(
+        "main",
+        [0, 0, 0],
+        [2, 2, 1],
+        &["minecraft:air", "minecraft:stone"],
+        &[1, 0, 0, 1],
+    )]);
+    let render_with = |tile_size| {
+        render(
+            &scene,
+            &RenderOptions {
+                width: 256,
+                height: 256,
+                supersample: 1,
+                tile_size,
+                threads: 4,
+                ..Default::default()
+            },
+        )
+    };
+
+    let large = render_with(64);
+    let small = render_with(8);
+
+    assert_eq!(large.rgba, small.rgba);
+    assert_eq!(
+        large.statistics.pixels_tested,
+        small.statistics.pixels_tested
+    );
+    assert_eq!(
+        large.statistics.pixels_written,
+        small.statistics.pixels_written
+    );
+    assert!(large.statistics.tiles < small.statistics.tiles);
+}
+
 #[test]
 fn multi_page_parallel_render_matches_single_thread() {
     let mut values = vec![0u32; 34 * 34];
