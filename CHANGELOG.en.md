@@ -51,13 +51,17 @@ User-facing changes are recorded here. The format follows
   `--cache-bytes`, defaulting to half of available memory. The oldest entries
   are evicted first; a single oversized entry is still allowed to remain, so
   two huge meshes do not stay resident together.
-- Rasterizer tiles are no longer fixed at 64x64: small outputs shrink the tile
-  so the image keeps about 256 tiles, instead of leaving 12 workers to finish
-  16-64 tiles in two straggling rounds. On `000001` (77.6M quads, 12 threads)
-  the 256x256/ss1 render drops from 5.7-6.4 s to 3.4-3.7 s and 512x512/ss1 from
-  4.5-4.6 s to 3.4-3.6 s; 1024x1024/ss2 is unchanged. RGBA and every statistic
-  except `tiles` stay identical, and `tiles` no longer depends on the worker
-  count.
+- Rasterizer tiles target about 1024 tiles: a 1024x1024 internal image uses
+  32px tiles and a 2048x2048 image keeps 64px, instead of leaving 12 workers to
+  finish 16-64 tiles in two straggling rounds. On `000001` (77.6M quads, 12
+  threads) 256x256/ss1 drops from 5.7-6.4 s to 3.1-3.2 s, 512x512/ss1 from
+  4.5-4.6 s to 3.1-3.2 s, 512x512/ss2 from 3.8 s to 3.2 s, and 1024x1024/ss1
+  from 3.7 s to 3.2 s. RGBA stays identical and `tiles` no longer depends on
+  the worker count.
+- The rasterizer monomorphizes the triangle loop for textured and untextured
+  geometry. The untextured path drops the per-pixel texture branch and UV
+  interpolation; on `000001` (no textured triangles) the 1024x1024/ss2 render
+  drops from 4.1 s to 3.9 s with identical output.
 - Mesh page capacity now follows the median quads-per-non-air-block ratio of the
   last few pages with a 15% margin. Growth adds a quarter of the current
   capacity instead of doubling, and pages far below their reservation shrink at

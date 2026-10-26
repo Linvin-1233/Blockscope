@@ -6,7 +6,7 @@ use super::{
 };
 use crate::{Background, Camera, RenderError, RenderOptions, RenderOutput};
 use litematic_material::TextureSet;
-use litematic_mesh::MeshPage;
+use litematic_mesh::{MeshPage, NO_TEXTURE};
 use litematic_scene::Scene;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Barrier, Mutex, OnceLock};
@@ -446,13 +446,23 @@ fn render_stream_translucent(
         for triangle in translucent {
             let colors = triangle.colors();
             let uvs = triangle.uvs();
-            buffer.rasterize_triangle(
-                &triangle.points,
-                &colors,
-                &uvs,
-                triangle.texture,
-                triangle.layer,
-            );
+            if triangle.texture == NO_TEXTURE {
+                buffer.rasterize_triangle::<false>(
+                    &triangle.points,
+                    &colors,
+                    &uvs,
+                    triangle.texture,
+                    triangle.layer,
+                );
+            } else {
+                buffer.rasterize_triangle::<true>(
+                    &triangle.points,
+                    &colors,
+                    &uvs,
+                    triangle.texture,
+                    triangle.layer,
+                );
+            }
         }
     };
 

@@ -112,6 +112,13 @@ color interpolation still use the same expressions in the same order, so
 accepted fragments are bit-identical while most rejected pixels are never
 visited. `pixelsTested` counts the fragments that remain after this clipping.
 
+### Untextured triangles
+
+The triangle loop is monomorphized on whether the quad has a texture. The
+untextured specialization drops the per-pixel texture-sample branch and UV
+interpolation entirely. On the 77.6M-quad color-only fixture, the 1024x1024
+supersample-2 render dropped from 4.1 s to 3.9 s with identical output.
+
 ### Block entity NBT
 
 The renderer never reads block entity contents, so `mesh`, `bench`, and `render`
@@ -254,16 +261,23 @@ assembly, so pixel output and statistics do not depend on scheduling order.
 
 The tiling is an implementation detail: every pixel sees the same candidate
 quads in the same order, so shrinking tiles does not change the image. The
-rasterizer therefore targets about 256 tiles instead of always using 64x64. A
+rasterizer therefore targets about 1024 tiles instead of always using 64x64. A
 fixed 64px tile leaves only 16 tiles at 256x256 and 64 at 512x512; with 12
 workers the slowest runs two tiles while the rest idle, and small previews came
-out slower than 1024x1024. Measured on the 77.6M-quad fixture at 12 threads:
+out slower than 1024x1024. At a 1024x1024 internal image this yields 32px tiles,
+which measured faster than 64px; at 2048x2048 it keeps 64px, which measured
+faster than 32px. Measured on the 77.6M-quad fixture at 12 threads:
 
 | Output | Tiles before/after | Render before/after |
 |---|---|---|
-| 256x256, ss1 | 16 / 256 | 5.7-6.4 s / **3.4-3.7 s** |
-| 512x512, ss1 | 64 / 256 | 4.5-4.6 s / **3.4-3.6 s** |
-| 1024x1024, ss2 | 1024 / 1024 | 4.1-4.7 s / 4.1-4.7 s |
+| 256x256, ss1 | 16 / 1024 | 5.7-6.4 s / **3.1-3.2 s** |
+| 512x512, ss1 | 64 / 1024 | 4.5-4.6 s / **3.1-3.2 s** |
+| 512x512, ss2 | 256 / 1024 | 3.8 s / **3.2 s** |
+| 1024x1024, ss1 | 256 / 1024 | 3.7 s / **3.2 s** |
+| 1024x1024, ss2 | 1024 / 1024 | 4.1 s / **3.9 s** |
+
+The 1024x1024/ss2 row keeps the same tiling; its difference comes from the
+textured/untextured triangle specialization described below.
 
 The `tiles` statistic reports the effective tiling. It stays independent of the
 worker count because the target is fixed.

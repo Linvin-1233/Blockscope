@@ -533,12 +533,14 @@ pub(super) fn worker_count(requested: u32, jobs: usize) -> usize {
 /// Tiling does not change the output: every pixel sees the same candidate
 /// quads in the same order. But the configured 64px tile leaves only 16 tiles
 /// at 256x256, so with 12 workers the slowest runs two tiles while the rest
-/// idle. Target a fixed 256 tiles so statistics stay independent of the thread
-/// count, and never exceed the configured size.
+/// idle. Target a fixed 1024 tiles so statistics stay independent of the
+/// thread count, and never exceed the configured size. At a 1024x1024 internal
+/// image this yields 32px tiles, which measured faster than 64px; at
+/// 2048x2048 it keeps 64px tiles, which measured faster than 32px.
 pub(super) fn effective_tile_size(width: u32, height: u32, requested: u32) -> u32 {
     let requested = requested.max(1);
     let pixels = f64::from(width) * f64::from(height);
-    let side = (pixels / 256.0).sqrt().ceil() as u32;
+    let side = (pixels / 1024.0).sqrt().ceil() as u32;
     let floor = requested.min(8);
 
     side.clamp(floor, requested)
@@ -673,13 +675,23 @@ fn render_tile(
         for triangle in translucent {
             let colors = triangle.colors();
             let uvs = triangle.uvs();
-            tile.rasterize_triangle(
-                &triangle.points,
-                &colors,
-                &uvs,
-                triangle.texture,
-                triangle.layer,
-            );
+            if triangle.texture == NO_TEXTURE {
+                tile.rasterize_triangle::<false>(
+                    &triangle.points,
+                    &colors,
+                    &uvs,
+                    triangle.texture,
+                    triangle.layer,
+                );
+            } else {
+                tile.rasterize_triangle::<true>(
+                    &triangle.points,
+                    &colors,
+                    &uvs,
+                    triangle.texture,
+                    triangle.layer,
+                );
+            }
         }
     }
 
@@ -810,10 +822,23 @@ impl TileBuffer<'_> {
             ]
         };
 
+        if quad.texture == NO_TEXTURE {
+            self.rasterize_quad_triangles::<false>(quad, &colors, &uvs);
+        } else {
+            self.rasterize_quad_triangles::<true>(quad, &colors, &uvs);
+        }
+    }
+
+    fn rasterize_quad_triangles<const TEXTURED: bool>(
+        &mut self,
+        quad: &QuadRender,
+        colors: &[[f32; 4]; 4],
+        uvs: &[[f32; 2]; 4],
+    ) {
         let points = [quad.points[0], quad.points[1], quad.points[2]];
         let triangle_colors = [colors[0], colors[1], colors[2]];
         let triangle_uvs = [uvs[0], uvs[1], uvs[2]];
-        self.rasterize_triangle(
+        self.rasterize_triangle::<TEXTURED>(
             &points,
             &triangle_colors,
             &triangle_uvs,
@@ -824,7 +849,7 @@ impl TileBuffer<'_> {
         let points = [quad.points[0], quad.points[2], quad.points[3]];
         let triangle_colors = [colors[0], colors[2], colors[3]];
         let triangle_uvs = [uvs[0], uvs[2], uvs[3]];
-        self.rasterize_triangle(
+        self.rasterize_triangle::<TEXTURED>(
             &points,
             &triangle_colors,
             &triangle_uvs,
@@ -833,7 +858,7 @@ impl TileBuffer<'_> {
         );
     }
 
-    pub(super) fn rasterize_triangle(
+    pub(super) fn rasterize_triangle<const TEXTURED: bool>(
         &mut self,
         points: &[[f64; 3]; 3],
         colors: &[[f32; 4]; 3],
@@ -876,10 +901,10 @@ impl TileBuffer<'_> {
         let local_y0 = self.y0 as i32;
         let width = self.width as usize;
         let textures = self.textures;
-        let sampled_texture = if texture == NO_TEXTURE {
-            None
-        } else {
+        let sampled_texture = if TEXTURED {
             textures.and_then(|textures| textures.get(texture))
+        } else {
+            None
         };
         let filter = self.filter;
         let mut tested = 0u64;
@@ -1107,8 +1132,9 @@ mod tests {
 
     #[test]
     fn tile_size_keeps_small_outputs_parallel() {
-        assert_eq!(effective_tile_size(256, 256, 64), 16);
-        assert_eq!(effective_tile_size(512, 512, 64), 32);
+        assert_eq!(effective_tile_size(256, 256, 64), 8);
+        assert_eq!(effective_tile_size(512, 512, 64), 16);
+        assert_eq!(effective_tile_size(1024, 1024, 64), 32);
         assert_eq!(effective_tile_size(2048, 2048, 64), 64);
         assert_eq!(effective_tile_size(96, 96, 64), 8);
         assert_eq!(effective_tile_size(64, 64, 1), 1);

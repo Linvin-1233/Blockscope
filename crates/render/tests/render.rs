@@ -217,8 +217,8 @@ fn tile_size_does_not_change_output() {
         render(
             &scene,
             &RenderOptions {
-                width: 256,
-                height: 256,
+                width: 512,
+                height: 512,
                 supersample: 1,
                 tile_size,
                 threads: 4,
