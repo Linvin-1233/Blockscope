@@ -307,6 +307,34 @@ fn streaming_builder_matches_the_full_mesh() {
 }
 
 #[test]
+fn streaming_builder_enforces_limits() {
+    use litematic_mesh::{ColorSnapshot, build_mesh_streaming};
+
+    let region = make_region(
+        "main",
+        [0, 0, 0],
+        [2, 1, 1],
+        &["minecraft:air", "minecraft:stone"],
+        &[1, 1],
+    );
+    let scene = make_scene(vec![region]);
+    let catalog = ColorBlockCatalog::default();
+    let states = scene
+        .regions
+        .iter()
+        .flat_map(|region| region.palette.iter().cloned());
+    let snapshot: ColorSnapshot = catalog.snapshot(states);
+    let limits = MeshLimits {
+        max_pages: 10,
+        max_quads: 5,
+        max_vertices: 100,
+    };
+
+    let error = build_mesh_streaming(&scene, &snapshot, &limits, 1, |_| {}).unwrap_err();
+    assert_eq!(error.code, MeshErrorCode::MeshLimitExceeded);
+}
+
+#[test]
 fn all_air_scene_produces_an_empty_mesh() {
     let region = make_region("main", [0, 0, 0], [2, 1, 1], &["minecraft:air"], &[0, 0]);
     let mesh = build(&make_scene(vec![region]), &MeshLimits::default());

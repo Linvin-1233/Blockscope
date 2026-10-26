@@ -184,9 +184,13 @@ mod tests {
 
     #[test]
     fn cursor_matches_random_access() {
-        for bits in 2..=12 {
+        for bits in 2..=32 {
             let count = 1000;
-            let mask = (1u32 << bits) - 1;
+            let mask = if bits == 32 {
+                u32::MAX
+            } else {
+                (1u32 << bits) - 1
+            };
             let values: Vec<u32> = (0..count).map(|index| (index as u32 * 37) & mask).collect();
             let packed = PackedIndices::from_values(bits, &values).unwrap();
             let decoded: Vec<u32> = packed.iter().collect();
