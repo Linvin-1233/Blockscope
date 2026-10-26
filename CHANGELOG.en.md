@@ -6,6 +6,18 @@ User-facing changes are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- Mesh building now caches each 16x16x16 page and its border, and pre-resolves
+  every region palette into an immutable material table, so culling and ambient
+  occlusion are array reads. A full opaque block is skipped when all six
+  neighbours occlude it. On the test fixtures (1024x1024, supersample 2, 12
+  threads, color-only materials) mesh time drops from 17.3-20.4 s to 5.7-6.1 s
+  for `000001` exact and from 11.7 s to 0.36 s for `000002` exact. Mesh
+  statistics and PNG SHA-256 values are unchanged.
+
 ## [0.2.0] - 2026-10-25
 
 ### Added

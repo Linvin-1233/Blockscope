@@ -5,6 +5,16 @@
 本文件记录面向用户的变更。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
+## [Unreleased]
+
+### Changed
+
+- 网格构建按 16x16x16 页缓存方块及其边界，并把每个 region 的 palette 预解析为
+  不可变材质表，剔除和环境光遮蔽改为数组索引；完整不透明方块在六个邻居都遮挡时
+  直接跳过模型。测试夹具（1024x1024、超采样 2、12 线程、色块材质）的 mesh 耗时：
+  `000001` exact 17.3-20.4 s → 5.7-6.1 s，`000002` exact 11.7 s → 0.36 s。
+  网格统计和 PNG SHA-256 保持不变。
+
 ## [0.2.0] - 2026-10-25
 
 ### Added

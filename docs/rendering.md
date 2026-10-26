@@ -159,6 +159,34 @@ Both used to need the full per-quad table (13.5 GB and roughly 45 GB
 respectively). A small-scene equality test forces streaming and compares RGBA
 and statistics against the table path.
 
+### Mesh page cache
+
+Culling and ambient occlusion used to resolve the same block and its neighbours
+through the region index and the material catalog for every model quad. The
+builder now resolves a 16x16x16 page plus its one-block border once, then serves
+culling and AO from an array. Each region palette is also resolved to an
+immutable material table up front, so the inner loop indexes by palette id
+instead of hashing a block-state key and cloning a model `Arc`.
+
+A full-cube block whose six neighbours all occlude is skipped without visiting
+its model quads. Equal states are assigned one canonical id across regions, so
+the existing same-state culling still works across region and page boundaries.
+Region order and y/z/x block order are unchanged; mesh statistics and PNG output
+stay byte-identical.
+
+Measured on the test host with the color-only catalog, 1024x1024, supersample 2,
+12 threads:
+
+| Scene | Before mesh | After mesh | Before/after render | Peak working set |
+|---|---|---|---|---|
+| `000001` exact, 77.6M quads | 17.3-20.4 s | 5.7-6.1 s | 4.6 s / 4.2 s | 7.16 GB / 7.17 GB |
+| `000002` exact, 50.7M blocks | 11.7 s | 0.36 s | 0.21 s / 0.21 s | 471 MB / 490 MB |
+
+The page cache costs about 47 KB per worker and does not change the mesh
+representation, so peak memory is still dominated by the resident `Mesh`. The
+PNG SHA-256 values for both exact fixtures and the `000001` LOD 4 render were
+unchanged.
+
 ### Triangle binning
 
 Before rasterization, each triangle is inserted into every tile its screen-space

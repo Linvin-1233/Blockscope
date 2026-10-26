@@ -1,8 +1,9 @@
 use crate::catalog::BlockCatalog;
 use crate::model::{ModelQuad, NO_TEXTURE};
+use crate::page::{PageGrid, PaletteBlock, PaletteTables};
 use crate::view::SceneBlockView;
 use crate::{Mesh, MeshError, MeshLimits, MeshPage, MeshStatistics, Quad, Vertex, encode_uv};
-use litematic_scene::{BlockStateKey, Scene};
+use litematic_scene::Scene;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::thread;
@@ -27,12 +28,13 @@ fn build_mesh_with_view<C: BlockCatalog + ?Sized>(
     keys: &[[i32; 3]],
     limits: &MeshLimits,
 ) -> Result<Mesh, MeshError> {
+    let tables = PaletteTables::new(scene, catalog);
     let mut pages: BTreeMap<[i32; 3], Vec<Quad>> = BTreeMap::new();
     let mut statistics = MeshStatistics::default();
 
     for &coord in keys {
         let origin = page_origin_of(coord)?;
-        let page = build_page(scene, view, catalog, origin)?;
+        let page = build_page(scene, view, &tables, origin)?;
         add_page(&mut pages, &mut statistics, page, limits)?;
     }
 
@@ -66,6 +68,7 @@ where
         return build_mesh_with_view(scene, &view, catalog, &keys, limits);
     }
 
+    let tables = PaletteTables::new(scene, catalog);
     let cursor = AtomicUsize::new(0);
     let abort = AtomicBool::new(false);
     let quads = AtomicU64::new(0);
@@ -94,7 +97,7 @@ where
                                 return Err(error);
                             }
                         };
-                        let page = match build_page(scene, &view, catalog, origin) {
+                        let page = match build_page(scene, &view, &tables, origin) {
                             Ok(page) => page,
                             Err(error) => {
                                 abort.store(true, Ordering::Relaxed);
@@ -167,10 +170,10 @@ struct PageBuild {
     statistics: MeshStatistics,
 }
 
-fn build_page<C: BlockCatalog + ?Sized>(
+fn build_page(
     scene: &Scene,
     view: &SceneBlockView<'_>,
-    catalog: &C,
+    tables: &PaletteTables,
     origin: [i32; 3],
 ) -> Result<PageBuild, MeshError> {
     let base = [
@@ -179,13 +182,20 @@ fn build_page<C: BlockCatalog + ?Sized>(
         i64::from(origin[2]),
     ];
     let end = [base[0] + 16, base[1] + 16, base[2] + 16];
+    let grid = PageGrid::fill(scene, view, origin);
+    let page_key = [
+        origin[0].div_euclid(16),
+        origin[1].div_euclid(16),
+        origin[2].div_euclid(16),
+    ];
     let mut page = PageBuild {
         origin,
         quads: Vec::new(),
         statistics: MeshStatistics::default(),
     };
 
-    for (region_index, region) in scene.regions.iter().enumerate() {
+    for &region_index in view.regions_for_page(page_key) {
+        let region = &scene.regions[region_index];
         let region_end = [
             region.origin[0] + i64::from(region.size[0]),
             region.origin[1] + i64::from(region.size[1]),
@@ -208,48 +218,59 @@ fn build_page<C: BlockCatalog + ?Sized>(
         for y in start[1]..stop[1] {
             for z in start[2]..stop[2] {
                 for x in start[0]..stop[0] {
-                    let world = [x, y, z];
-                    let Some(resolved) = view.resolve(world) else {
-                        continue;
-                    };
-                    if resolved.region_index != region_index {
+                    let local = [
+                        usize::try_from(x - base[0] + 1).expect("page-local x"),
+                        usize::try_from(y - base[1] + 1).expect("page-local y"),
+                        usize::try_from(z - base[2] + 1).expect("page-local z"),
+                    ];
+                    let cell = grid.get(local);
+                    if cell.is_empty() || cell.region as usize != region_index {
                         continue;
                     }
+                    let Some(palette_block) = tables.block(cell) else {
+                        continue;
+                    };
 
                     page.statistics.blocks_visited += 1;
-                    if resolved.state.is_air() {
+                    if palette_block.is_air {
                         continue;
                     }
 
                     page.statistics.blocks_rendered += 1;
-                    let block = catalog.resolve(resolved.state);
-                    if !block.known {
+                    if !palette_block.block.known {
                         page.statistics.unknown_blocks += 1;
                     }
 
-                    let local = [
-                        (world[0] - base[0]) as f32,
-                        (world[1] - base[1]) as f32,
-                        (world[2] - base[2]) as f32,
+                    if palette_block.occludes
+                        && palette_block.all_quads_cullable
+                        && grid.all_neighbors_occlude(local, tables)
+                    {
+                        continue;
+                    }
+
+                    let local_position = [
+                        (x - base[0]) as f32,
+                        (y - base[1]) as f32,
+                        (z - base[2]) as f32,
                     ];
 
-                    for model_quad in &block.model.quads {
-                        if should_cull(view, catalog, resolved.state, world, model_quad) {
+                    for model_quad in &palette_block.block.model.quads {
+                        if should_cull(&grid, tables, local, palette_block, model_quad) {
                             continue;
                         }
 
-                        let layer = model_quad.layer.unwrap_or(block.layer);
+                        let layer = model_quad.layer.unwrap_or(palette_block.block.layer);
                         page.statistics.add_quad(layer);
 
                         let color = if model_quad.texture == NO_TEXTURE {
-                            block.color
+                            palette_block.block.color
                         } else {
                             model_quad.tint
                         };
-                        let ao = if block.model.ambient_occlusion {
+                        let ao = if palette_block.block.model.ambient_occlusion {
                             std::array::from_fn(|index| {
                                 let corner = model_quad.vertices[index];
-                                vertex_ao(view, catalog, world, model_quad, corner)
+                                vertex_ao(&grid, tables, local, model_quad, corner)
                             })
                         } else {
                             [3, 3, 3, 3]
@@ -258,9 +279,9 @@ fn build_page<C: BlockCatalog + ?Sized>(
                             let corner = model_quad.vertices[index];
                             Vertex {
                                 position: [
-                                    local[0] + corner[0] / 16.0,
-                                    local[1] + corner[1] / 16.0,
-                                    local[2] + corner[2] / 16.0,
+                                    local_position[0] + corner[0] / 16.0,
+                                    local_position[1] + corner[1] / 16.0,
+                                    local_position[2] + corner[2] / 16.0,
                                 ],
                                 uv: encode_uv(model_quad.uv[index]),
                             }
@@ -383,11 +404,11 @@ fn page_origin_of(coord: [i32; 3]) -> Result<[i32; 3], MeshError> {
     Ok(origin)
 }
 
-fn should_cull<C: BlockCatalog + ?Sized>(
-    view: &SceneBlockView<'_>,
-    catalog: &C,
-    state: &BlockStateKey,
-    world: [i64; 3],
+fn should_cull(
+    grid: &PageGrid,
+    tables: &PaletteTables,
+    local: [usize; 3],
+    block: &PaletteBlock,
     quad: &ModelQuad,
 ) -> bool {
     let Some(cullface) = quad.cullface else {
@@ -395,31 +416,29 @@ fn should_cull<C: BlockCatalog + ?Sized>(
     };
 
     let offset = cullface.offset();
-    let neighbor_position = [
-        world[0] + offset[0],
-        world[1] + offset[1],
-        world[2] + offset[2],
-    ];
-
-    let Some(neighbor) = view.resolve(neighbor_position) else {
+    let Some(cell) = grid.at(
+        local,
+        [offset[0] as i32, offset[1] as i32, offset[2] as i32],
+    ) else {
         return false;
     };
-    if neighbor.state.is_air() {
+    let Some(neighbor) = tables.block(cell) else {
+        return false;
+    };
+    if neighbor.is_air {
         return false;
     }
-
-    let neighbor_block = catalog.resolve(neighbor.state);
-    if neighbor_block.occludes() {
+    if neighbor.occludes {
         return true;
     }
 
-    neighbor.state == state
+    neighbor.state_id == block.state_id
 }
 
-fn vertex_ao<C: BlockCatalog + ?Sized>(
-    view: &SceneBlockView<'_>,
-    catalog: &C,
-    world: [i64; 3],
+fn vertex_ao(
+    grid: &PageGrid,
+    tables: &PaletteTables,
+    local: [usize; 3],
     quad: &ModelQuad,
     corner: [f32; 3],
 ) -> u8 {
@@ -437,17 +456,17 @@ fn vertex_ao<C: BlockCatalog + ?Sized>(
     let du = if u == 16.0 { 1 } else { -1 };
     let dv = if v == 16.0 { 1 } else { -1 };
     let normal = face.offset();
-    let side1 = shifted(world, normal, u_axis, du);
-    let side2 = shifted(world, normal, v_axis, dv);
+    let side1 = shifted(normal, u_axis, du);
+    let side2 = shifted(normal, v_axis, dv);
     let corner_pos = {
-        let mut pos = shifted(world, normal, u_axis, du);
-        pos[v_axis] += dv;
-        pos
+        let mut offset = shifted(normal, u_axis, du);
+        offset[v_axis] += dv as i32;
+        offset
     };
 
-    let s1 = occludes(view, catalog, side1);
-    let s2 = occludes(view, catalog, side2);
-    let c = occludes(view, catalog, corner_pos);
+    let s1 = grid.occludes_at(local, side1, tables);
+    let s2 = grid.occludes_at(local, side2, tables);
+    let c = grid.occludes_at(local, corner_pos, tables);
     if s1 && s2 {
         return 0;
     }
@@ -460,24 +479,10 @@ fn vertex_ao<C: BlockCatalog + ?Sized>(
     }
 }
 
-fn shifted(world: [i64; 3], base: [i64; 3], axis: usize, delta: i64) -> [i64; 3] {
-    let mut position = [world[0] + base[0], world[1] + base[1], world[2] + base[2]];
-    position[axis] += delta;
+fn shifted(base: [i64; 3], axis: usize, delta: i64) -> [i32; 3] {
+    let mut position = [base[0] as i32, base[1] as i32, base[2] as i32];
+    position[axis] += delta as i32;
     position
-}
-
-fn occludes<C: BlockCatalog + ?Sized>(
-    view: &SceneBlockView<'_>,
-    catalog: &C,
-    position: [i64; 3],
-) -> bool {
-    let Some(neighbor) = view.resolve(position) else {
-        return false;
-    };
-    if neighbor.state.is_air() {
-        return false;
-    }
-    catalog.resolve(neighbor.state).occludes()
 }
 
 #[cfg(test)]

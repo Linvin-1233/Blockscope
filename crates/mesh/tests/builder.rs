@@ -128,6 +128,55 @@ fn page_boundary_blocks_go_to_separate_pages() {
 }
 
 #[test]
+fn solid_blocks_have_no_interior_faces() {
+    let values = vec![1; 27];
+    let region = make_region(
+        "main",
+        [0, 0, 0],
+        [3, 3, 3],
+        &["minecraft:air", "minecraft:stone"],
+        &values,
+    );
+    let mesh = build(&make_scene(vec![region]), &MeshLimits::default());
+
+    assert_eq!(mesh.statistics.quads, 54);
+    assert_eq!(mesh.statistics.blocks_visited, 27);
+    assert_eq!(mesh.statistics.blocks_rendered, 27);
+}
+
+#[test]
+fn equal_states_cull_across_region_boundaries() {
+    let west = make_region("west", [0, 0, 0], [1, 1, 1], &["minecraft:glass"], &[0]);
+    let east = make_region("east", [1, 0, 0], [1, 1, 1], &["minecraft:glass"], &[0]);
+    let mesh = build(&make_scene(vec![west, east]), &MeshLimits::default());
+
+    assert_eq!(mesh.statistics.quads, 10);
+    assert_eq!(mesh.statistics.translucent_quads, 10);
+}
+
+#[test]
+fn cross_page_glass_culls_across_region_boundaries() {
+    let west = make_region("west", [15, 0, 0], [1, 1, 1], &["minecraft:glass"], &[0]);
+    let east = make_region("east", [16, 0, 0], [1, 1, 1], &["minecraft:glass"], &[0]);
+    let mesh = build(&make_scene(vec![west, east]), &MeshLimits::default());
+
+    assert_eq!(mesh.statistics.quads, 10);
+    assert_eq!(mesh.statistics.translucent_quads, 10);
+    assert_eq!(mesh.pages.len(), 2);
+}
+
+#[test]
+fn negative_page_glass_culls_across_region_boundaries() {
+    let west = make_region("west", [-1, 0, 0], [1, 1, 1], &["minecraft:glass"], &[0]);
+    let east = make_region("east", [0, 0, 0], [1, 1, 1], &["minecraft:glass"], &[0]);
+    let mesh = build(&make_scene(vec![west, east]), &MeshLimits::default());
+
+    assert_eq!(mesh.statistics.quads, 10);
+    assert_eq!(mesh.statistics.translucent_quads, 10);
+    assert_eq!(mesh.pages.len(), 2);
+}
+
+#[test]
 fn unknown_blocks_are_counted_and_visible() {
     let region = make_region(
         "main",

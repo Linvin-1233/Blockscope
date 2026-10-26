@@ -7,6 +7,7 @@ mod error;
 mod export;
 mod mesh;
 mod model;
+mod page;
 mod shape;
 mod view;
 mod voxel;

@@ -1,0 +1,217 @@
+//! Page-local block cache for the mesh builder.
+//!
+//! A page covers 16x16x16 blocks. Culling and ambient occlusion ask about the
+//! same block and its neighbours several times per model quad, so resolving
+//! every query through the scene region index and the material catalog makes
+//! those lookups dominate meshing time. This module resolves a page plus a
+//! one-block border once and then serves the inner loop from an array.
+
+use crate::catalog::{BlockCatalog, ResolvedBlock};
+use crate::model::FaceDirection;
+use crate::view::{SceneBlockView, region_palette_id};
+use litematic_scene::{BlockStateKey, Scene};
+use std::collections::HashMap;
+
+const PAGE: usize = 16;
+const GRID: usize = PAGE + 2;
+
+/// A block reference stored in a page grid: a region index and a palette id.
+#[derive(Clone, Copy)]
+pub(crate) struct Cell {
+    pub(crate) region: u32,
+    pub(crate) palette: u32,
+}
+
+impl Cell {
+    pub(crate) const EMPTY: Self = Self {
+        region: u32::MAX,
+        palette: 0,
+    };
+
+    pub(crate) const fn is_empty(self) -> bool {
+        self.region == u32::MAX
+    }
+}
+
+/// One region palette entry after material resolution.
+pub(crate) struct PaletteBlock {
+    pub(crate) block: ResolvedBlock,
+    /// Canonical state id shared by equal states in every region.
+    pub(crate) state_id: u32,
+    pub(crate) is_air: bool,
+    pub(crate) occludes: bool,
+    /// True when every model quad has a cullface, so an occluded neighbourhood
+    /// removes the whole model without visiting its faces.
+    pub(crate) all_quads_cullable: bool,
+}
+
+/// Resolved palettes for every region in the scene.
+pub(crate) struct PaletteTables {
+    regions: Vec<Vec<PaletteBlock>>,
+}
+
+impl PaletteTables {
+    pub(crate) fn new<C: BlockCatalog + ?Sized>(scene: &Scene, catalog: &C) -> Self {
+        let mut state_ids: HashMap<&BlockStateKey, u32> = HashMap::new();
+        let mut regions = Vec::with_capacity(scene.regions.len());
+
+        for region in &scene.regions {
+            let mut blocks = Vec::with_capacity(region.palette.len());
+            for state in &region.palette {
+                let next_id = state_ids.len() as u32;
+                let state_id = *state_ids.entry(state).or_insert(next_id);
+                let block = catalog.resolve(state);
+                let is_air = state.is_air();
+                let occludes = block.occludes();
+                let all_quads_cullable = !block.model.quads.is_empty()
+                    && block.model.quads.iter().all(|quad| quad.cullface.is_some());
+                blocks.push(PaletteBlock {
+                    block,
+                    state_id,
+                    is_air,
+                    occludes,
+                    all_quads_cullable,
+                });
+            }
+            regions.push(blocks);
+        }
+
+        Self { regions }
+    }
+
+    pub(crate) fn block(&self, cell: Cell) -> Option<&PaletteBlock> {
+        if cell.is_empty() {
+            return None;
+        }
+        self.regions
+            .get(cell.region as usize)?
+            .get(cell.palette as usize)
+    }
+}
+
+/// A 16x16x16 page plus its one-block border, resolved in one pass.
+pub(crate) struct PageGrid {
+    cells: Vec<Cell>,
+}
+
+impl PageGrid {
+    pub(crate) fn fill(scene: &Scene, view: &SceneBlockView<'_>, page_origin: [i32; 3]) -> Self {
+        let base = [
+            i64::from(page_origin[0]),
+            i64::from(page_origin[1]),
+            i64::from(page_origin[2]),
+        ];
+        let base_page = [
+            base[0].div_euclid(16) as i32,
+            base[1].div_euclid(16) as i32,
+            base[2].div_euclid(16) as i32,
+        ];
+
+        // Resolve the candidate regions for the 3x3x3 page neighbourhood once.
+        let empty: &[usize] = &[];
+        let mut page_regions = [[[empty; 3]; 3]; 3];
+        for (ox, x_slice) in page_regions.iter_mut().enumerate() {
+            for (oy, y_slice) in x_slice.iter_mut().enumerate() {
+                for (oz, slot) in y_slice.iter_mut().enumerate() {
+                    *slot = view.regions_for_page([
+                        base_page[0].saturating_add(ox as i32 - 1),
+                        base_page[1].saturating_add(oy as i32 - 1),
+                        base_page[2].saturating_add(oz as i32 - 1),
+                    ]);
+                }
+            }
+        }
+
+        let mut grid = Self {
+            cells: vec![Cell::EMPTY; GRID * GRID * GRID],
+        };
+        for ly in 0..GRID {
+            for lz in 0..GRID {
+                for lx in 0..GRID {
+                    let candidates =
+                        page_regions[page_offset(lx)][page_offset(ly)][page_offset(lz)];
+                    if candidates.is_empty() {
+                        continue;
+                    }
+
+                    let world = [
+                        base[0] + lx as i64 - 1,
+                        base[1] + ly as i64 - 1,
+                        base[2] + lz as i64 - 1,
+                    ];
+                    for &region_index in candidates.iter().rev() {
+                        let region = &scene.regions[region_index];
+                        if let Some(palette) = region_palette_id(region, world) {
+                            grid.set(
+                                [lx, ly, lz],
+                                Cell {
+                                    region: region_index as u32,
+                                    palette,
+                                },
+                            );
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        grid
+    }
+
+    pub(crate) fn get(&self, local: [usize; 3]) -> Cell {
+        self.cells[index(local)]
+    }
+
+    /// The cell at `local + offset`, or `None` outside the page border.
+    pub(crate) fn at(&self, local: [usize; 3], offset: [i32; 3]) -> Option<Cell> {
+        let x = local[0] as i32 + offset[0];
+        let y = local[1] as i32 + offset[1];
+        let z = local[2] as i32 + offset[2];
+        if x < 0 || y < 0 || z < 0 || x >= GRID as i32 || y >= GRID as i32 || z >= GRID as i32 {
+            return None;
+        }
+        Some(self.get([x as usize, y as usize, z as usize]))
+    }
+
+    pub(crate) fn occludes_at(
+        &self,
+        local: [usize; 3],
+        offset: [i32; 3],
+        tables: &PaletteTables,
+    ) -> bool {
+        self.at(local, offset)
+            .and_then(|cell| tables.block(cell))
+            .is_some_and(|block| block.occludes)
+    }
+
+    /// True when all six neighbours are present and occlude.
+    pub(crate) fn all_neighbors_occlude(&self, local: [usize; 3], tables: &PaletteTables) -> bool {
+        FaceDirection::ALL.into_iter().all(|face| {
+            let offset = face.offset();
+            self.occludes_at(
+                local,
+                [offset[0] as i32, offset[1] as i32, offset[2] as i32],
+                tables,
+            )
+        })
+    }
+
+    fn set(&mut self, local: [usize; 3], cell: Cell) {
+        let index = index(local);
+        self.cells[index] = cell;
+    }
+}
+
+fn index(local: [usize; 3]) -> usize {
+    local[0] + GRID * (local[2] + GRID * local[1])
+}
+
+fn page_offset(index: usize) -> usize {
+    if index == 0 {
+        0
+    } else if index == GRID - 1 {
+        2
+    } else {
+        1
+    }
+}

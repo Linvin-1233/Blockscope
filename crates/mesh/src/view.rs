@@ -68,6 +68,11 @@ impl<'a> SceneBlockView<'a> {
         None
     }
 
+    /// Regions whose bounding box covers `page`, in scene order.
+    pub(crate) fn regions_for_page(&self, page: [i32; 3]) -> &[usize] {
+        self.page_index.get(&page).map(Vec::as_slice).unwrap_or(&[])
+    }
+
     pub fn page_key(&self, position: [i64; 3]) -> Option<[i32; 3]> {
         Some([
             i32::try_from(position[0].div_euclid(16)).ok()?,
@@ -87,6 +92,13 @@ impl<'a> SceneBlockView<'a> {
 }
 
 fn region_state(region: &Region, position: [i64; 3]) -> Option<&BlockStateKey> {
+    let palette_id = region_palette_id(region, position)?;
+    region.palette.get(palette_id as usize)
+}
+
+/// Palette id at `position`, or `None` when the position is outside the
+/// region or stores an id that the palette cannot name.
+pub(crate) fn region_palette_id(region: &Region, position: [i64; 3]) -> Option<u32> {
     let local = [
         position[0].checked_sub(region.origin[0])?,
         position[1].checked_sub(region.origin[1])?,
@@ -110,8 +122,8 @@ fn region_state(region: &Region, position: [i64; 3]) -> Option<&BlockStateKey> {
         .checked_add(z.checked_mul(size_x)?)?
         .checked_add(x)?;
 
-    let palette_id = usize::try_from(region.states.get(index)).ok()?;
-    region.palette.get(palette_id)
+    let palette_id = region.states.get(index);
+    (usize::try_from(palette_id).ok()? < region.palette.len()).then_some(palette_id)
 }
 
 fn page_coord(value: i64) -> Result<i32, MeshError> {
