@@ -15,7 +15,7 @@
 | Palette / block entities / entities / ticks | 1,000,000 per region |
 | Region coordinate range | ±30,000,000 |
 | Mesh | 5,000,000 quads / 20,000,000 vertices / 65,536 pages |
-| Render pixels | 16,777,216; 33,554,432 after supersampling |
+| Render pixels | 16,777,216; 33,554,432 after supersampling; 4096 per side |
 | Threads | At most 256 |
 | Textures | 2048x2048, 256 MiB decoded, 8 MiB per asset |
 
@@ -25,13 +25,13 @@ Mesh limits are further reduced by the available-memory budget.
 
 `--force-limits` raises:
 
-- input size and total NBT allocation budget
+- input size, decompressed NBT, and total NBT allocation budget
 - scene/region volume
 - mesh quads, vertices, and pages
 - render pixel limits
 
-It does not disable the thread, texture, NBT-depth, or NBT-tag limits. The
-option can exhaust memory; use it only with trusted input.
+It does not disable the thread, texture, NBT-depth, NBT-tag, or 4096-pixel
+per-side limits. The option can exhaust memory; use it only with trusted input.
 
 ## Security Boundary
 

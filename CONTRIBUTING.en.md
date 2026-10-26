@@ -33,7 +33,7 @@ cd Blockscope
 cargo build --release -p blockscope-cli
 ```
 
-Windows and Linux are supported. Real resource packs, client jars, and
+Windows, Linux, and macOS are supported. Real resource packs, client jars, and
 `.litematic` samples stay local and are never committed.
 
 ## Quality Gates
@@ -66,9 +66,10 @@ On Windows, `check.ps1` also runs clippy against the `x86_64-unknown-linux-gnu`
 target so Linux-only code is linted locally; the first run installs that target
 and needs network access.
 
-CI runs the same checks on Ubuntu and Windows. Do not skip tests, remove
-assertions, add `#[ignore]`, or weaken lints just to get a green run. If a rule
-really needs to change, explain why in the pull request.
+The CI test matrix runs the same checks on Ubuntu, Windows, and macOS; the
+container and MSI jobs run on Ubuntu and Windows respectively. Do not skip tests,
+remove assertions, add `#[ignore]`, or weaken lints just to get a green run. If
+a rule really needs to change, explain why in the pull request.
 
 ## Repository Layout
 

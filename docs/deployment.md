@@ -1,7 +1,7 @@
 # Deployment
 
 The engine is a single static-ish binary with no runtime service dependencies.
-It runs the same way on Linux, in containers, and on Windows.
+It runs the same way on Linux, macOS, in containers, and on Windows.
 
 ## Release Binaries
 
@@ -28,7 +28,7 @@ WSL2 with Docker Desktop, or a plain Ubuntu distro, is enough for a local Linux
 check:
 
 ```bash
-cd /mnt/d/vscodeProj/Blockscope
+cd /mnt/<drive>/path/to/Blockscope
 export PATH="$HOME/.cargo/bin:$PATH"
 export CARGO_TARGET_DIR=/tmp/litematic-target
 
@@ -49,19 +49,22 @@ Expected output: `cores: 1`, `cpuQuotaMilli: 1000`,
 
 ## CI
 
-`.github/workflows/ci.yml` runs two jobs:
+`.github/workflows/ci.yml` runs three jobs:
 
 - `test` on `ubuntu-latest`, `windows-latest`, and `macos-latest`: fmt, clippy with
   `-D warnings`, and the full workspace test suite.
 - `container` on `ubuntu-latest`: builds the image, then runs `capacity` and a
   protocol smoke test inside `--cpus=1 --memory=1g` so cgroup parsing is
   exercised on every push.
+- `installer` on `windows-latest`: builds the static binary and MSI, runs the
+  install/uninstall lifecycle test, and uploads the artifacts.
 
 `.github/workflows/release.yml` runs on a `v*` tag: it checks that the tag
 matches `[workspace.package] version`, creates the GitHub Release from
-`CHANGELOG.md`, and uploads the five archives with sha256 files. Running the
-workflow manually builds and packages the same targets with `dry-run`, so the
-pipeline can be verified before the first tag exists.
+`CHANGELOG.md`, and uploads five platform archives with sha256 files plus the
+Windows MSI and its checksum. Running the workflow manually builds and packages
+the same five targets with `dry-run`; the MSI publish step runs only for tag
+pushes, so the pipeline can be verified before the first tag exists.
 
 ## Capacity reference
 
@@ -80,5 +83,5 @@ schematics earlier than a 32 GiB host. `--force-limits` bypasses the cap;
 | 12 CPU / 32 GiB | 4 | 3 | 2048 @ ss2 | ~350 MB |
 
 These values come from the formulas in `blockscope capacity`; override them with
-`--workers`, `--threads`, or `--memory-budget` when the automatic value is wrong
-for a deployment.
+`--workers`, `--threads`, or `--memory` when the automatic value is wrong for a
+deployment.

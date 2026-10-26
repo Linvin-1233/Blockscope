@@ -13,10 +13,3 @@ Only unfinished work is listed here. Completed task details live in
 - [ ] Measure `--greedy-mesh` on a real flat or repetitive build and decide
       whether it should become the default. It stays opt-in while random-palette
       scenes pay extra mesh time for little reduction.
-
-## Release 0.2.0
-
-**Status:** Prepared, waiting for the tag.
-
-- [ ] Run the release workflow dry-run for the macOS targets.
-- [ ] Tag `v0.2.0` and publish the release assets.

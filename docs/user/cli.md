@@ -67,7 +67,7 @@ blockscope preview model.litematic -t
 | `--assets <DIR>` | 读取已解压的 `assets/` 目录 |
 | `--resource-pack <PATH>` | 叠加资源包目录、zip 或 jar；优先级高于 base |
 | `--texture-filter nearest\|linear` | 纹理采样方式，默认 `nearest` |
-| `--width` / `--height` | 输出尺寸，默认 `1024x1024` |
+| `--width` / `--height` | 输出尺寸，默认 `1024x1024`，单边最大 4096 |
 | `--supersample <1-4>` | 超采样倍数，默认 `2` |
 | `--views <LIST>` | 逗号分隔的 yaw 角度，例如 `45,225` |
 | `--yaw` / `--elevation` | 单视角水平/俯仰角 |

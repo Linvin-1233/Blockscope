@@ -86,8 +86,9 @@ cull.
 
 ## Rasterizer
 
-- The image is split into square tiles, at most 64x64. Small outputs shrink
-  the tile so the image still splits into about 256 tiles.
+- The image is split into square tiles, at most 64x64. The target is about
+  1024 tiles, so small outputs use smaller tiles (32px at a 1024x1024 internal
+  image, 8px at 256x256); `tiles` therefore stays independent of worker count.
 - Each tile owns an RGBA f32 color buffer and an f64 depth buffer.
 - Triangles are rasterized with edge functions and barycentric weights.
 - Depth is interpolated linearly, which is correct for orthographic projection.
@@ -334,7 +335,7 @@ shadows, or biome tinting. It is stable and deterministic.
 | elevation | 30° |
 | background | transparent |
 | lighting | simple-ao-v1 |
-| tile size (maximum) | 64 |
+| tile size (maximum; targets ~1024 tiles) | 64 |
 | padding | 16 px |
 | supersample | 2 |
 | threads | 0 (auto) |
@@ -342,8 +343,9 @@ shadows, or biome tinting. It is stable and deterministic.
 | max pixels | 16,777,216 |
 | max supersampled pixels | 33,554,432 |
 
-Validation rejects zero dimensions, elevation beyond ±89.9°, non-finite values,
-padding that leaves no drawable area, and outputs above the pixel limit.
+Validation rejects zero dimensions, dimensions above 4096, elevation beyond
+±89.9°, non-finite values, padding that leaves no drawable area, and outputs
+above the pixel limit.
 
 For CLI rendering flags, multi-view output naming, and options reference, see
 [CLI Reference - render](./user/en/cli.md). Resource limits and
@@ -358,8 +360,8 @@ cargo run -p blockscope-cli --release -- bench path\to\model.litematic --width 2
 
 `blockscope bench` parses and meshes once, then renders and PNG-encodes
 `--iterations` times. It reports min/median/mean/max for render, PNG, and their
-sum, plus mesh and render counters, buffer sizes, and peak RSS on Linux
-(`null` on other platforms).
+sum, plus mesh and render counters, buffer sizes, and peak RSS on Linux and
+macOS (`null` on Windows and other platforms).
 
 For rasterizer-only scaling, use the synthetic example:
 

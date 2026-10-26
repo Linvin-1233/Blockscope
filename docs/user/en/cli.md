@@ -69,7 +69,7 @@ is preserved, while each concurrent view holds its own tile buffers.
 | `--assets <DIR>` | Read from an extracted `assets/` directory |
 | `--resource-pack <PATH>` | Overlay a directory, zip, or jar; takes precedence over the base |
 | `--texture-filter nearest\|linear` | Texture sampling; default `nearest` |
-| `--width` / `--height` | Output size; default `1024x1024` |
+| `--width` / `--height` | Output size; default `1024x1024`, maximum 4096 per side |
 | `--supersample <1-4>` | Supersampling factor; default `2` |
 | `--views <LIST>` | Comma-separated yaw angles, e.g. `45,225` |
 | `--yaw` / `--elevation` | Single-view horizontal/elevation angles |

@@ -57,7 +57,8 @@ blockscope materials model.litematic --client-jar client.jar --json
 
 ## 资产政策
 
-资源包、客户端 jar 应Minecraft EULA 请自行提供。本仓库不包含`.jar`、`resourcepacks/`、Minecraft 贴图或其他 Minecraft 资产
+资源包、客户端 jar 由使用者自行提供；请确保其使用符合 Minecraft EULA。本仓库
+不包含 `.jar`、`resourcepacks/`、Minecraft 贴图或其他 Minecraft 资产。
 
 ## 相关文档
 

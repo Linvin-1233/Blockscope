@@ -134,7 +134,7 @@ The `materials` command (documented in [CLI Reference](./user/en/cli.md))
 reports per-block kinds (`pack-model`, `chest`, `fallback`, `unknown`), texture
 status, and missing texture counts.
 
-On the private `四边形大宗` fixture with `26.2-Fabric.jar`:
+On a private large Fabric fixture with a matching client jar:
 
 - 36,444 blocks use pack models;
 - 4,400 chests use the built-in chest model;

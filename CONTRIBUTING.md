@@ -32,8 +32,8 @@ cd Blockscope
 cargo build --release -p blockscope-cli
 ```
 
-Windows 和 Linux 都是受支持目标。真实资源包、客户端 jar 和 `.litematic` 样本
-由开发者本地提供，不进入版本库。
+Windows、Linux 和 macOS 都是受支持目标。真实资源包、客户端 jar 和 `.litematic`
+样本由开发者本地提供，不进入版本库。
 
 ## 质量门禁
 
@@ -63,7 +63,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/check.ps1
 `check.ps1` 在 Windows 上还会用 `x86_64-unknown-linux-gnu` 目标再跑一遍 clippy，
 用来捕获只在 Linux 编译的代码；首次运行会自动安装该 target，需要联网。
 
-CI 会在 Ubuntu 和 Windows 上运行同样的检查。不要通过跳过测试、删除断言、
+CI 的 test matrix 会在 Ubuntu、Windows 和 macOS 上运行同样的检查；container
+和 MSI 任务分别在 Ubuntu 和 Windows 上运行。不要通过跳过测试、删除断言、
 添加 `#[ignore]` 或放宽 lint 来让检查通过；如果确实需要调整规则，请在 PR
 中说明原因。
 
