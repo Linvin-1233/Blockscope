@@ -305,6 +305,19 @@ fn supersampling_changes_edge_pixels() {
 }
 
 #[test]
+fn rejects_dimensions_above_4096() {
+    let scene = stone_scene();
+    let options = RenderOptions {
+        width: 4097,
+        height: 64,
+        ..Default::default()
+    };
+
+    let error = render_mesh(&scene, &build(&scene), &options).unwrap_err();
+    assert_eq!(error.code, RenderErrorCode::OutputTooLarge);
+}
+
+#[test]
 fn rejects_supersampled_size_limit() {
     let scene = stone_scene();
     let options = RenderOptions {

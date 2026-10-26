@@ -100,10 +100,20 @@ impl Default for RenderOptions {
     }
 }
 
+/// Maximum output width or height. The pixel budget alone would allow extreme
+/// aspect ratios that are not useful for previews and complicate the service
+/// contract.
+const MAX_DIMENSION: u32 = 4096;
+
 impl RenderOptions {
     pub fn validate(&self) -> Result<(), RenderError> {
         if self.width == 0 || self.height == 0 {
             return Err(RenderError::invalid("width and height must be positive"));
+        }
+        if self.width > MAX_DIMENSION || self.height > MAX_DIMENSION {
+            return Err(RenderError::too_large(format!(
+                "width and height must be at most {MAX_DIMENSION}"
+            )));
         }
 
         let pixels = u64::from(self.width) * u64::from(self.height);
