@@ -127,6 +127,13 @@
     "minecraft:seagrass": { "color": "#4a8a3a", "layer": "cutout" },
     "minecraft:kelp": { "color": "#3a7a3a", "layer": "cutout" },
     "minecraft:slime_block": { "color": "#70c070", "layer": "translucent" },
-    "minecraft:honey_block": { "color": "#e0a020", "layer": "translucent" }
+    "minecraft:honey_block": { "color": "#e0a020", "layer": "translucent" },
+    "minecraft:anvil": { "color": "#4a4a4c" },
+    "minecraft:hopper": { "color": "#3a3a3e" },
+    "minecraft:lantern": { "color": "#c6943c" },
+    "minecraft:end_rod": { "color": "#f2efe2" },
+    "minecraft:cocoa": { "color": "#6b4425" },
+    "minecraft:light_weighted_pressure_plate": { "color": "#f0d040" },
+    "minecraft:heavy_weighted_pressure_plate": { "color": "#4a4a52" }
   }
 }

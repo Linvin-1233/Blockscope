@@ -74,10 +74,14 @@ Partial models use per-face cull directions and voxelized model occupancy.
 - exact embedded palette entry;
 - family heuristic (dye colors, wood types, ores, plants, glass, stairs/slab
   suffixes);
+- material inheritance for decorated variants, so `quartz_pillar`,
+  `chiseled_quartz_block`, `smooth_quartz_slab`, and `cut_sandstone` take the
+  plain material entry's color;
 - magenta fallback with `known = false`.
 
 The fallback is intentional: unknown blocks stay visible and are counted in
-mesh statistics. Air resolves to an empty non-occluding model.
+mesh statistics. Air and invisible blocks (`barrier`, `light`,
+`structure_void`) resolve to an empty non-occluding model.
 
 Default layers:
 

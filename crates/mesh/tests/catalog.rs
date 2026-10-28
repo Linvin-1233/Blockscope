@@ -251,3 +251,56 @@ fn invalid_palette_data_is_rejected() {
     .unwrap_err();
     assert_eq!(error.code, CatalogErrorCode::InvalidLayer);
 }
+
+#[test]
+fn decorated_variants_inherit_the_material_color() {
+    let catalog = ColorBlockCatalog::default();
+    let quartz = resolve(&catalog, "minecraft:quartz_block").color;
+
+    for name in [
+        "minecraft:quartz_pillar",
+        "minecraft:quartz_stairs",
+        "minecraft:quartz_slab",
+        "minecraft:chiseled_quartz_block",
+        "minecraft:smooth_quartz_slab",
+    ] {
+        let block = resolve(&catalog, name);
+        assert!(block.known, "{name} must not fall back to unknown");
+        assert_eq!(block.color, quartz, "{name} must inherit quartz_block");
+    }
+
+    let sandstone = resolve(&catalog, "minecraft:sandstone").color;
+    assert_eq!(
+        resolve(&catalog, "minecraft:cut_sandstone").color,
+        sandstone
+    );
+    assert_eq!(
+        resolve(&catalog, "minecraft:iron_trapdoor").color,
+        resolve(&catalog, "minecraft:iron_block").color
+    );
+}
+
+#[test]
+fn decorated_variants_of_unknown_materials_stay_unknown() {
+    let catalog = ColorBlockCatalog::default();
+    let block = resolve(&catalog, "modded:cogwheel_slab");
+
+    assert!(!block.known);
+    assert_eq!(block.color, Rgba::MAGENTA);
+}
+
+#[test]
+fn invisible_blocks_draw_nothing() {
+    let catalog = ColorBlockCatalog::default();
+
+    for name in [
+        "minecraft:barrier",
+        "minecraft:light",
+        "minecraft:structure_void",
+    ] {
+        let block = resolve(&catalog, name);
+        assert!(block.known, "{name} must be known");
+        assert_eq!(block.color, Rgba::TRANSPARENT, "{name} must not paint");
+        assert!(block.model.quads.is_empty(), "{name} must not mesh");
+    }
+}

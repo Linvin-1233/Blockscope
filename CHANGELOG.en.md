@@ -8,6 +8,13 @@ User-facing changes are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Fallback colors now inherit the base material for decorated block variants, so
+  quartz pillars, stairs, and slabs render as quartz instead of the magenta
+  unknown-block sentinel. Invisible blocks such as barriers are skipped instead
+  of being painted.
+
 ## [0.4.0] - 2026-10-28
 
 ### Added
