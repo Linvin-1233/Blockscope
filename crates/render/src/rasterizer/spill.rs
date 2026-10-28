@@ -38,6 +38,15 @@ impl TranslucentStore {
     }
 
     pub(super) fn push_many(&mut self, triangles: Vec<Triangle>) -> io::Result<()> {
+        #[cfg(target_arch = "wasm32")]
+        if let State::Memory(memory) = &self.state
+            && memory.len() + triangles.len() > self.budget
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "translucent spill requires a filesystem; lower lod or resolution",
+            ));
+        }
         match &mut self.state {
             State::Memory(memory) if memory.len() + triangles.len() <= self.budget => {
                 memory.extend(triangles);

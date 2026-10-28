@@ -70,6 +70,16 @@ test-real-jar jar=env_var_or_default("MINECRAFT_CLIENT_JAR", "") *args:
 # Run standard quality gate: format check, clippy, and tests (matches scripts/check.sh)
 check: fmt-check clippy test
 
+# Build the Cloudflare Workers bundle into .cloudflare/output/v0
+[unix]
+worker:
+    ./scripts/build-worker.sh
+
+# Deploy the prebuilt Cloudflare Worker
+[unix]
+worker-deploy: worker
+    cf deploy --prebuilt
+
 # Run all quality gates including the cross-target Linux clippy check
 check-all: check check-linux
 

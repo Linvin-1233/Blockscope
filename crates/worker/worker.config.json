@@ -1,0 +1,15 @@
+{
+  "name": "blockscope-render",
+  "compatibilityDate": "2026-10-01",
+  "workersDev": true,
+  "env": {
+    "ENDPOINT": {
+      "type": "text",
+      "value": "/render"
+    },
+    "ALLOWED_ORIGIN": {
+      "type": "text",
+      "value": "*"
+    }
+  }
+}

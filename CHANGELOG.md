@@ -7,6 +7,11 @@
 
 ## [Unreleased]
 
+### 新增
+
+- 新增 Cloudflare Workers 适配器（`blockscope-worker`），支持可配置 HTTP 端点，
+  并直接从 `.litematic` 请求体渲染纯色 PNG。
+
 ### 修复
 
 - 回退配色现在会沿材质变体继承基础颜色：石英柱、楼梯、台阶按石英渲染，不再落入

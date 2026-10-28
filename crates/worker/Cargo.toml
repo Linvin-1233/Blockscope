@@ -1,0 +1,17 @@
+[package]
+name = "blockscope-worker"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+litematic-core = { path = "../litematic" }
+litematic-mesh = { path = "../mesh" }
+litematic-render = { path = "../render" }
+litematic-scene = { path = "../scene" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+worker = { workspace = true }

@@ -8,6 +8,11 @@ User-facing changes are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Cloudflare Workers adapter (`blockscope-worker`) with a configurable HTTP
+  endpoint and color-only PNG rendering from a `.litematic` request body.
+
 ### Fixed
 
 - Fallback colors now inherit the base material for decorated block variants, so
