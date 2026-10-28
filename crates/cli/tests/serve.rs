@@ -484,3 +484,100 @@ fn serve_reports_bad_requests_without_exiting() {
     assert_eq!(read_json(&mut lines)["type"], "bye");
     assert!(child.wait().unwrap().success());
 }
+
+#[test]
+fn serve_hello_advertises_available_backends() {
+    let (mut child, mut stdin, mut lines) = start();
+    let hello = read_json(&mut lines);
+    let backends: Vec<&str> = hello["backends"]
+        .as_array()
+        .expect("backends array")
+        .iter()
+        .map(|value| value.as_str().unwrap())
+        .collect();
+    assert!(backends.contains(&"cpu"));
+    assert!(backends.contains(&"auto"));
+    assert_eq!(backends.contains(&"gpu"), cfg!(feature = "gpu"));
+
+    send(&mut stdin, &json!({ "type": "shutdown" }));
+    let _bye = read_json(&mut lines);
+    assert!(child.wait().unwrap().success());
+}
+
+#[test]
+fn serve_rejects_an_unknown_backend() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = fixture(dir.path());
+    let (mut child, mut stdin, mut lines) = start();
+    let _hello = read_json(&mut lines);
+
+    send(
+        &mut stdin,
+        &json!({
+            "type": "render",
+            "id": "bad-backend",
+            "input": { "path": input.display().to_string() },
+            "backend": "quantum",
+            "outputDir": dir.path().join("out").display().to_string(),
+        }),
+    );
+    let result = read_json(&mut lines);
+    assert_eq!(result["ok"], false);
+    assert_eq!(result["error"]["code"], "INVALID_RENDER_OPTIONS");
+    assert!(
+        result["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("unknown backend 'quantum'")
+    );
+
+    send(&mut stdin, &json!({ "type": "shutdown" }));
+    let _bye = read_json(&mut lines);
+    assert!(child.wait().unwrap().success());
+}
+
+#[cfg(feature = "gpu")]
+#[test]
+fn serve_renders_with_the_gpu_backend() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = fixture(dir.path());
+    let output_dir = dir.path().join("gpu-out");
+    let (mut child, mut stdin, mut lines) = start();
+    let _hello = read_json(&mut lines);
+
+    send(
+        &mut stdin,
+        &json!({
+            "type": "render",
+            "id": "gpu-job",
+            "input": { "path": input.display().to_string() },
+            "views": [45],
+            "width": 64,
+            "height": 64,
+            "supersample": 1,
+            "backend": "gpu",
+            "outputDir": output_dir.display().to_string(),
+        }),
+    );
+    let result = read_json(&mut lines);
+    if result["ok"] == false {
+        let code = result["error"]["code"].as_str().unwrap();
+        if code == "BACKEND_UNAVAILABLE" {
+            eprintln!("skipping GPU serve test: {result}");
+        } else {
+            panic!("GPU serve render failed: {result}");
+        }
+    } else {
+        assert_eq!(result["statistics"]["backendUsed"], "gpu");
+        let path = result["outputs"][0]["path"].as_str().unwrap();
+        assert!(
+            std::fs::read(path)
+                .unwrap()
+                .starts_with(&[0x89, b'P', b'N', b'G'])
+        );
+    }
+
+    send(&mut stdin, &json!({ "type": "shutdown" }));
+    let _bye = read_json(&mut lines);
+    assert!(child.wait().unwrap().success());
+}
