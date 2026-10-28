@@ -1,0 +1,46 @@
+---
+title: "Blockscope 文档"
+description: "高性能 Minecraft .litematic 投影文件解析器、网格生成器与 CPU 软件光栅化渲染器"
+---
+
+## 欢迎使用 Blockscope
+
+**Blockscope** 是一个用 Rust 编写的离线、独立 Minecraft 投影文件检查与渲染引擎。它将 `.litematic` 文件转换为 Scene IR，生成纯色方块或带材质网格（OBJ/PLY），并在 CPU 上生成正交预览 PNG，无需 GPU，也无需运行中的 Minecraft 客户端。
+
+<CardGroup cols={2}>
+  <Card title="快速开始" icon="rocket" href="/zh/user/getting-started">
+    安装预编译程序，几秒内渲染第一个投影。
+  </Card>
+  <Card title="CLI 参考" icon="terminal" href="/zh/user/cli">
+    了解检查、校验、网格化与渲染所用的命令。
+  </Card>
+  <Card title="User Guide (English)" icon="language" href="/user/getting-started">
+    Comprehensive English guide for installation, CLI flags, and operations.
+  </Card>
+  <Card title="技术规格（英文）" icon="microchip" href="/rendering">
+    深入了解 CPU 光栅化、网格几何与 stdio 协议。
+  </Card>
+</CardGroup>
+
+## 核心能力
+
+<Steps>
+  <Step title="1. 容器解析（阶段 1）">
+    流式、内存受限的 NBT 读取器，可解析 `.litematic` 文件（v1 至 v7）。重建区域层级、解析调色板，并将方块状态规范化为可查询的 `Scene`。
+  </Step>
+  <Step title="2. 网格几何（阶段 2）">
+    将场景几何分页为 16³ 体素区块，自动执行面剔除、平滑环境光遮蔽（AO）与四边形去重，并导出为标准 Wavefront OBJ 与 Stanford PLY。
+  </Step>
+  <Step title="3. CPU 光栅化（阶段 3）">
+    自研软件光栅化器将抗锯齿正交预览渲染为 RGBA PNG。支持内置纯色方块调色板与官方 Java 资源包材质，不依赖 GPU。
+  </Step>
+  <Step title="4. 服务协议（阶段 4）">
+    基于 stdio JSONL 线协议的隔离式单任务 worker（`serve` / `supervise`）、supervisor 进程管理与可预期的错误处理。
+  </Step>
+</Steps>
+
+## 文档导航
+
+- **用户指南**：安装、CLI 参数、资源包、LOD、Docker 与服务模式的完整中文指南。
+- **User Guide (EN)**: Comprehensive English guide for installation, CLI flags, resource packs, LOD, Docker, and service mode.
+- **技术规格（英文）**: Deep dive into rendering mathematics, mesh formats, engine protocols, and deployment assets.

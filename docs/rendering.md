@@ -387,8 +387,8 @@ Validation rejects zero dimensions, dimensions above 4096, elevation beyond
 above the pixel limit.
 
 For CLI rendering flags, multi-view output naming, and options reference, see
-[CLI Reference - render](./user/en/cli.md). Resource limits and
-`--force-limits` behavior are detailed in [Limits and Security](./user/en/limits.md).
+[CLI Reference - render](./user/cli.md). Resource limits and
+`--force-limits` behavior are detailed in [Limits and Security](./user/limits.md).
 
 ## Benchmark
 

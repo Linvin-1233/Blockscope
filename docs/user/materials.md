@@ -1,32 +1,37 @@
-# 材质与资源包
+---
+title: "Materials and Resource Packs"
+---
 
-## 内置色块
+## Built-in Colors
 
-不提供资源包时，引擎使用内置色块 catalog。它适合快速预览、CI 和回归测试，
-但不会还原真实贴图。
+Without a resource pack, the engine uses its built-in color catalog. This is
+useful for quick previews, CI, and golden tests, but it does not reproduce real
+textures.
 
 ```bash
 blockscope render model.litematic --output out.png
 ```
 
-## 使用客户端 jar
+## Minecraft Client Jar
 
 ```bash
 blockscope render model.litematic --output out.png --client-jar client.jar
 ```
 
-客户端 jar 中可以包含 `assets/minecraft/blockstates`、`models` 和 `textures`。
-引擎直接读取 jar，不会解压到工作目录。
+The jar may contain `assets/minecraft/blockstates`, `models`, and `textures`.
+The engine reads the jar directly and does not extract it into the working
+directory.
 
-## 使用已解压 assets
+## Extracted Assets
 
 ```bash
 blockscope render model.litematic --output out.png --assets ./assets
 ```
 
-`--assets` 指向包含 `assets/minecraft/...` 的目录，或已解压的 `assets/` 目录。
+`--assets` points to a directory containing `assets/minecraft/...` (or a
+directory whose root maps to the Minecraft asset tree).
 
-## 叠加资源包
+## Resource-Pack Overlays
 
 ```bash
 blockscope render model.litematic --output out.png \
@@ -34,35 +39,36 @@ blockscope render model.litematic --output out.png \
   --resource-pack ./packs/my-pack
 ```
 
-`--resource-pack` 可以是目录，也可以是 zip/jar。overlay 中的同名 blockstate、
-model 或 texture 会覆盖 base。
+`--resource-pack` may be a directory, zip, or jar. Matching blockstates,
+models, and textures in the overlay replace the base.
 
-## 回退行为
+## Fallback Behavior
 
-资源包缺失模型或贴图时，引擎会按以下顺序回退：
+When a model or texture is missing, the engine falls back in this order:
 
-1. 资源包模型
-2. 内置 partial shape 或色块
-3. 资源包 `particle` 纹理（如果可用）
-4. 品红色 unknown 方块
+1. Pack model
+2. Built-in partial shape or color
+3. Pack `particle` texture, if available
+4. Magenta unknown block
 
-使用 `materials --json` 查看覆盖率和缺失统计：
+Use `materials --json` to inspect coverage:
 
 ```bash
 blockscope materials model.litematic --client-jar client.jar --json
 ```
 
-非 JSON 的 `render` 输出也会打印材质诊断。完整材质规则见
-[资源包材质说明](../textures.md)。
+Non-JSON `render` output also prints material diagnostics. See
+[Resource-pack materials](/textures) for the full contract.
 
-## 资产政策
+## Asset Policy
 
-资源包、客户端 jar 由使用者自行提供；请确保其使用符合 Minecraft EULA。本仓库
-不包含 `.jar`、`resourcepacks/`、Minecraft 贴图或其他 Minecraft 资产。
+Resource packs, client jars, and private `.litematic` files must be supplied by
+the deployer. The repository does not commit `.jar` files, `resourcepacks/`,
+Minecraft textures, or user uploads.
 
-## 相关文档
+## See Also
 
-- [CLI 命令](./cli.md)
-- [限制与安全](./limits.md)
-- [故障排查](./troubleshooting.md)
-- [English](./en/materials.md)
+- [CLI Reference](./cli.md)
+- [Limits and Security](./limits.md)
+- [Troubleshooting](./troubleshooting.md)
+- [中文](/zh/user/materials)

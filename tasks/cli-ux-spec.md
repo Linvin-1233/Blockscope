@@ -102,8 +102,8 @@ crates/cli/src/ui/progress.rs         indicatif wrappers; TTY and --json gating
 crates/cli/src/main.rs                Global --color, clap styles, no-arg dispatch, error rendering
 crates/cli/src/commands/*.rs          Semantic output + progress stages
 crates/cli/tests/cli_ux.rs            New behavior tests (banner, color, JSON purity, help)
-docs/user/cli.md                      Chinese CLI docs
-docs/user/en/cli.md                   English CLI docs
+docs/zh/user/cli.md                 Chinese CLI docs
+docs/user/cli.md                    English CLI docs
 CHANGELOG.md / CHANGELOG.en.md        User-visible changes
 ```
 
@@ -261,7 +261,7 @@ check on Windows Terminal verifies ANSI rendering, logo alignment at 80 and
    where a changed line is explicitly expected and reviewed).
 8. `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D
    warnings`, and `cargo test --workspace` pass.
-9. `docs/user/cli.md`, `docs/user/en/cli.md`, and both changelogs describe
+9. `docs/zh/user/cli.md`, `docs/user/cli.md`, and both changelogs describe
    `--color`, the welcome screen, and progress behavior.
 
 ## Open Questions

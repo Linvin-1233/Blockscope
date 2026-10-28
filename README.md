@@ -16,29 +16,29 @@ Blockscope 是一个把 Minecraft `.litematic` 投影文件渲染成 PNG 的
 
 ## 文档导航
 
-文档位于 `docs/` 并配置为 [Mintlify](https://mintlify.com) 站点，本地可通过 `cd docs && mint dev` 启动实时预览。
+在线文档见 [blockscope.linvin.net](https://blockscope.linvin.net)，源码位于 `docs/`，配置为 [Mintlify](https://mintlify.com) 站点；本地可通过 `cd docs && mint dev` 启动实时预览。
 
 ### 用户文档
 
-- [用户文档总览](docs/user/index.md)
-- [功能与限制](docs/user/features.md)
-- [安装与快速开始](docs/user/getting-started.md)
-- [CLI 命令](docs/user/cli.md)
-- [材质与资源包](docs/user/materials.md)
-- [LOD 与大结构](docs/user/lod.md)
-- [服务模式](docs/user/service.md)
-- [限制与安全](docs/user/limits.md)
-- [Docker](docs/user/docker.md)
-- [故障排查](docs/user/troubleshooting.md)
+- [用户文档总览](https://blockscope.linvin.net/zh/user)
+- [功能与限制](https://blockscope.linvin.net/zh/user/features)
+- [安装与快速开始](https://blockscope.linvin.net/zh/user/getting-started)
+- [CLI 命令](https://blockscope.linvin.net/zh/user/cli)
+- [材质与资源包](https://blockscope.linvin.net/zh/user/materials)
+- [LOD 与大结构](https://blockscope.linvin.net/zh/user/lod)
+- [服务模式](https://blockscope.linvin.net/zh/user/service)
+- [限制与安全](https://blockscope.linvin.net/zh/user/limits)
+- [Docker](https://blockscope.linvin.net/zh/user/docker)
+- [故障排查](https://blockscope.linvin.net/zh/user/troubleshooting)
 
 ### 技术文档
 
-- [Litematic 格式说明](docs/litematic-format.md)
-- [Color-block 网格说明](docs/mesh-geometry.md)
-- [CPU 渲染说明](docs/rendering.md)
-- [资源包材质说明](docs/textures.md)
-- [引擎协议 v1](docs/engine-protocol.md)
-- [部署说明](docs/deployment.md)
+- [Litematic 格式说明](https://blockscope.linvin.net/litematic-format)
+- [Color-block 网格说明](https://blockscope.linvin.net/mesh-geometry)
+- [CPU 渲染说明](https://blockscope.linvin.net/rendering)
+- [资源包材质说明](https://blockscope.linvin.net/textures)
+- [引擎协议 v1](https://blockscope.linvin.net/engine-protocol)
+- [部署说明](https://blockscope.linvin.net/deployment)
 
 ### 项目文档
 

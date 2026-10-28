@@ -1,21 +1,25 @@
-# 安装与快速开始
+---
+title: "Installation and Quick Start"
+---
 
-## 系统要求
+## Requirements
 
-- Windows x86_64、Linux x86_64 / aarch64、macOS aarch64 / x86_64
-- 使用预编译二进制时不需要 Rust 工具链
-- 从源码构建时需要 Rust stable（支持 edition 2024；建议 Rust 1.85 或更新）
-- 可选：Minecraft 客户端 jar、已解压的 `assets/` 目录或资源包
-- 可选：Docker（用于容器部署）
-- 常规 1024x1024 预览建议至少 1 GiB 内存；开启超采样、提高尺寸或渲染超大
-  结构时需要更多内存
+- Windows x86_64, Linux x86_64 / aarch64, or macOS aarch64 / x86_64
+- No Rust toolchain is needed when using prebuilt binaries
+- Rust stable (edition 2024; Rust 1.85 or newer recommended) when building from
+  source
+- Optional: a Minecraft client jar, an extracted `assets/` directory, or a
+  resource pack
+- Optional: Docker
+- At least 1 GiB of memory is recommended for a regular 1024x1024 preview.
+  Supersampling, larger images, or huge structures need more.
 
-## 下载预编译二进制（推荐）
+## Download prebuilt binaries (recommended)
 
-在 [Releases](https://github.com/Linvin-1233/Blockscope/releases) 下载对应平台的
-安装包或压缩包：
+Download the installer or archive for your platform from
+[Releases](https://github.com/Linvin-1233/Blockscope/releases):
 
-| 平台 | 目标三元组 | 格式 |
+| Platform | Target triple | Format |
 | --- | --- | --- |
 | Linux x86_64 | `x86_64-unknown-linux-musl` | `.tar.gz` |
 | Linux aarch64 | `aarch64-unknown-linux-musl` | `.tar.gz` |
@@ -23,9 +27,11 @@
 | macOS aarch64 | `aarch64-apple-darwin` | `.tar.gz` |
 | macOS x86_64 | `x86_64-apple-darwin` | `.tar.gz` |
 
-文件名形如 `blockscope-v0.4.0-x86_64-unknown-linux-musl.tar.gz`，旁边有去掉扩展名
-的 `.sha256` 校验文件（如 `blockscope-v0.4.0-x86_64-unknown-linux-musl.sha256`）。
-Linux 产物静态链接 musl，Windows 产物静态链接 CRT，目标机器不需要额外安装运行时库。
+Names look like `blockscope-v0.4.0-x86_64-unknown-linux-musl.tar.gz`, and each
+file has a `.sha256` next to it with the extension removed
+(`blockscope-v0.4.0-x86_64-unknown-linux-musl.sha256`). Linux artifacts are
+linked statically against musl and the Windows artifact uses the static CRT, so
+the target machine needs no extra runtime libraries.
 
 ### Linux
 
@@ -39,7 +45,7 @@ tar -xzf blockscope-v0.4.0-x86_64-unknown-linux-musl.tar.gz
 
 ### macOS
 
-Apple Silicon（M 系列）选择 `aarch64-apple-darwin`，Intel Mac 选择 `x86_64-apple-darwin`：
+Use `aarch64-apple-darwin` for Apple Silicon (M-series) or `x86_64-apple-darwin` for Intel Macs:
 
 ```bash
 curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.4.0/blockscope-v0.4.0-aarch64-apple-darwin.tar.gz
@@ -49,9 +55,9 @@ tar -xzf blockscope-v0.4.0-aarch64-apple-darwin.tar.gz
 ./blockscope-v0.4.0-aarch64-apple-darwin/blockscope --version
 ```
 
-### Windows：MSI 安装（推荐）
+### Windows: MSI installer (recommended)
 
-按用户安装，不需要管理员权限：
+Installs per user, so no administrator rights are required:
 
 ```powershell
 $tag = "v0.4.0"
@@ -63,13 +69,14 @@ Get-Content "$name.msi.sha256"
 msiexec /i "$name.msi"
 ```
 
-安装到 `%LOCALAPPDATA%\Programs\Blockscope`，并把该目录追加到当前用户的 `PATH`；
-重新打开终端后 `blockscope --version` 即可用。卸载在“设置 → 应用”里，卸载会同时
-移除 `PATH` 条目。静默安装用 `msiexec /i "$name.msi" /qn`。
+It installs to `%LOCALAPPDATA%\Programs\Blockscope` and appends that directory to
+the current user's `PATH`; open a new terminal and `blockscope --version` works.
+Uninstall from Settings > Apps, which also removes the `PATH` entry. Use
+`msiexec /i "$name.msi" /qn` for a silent install.
 
-### Windows：便携 zip
+### Windows: portable zip
 
-不想安装时直接解压：
+Unpack it instead if you do not want an installed copy:
 
 ```powershell
 $tag = "v0.4.0"
@@ -82,12 +89,13 @@ Expand-Archive "$name.zip" -DestinationPath .
 .\$name\blockscope.exe --version
 ```
 
-`Get-FileHash` 输出的哈希应与 `.sha256` 文件中的值一致。把解压目录加入 `PATH`，
-下文命令中的 `blockscope` 均指该可执行文件。
+The hash printed by `Get-FileHash` must match the one in the `.sha256` file. Add
+the extracted directory to `PATH`; the examples below use `blockscope` for that
+executable.
 
-## 从源码构建
+## Build from source
 
-需要 Rust stable。用于开发、审查或自行修改引擎：
+Use this for development or when you need to modify the engine:
 
 ```bash
 git clone https://github.com/Linvin-1233/Blockscope.git
@@ -95,23 +103,23 @@ cd Blockscope
 cargo build --release -p blockscope-cli
 ```
 
-构建产物：
+Artifacts:
 
-- Linux：`target/release/blockscope`
-- Windows：`target/release/blockscope.exe`
-- macOS：`target/release/blockscope`
+- Linux: `target/release/blockscope`
+- Windows: `target/release/blockscope.exe`
+- macOS: `target/release/blockscope`
 
-可以把 `target/release` 加入 `PATH`，也可以在命令中直接使用完整路径。
+Add `target/release` to `PATH` or use the full path.
 
-## 运行测试
+## Test
 
 ```bash
 cargo test --workspace
 ```
 
-## 第一次渲染
+## First Render
 
-没有资源包时使用内置色块：
+The built-in color catalog works without a resource pack:
 
 ```bash
 blockscope inspect model.litematic --json
@@ -119,7 +127,7 @@ blockscope validate model.litematic
 blockscope render model.litematic --output out.png
 ```
 
-使用 Minecraft 客户端 jar 获得真实材质：
+Use a Minecraft client jar for real materials:
 
 ```powershell
 blockscope render model.litematic `
@@ -133,16 +141,16 @@ blockscope render model.litematic \
   --client-jar /path/to/client.jar
 ```
 
-也可以使用已解压的 assets 目录：
+You can also point at an extracted assets directory:
 
 ```bash
 blockscope render model.litematic --output out.png --assets /path/to/assets
 ```
 
-## 下一步
+## Next
 
-- [CLI 命令](./cli.md)
-- [材质与资源包](./materials.md)
-- [LOD 与大结构](./lod.md)
-- [故障排查](./troubleshooting.md)
-- [English](./en/getting-started.md)
+- [CLI Reference](./cli.md)
+- [Materials and Resource Packs](./materials.md)
+- [LOD and Large Structures](./lod.md)
+- [Troubleshooting](./troubleshooting.md)
+- [中文](/zh/user/getting-started)

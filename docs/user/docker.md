@@ -1,21 +1,23 @@
-# Docker
+---
+title: "Docker"
+---
 
-镜像只包含 `blockscope`，不包含任何 Minecraft 资产。客户端 jar、资源包和 job
-目录通过挂载提供。
+The image contains only `blockscope`; it does not include Minecraft assets. Mount
+the client jar, resource packs, and job directory at runtime.
 
-## 构建
+## Build
 
 ```bash
 docker build -t blockscope .
 ```
 
-## 容量检测
+## Capacity
 
 ```bash
 docker run --rm --cpus=1 --memory=1g blockscope capacity --json
 ```
 
-## 运行 worker
+## Run a Worker
 
 ```bash
 docker run --rm -i \
@@ -25,9 +27,10 @@ docker run --rm -i \
   blockscope serve --client-jar /assets/client.jar
 ```
 
-容器内工作目录是 `/data`。输入路径和 `outputDir` 需要使用容器内可见的绝对路径。
+The container working directory is `/data`. Input paths and `outputDir` must be
+absolute paths visible inside the container.
 
-## 运行 supervisor
+## Run a Supervisor
 
 ```bash
 docker run --rm -i \
@@ -39,22 +42,23 @@ docker run --rm -i \
     --client-jar /assets/client.jar
 ```
 
-## 烟雾测试
+## Smoke Test
 
 ```bash
 printf '%s\n' '{"type":"shutdown"}' |
   docker run --rm -i blockscope serve
 ```
 
-## 资源建议
+## Sizing
 
-`capacity` 会根据 cgroup 的 CPU/内存限制给出 worker、thread 和默认分辨率建议。
-1 CPU / 1 GiB 环境建议使用单 worker、单线程和较低分辨率；更大机器再提高并发。
+`capacity` reads cgroup CPU/memory limits and suggests worker, thread, and
+default-resolution settings. On a 1 CPU / 1 GiB host, prefer one worker, one
+thread, and a smaller resolution; increase concurrency only on larger hosts.
 
-完整部署说明见 [部署文档](../deployment.md)。
+See [Deployment](/deployment) for the full deployment guide.
 
-## 相关文档
+## See Also
 
-- [服务模式](./service.md)
-- [限制与安全](./limits.md)
-- [English](./en/docker.md)
+- [Service Mode](./service.md)
+- [Limits and Security](./limits.md)
+- [中文](/zh/user/docker)
