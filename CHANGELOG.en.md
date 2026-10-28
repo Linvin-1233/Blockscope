@@ -48,6 +48,15 @@ User-facing changes are recorded here. The format follows
 
 ### Performance
 
+- Material snapshots no longer build fallback geometry for states that a
+  resource-pack model replaces. `ColorBlockCatalog` gains `resolve_style`, which
+  returns only color, layer, and coverage; pack models and chests use it and the
+  fallback model is built only when it is actually rendered. The `ModelChain`
+  cache now shares `Arc`s, and texture transparency is computed and cached at
+  decode time. On `000001` with the 26.2 client jar (23,813 states,
+  512x512/supersample 1), material snapshot drops from 2.6-2.7 s to about 0.6 s,
+  `materials` from 3.1 s to 1.3 s, and total render from 18.6 s to 14.8 s.
+  Statistics and golden PNGs are unchanged.
 - Waterlogged layers add translucent faces for every visible waterlogged block.
   On the `000001` random stress fixture with about 3.2 million
   `waterlogged=true` states, 512x512 at supersample 1 render time rose from

@@ -83,7 +83,7 @@ pub struct MaterialSet {
     fallback: ColorBlockCatalog,
     textures: RefCell<TextureSet>,
     blockstates: RefCell<HashMap<String, Option<Arc<BlockstateFile>>>>,
-    models: RefCell<HashMap<String, Option<ModelChain>>>,
+    models: RefCell<HashMap<String, Option<Arc<ModelChain>>>>,
     resolved: RefCell<HashMap<BlockStateKey, Arc<ResolvedBlock>>>,
     info: RefCell<HashMap<BlockStateKey, MaterialInfo>>,
     diagnostics: RefCell<MaterialDiagnostics>,
@@ -172,12 +172,13 @@ impl MaterialSet {
     }
 
     fn resolve_uncached(&self, state: &BlockStateKey) -> ResolvedBlock {
-        let fallback = self.fallback.resolve(state);
-
         if state.is_air() {
-            return fallback;
+            return self.fallback.resolve(state);
         }
 
+        // Pack models and chests replace the fallback geometry, so resolve the
+        // palette style first and only build the fallback model when it is used.
+        let style = self.fallback.resolve_style(state);
         let pack = self.pack_model(state);
 
         if let Some(model) =
@@ -192,16 +193,16 @@ impl MaterialSet {
                 },
             );
             return ResolvedBlock {
-                color: fallback.color,
+                color: style.color,
                 layer: RenderLayer::Opaque,
                 model: Arc::new(model),
-                known: fallback.known,
+                known: style.known,
             };
         }
 
         if let Some(pack) = pack {
             if let Some(mut model) = pack.model {
-                if fallback.layer == RenderLayer::Opaque {
+                if style.layer == RenderLayer::Opaque {
                     let textures = self.textures.borrow();
                     for quad in &mut model.quads {
                         if quad.layer.is_none()
@@ -223,15 +224,16 @@ impl MaterialSet {
                     },
                 );
                 return ResolvedBlock {
-                    color: fallback.color,
-                    layer: fallback.layer,
+                    color: style.color,
+                    layer: style.layer,
                     model: Arc::new(model),
-                    known: fallback.known,
+                    known: style.known,
                 };
             }
 
+            let fallback = self.fallback.resolve(state);
             let (model, textured) =
-                self.fallback_model(state, fallback.model.clone(), pack.particle, fallback.layer);
+                self.fallback_model(state, fallback.model.clone(), pack.particle, style.layer);
             self.diagnostics.borrow_mut().fallback_shapes += 1;
             self.info.borrow_mut().insert(
                 state.clone(),
@@ -241,20 +243,21 @@ impl MaterialSet {
                 },
             );
             return ResolvedBlock {
-                color: fallback.color,
-                layer: fallback.layer,
+                color: style.color,
+                layer: style.layer,
                 model: Arc::new(model),
-                known: fallback.known,
+                known: style.known,
             };
         }
 
+        let fallback = self.fallback.resolve(state);
         let (model, textured) =
-            self.fallback_model(state, fallback.model.clone(), None, fallback.layer);
+            self.fallback_model(state, fallback.model.clone(), None, style.layer);
         self.diagnostics.borrow_mut().fallback_shapes += 1;
         self.info.borrow_mut().insert(
             state.clone(),
             MaterialInfo {
-                kind: if fallback.known {
+                kind: if style.known {
                     MaterialKind::Fallback
                 } else {
                     MaterialKind::Unknown
@@ -263,10 +266,10 @@ impl MaterialSet {
             },
         );
         ResolvedBlock {
-            color: fallback.color,
-            layer: fallback.layer,
+            color: style.color,
+            layer: style.layer,
             model: Arc::new(model),
-            known: fallback.known,
+            known: style.known,
         }
     }
 

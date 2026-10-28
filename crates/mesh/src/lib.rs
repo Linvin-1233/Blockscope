@@ -20,7 +20,7 @@ pub use builder::{
 };
 pub use catalog::{
     BlockCatalog, CatalogError, CatalogErrorCode, ColorBlockCatalog, ColorSnapshot, ResolvedBlock,
-    needs_water_style,
+    ResolvedStyle, needs_water_style,
 };
 pub use color::{RenderLayer, Rgba, redstone_color};
 pub use error::{MeshError, MeshErrorCode};

@@ -148,6 +148,60 @@ impl Default for ColorBlockCatalog {
     }
 }
 
+/// Color, layer, and coverage without building fallback geometry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ResolvedStyle {
+    pub color: Rgba,
+    pub layer: RenderLayer,
+    pub known: bool,
+}
+
+impl ColorBlockCatalog {
+    /// Resolve only the palette-level style.
+    ///
+    /// A resource-pack model replaces the fallback geometry, so callers that
+    /// already have a pack model only need the color, layer, and coverage flag.
+    pub fn resolve_style(&self, state: &BlockStateKey) -> ResolvedStyle {
+        if state.is_air() {
+            return ResolvedStyle {
+                color: Rgba::TRANSPARENT,
+                layer: RenderLayer::Cutout,
+                known: true,
+            };
+        }
+
+        if let Some(power) = shape::redstone_power(state) {
+            return ResolvedStyle {
+                color: redstone_color(power),
+                layer: RenderLayer::Cutout,
+                known: true,
+            };
+        }
+
+        if let Some(entry) = self.entries.get(&state.name) {
+            return ResolvedStyle {
+                color: entry.color,
+                layer: entry.layer.unwrap_or_else(|| layer_for_name(&state.name)),
+                known: true,
+            };
+        }
+
+        if let Some((color, layer)) = resolve_family(&state.name, self) {
+            return ResolvedStyle {
+                color,
+                layer,
+                known: true,
+            };
+        }
+
+        ResolvedStyle {
+            color: Rgba::MAGENTA,
+            layer: RenderLayer::Opaque,
+            known: false,
+        }
+    }
+}
+
 impl BlockCatalog for ColorBlockCatalog {
     fn resolve(&self, state: &BlockStateKey) -> ResolvedBlock {
         if state.is_air() {
@@ -159,38 +213,12 @@ impl BlockCatalog for ColorBlockCatalog {
             };
         }
 
-        if let Some(power) = shape::redstone_power(state) {
-            return ResolvedBlock {
-                color: redstone_color(power),
-                layer: RenderLayer::Cutout,
-                model: self.model_for(state),
-                known: true,
-            };
-        }
-
-        if let Some(entry) = self.entries.get(&state.name) {
-            return ResolvedBlock {
-                color: entry.color,
-                layer: entry.layer.unwrap_or_else(|| layer_for_name(&state.name)),
-                model: self.model_for(state),
-                known: true,
-            };
-        }
-
-        if let Some((color, layer)) = resolve_family(&state.name, self) {
-            return ResolvedBlock {
-                color,
-                layer,
-                model: self.model_for(state),
-                known: true,
-            };
-        }
-
+        let style = self.resolve_style(state);
         ResolvedBlock {
-            color: Rgba::MAGENTA,
-            layer: RenderLayer::Opaque,
+            color: style.color,
+            layer: style.layer,
             model: self.model_for(state),
-            known: false,
+            known: style.known,
         }
     }
 }
@@ -614,3 +642,35 @@ const WOOD_COLORS: &[(&str, Rgba, Rgba, Rgba)] = &[
         Rgba::rgb(59, 107, 106),
     ),
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const PALETTE: &str = r##"{
+        "blocks": {
+            "minecraft:stone": { "color": "#808080" },
+            "minecraft:water": { "color": "#3F76E4", "layer": "translucent" }
+        }
+    }"##;
+
+    #[test]
+    fn resolve_style_matches_full_resolution() {
+        let catalog = ColorBlockCatalog::from_json_str(PALETTE).unwrap();
+        let states = [
+            BlockStateKey::simple("minecraft:air"),
+            BlockStateKey::simple("minecraft:stone"),
+            BlockStateKey::simple("minecraft:water"),
+            BlockStateKey::simple("minecraft:redstone_wire"),
+            BlockStateKey::simple("minecraft:not_a_block"),
+        ];
+
+        for state in states {
+            let style = catalog.resolve_style(&state);
+            let resolved = BlockCatalog::resolve(&catalog, &state);
+            assert_eq!(style.color, resolved.color, "color for {}", state.name);
+            assert_eq!(style.layer, resolved.layer, "layer for {}", state.name);
+            assert_eq!(style.known, resolved.known, "known for {}", state.name);
+        }
+    }
+}

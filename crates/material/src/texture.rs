@@ -38,6 +38,8 @@ impl Texture {
 #[derive(Debug, Clone, Default)]
 pub struct TextureSet {
     textures: Vec<Texture>,
+    /// Per-texture alpha flag, computed once when the texture is decoded.
+    transparency: Vec<bool>,
     lookup: HashMap<String, Option<u16>>,
     bytes: u64,
     missing: u64,
@@ -98,11 +100,13 @@ impl TextureSet {
         self.bytes += size;
 
         let id = u16::try_from(self.textures.len()).ok()?;
+        let has_alpha = rgba.as_chunks::<4>().0.iter().any(|pixel| pixel[3] < 255);
         self.textures.push(Texture {
             width,
             height,
             rgba,
         });
+        self.transparency.push(has_alpha);
         Some(id)
     }
 
@@ -111,15 +115,10 @@ impl TextureSet {
     }
 
     pub fn has_transparency(&self, id: u16) -> bool {
-        let Some(texture) = self.get(id) else {
-            return false;
-        };
-        texture
-            .rgba
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .any(|pixel| pixel[3] < 255)
+        self.transparency
+            .get(usize::from(id))
+            .copied()
+            .unwrap_or(false)
     }
 
     #[inline]
@@ -342,6 +341,36 @@ mod tests {
         assert!((blended[1] - 0.5).abs() < 1e-6);
         assert!((blended[2] - 0.5).abs() < 1e-6);
         assert!((blended[3] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn transparency_is_detected_from_decoded_pixels() {
+        let dir = tempfile::tempdir().unwrap();
+        write_png(
+            &dir.path()
+                .join("assets/minecraft/textures/block/opaque.png"),
+            2,
+            2,
+            &[255u8; 16],
+        );
+        write_png(
+            &dir.path().join("assets/minecraft/textures/block/alpha.png"),
+            2,
+            2,
+            &[
+                255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 128, 255, 255, 255, 255,
+            ],
+        );
+
+        let mut source = AssetSource::new();
+        source.add_dir(dir.path()).unwrap();
+        let mut textures = TextureSet::new();
+        let opaque = textures.load(&source, "block/opaque").unwrap();
+        let alpha = textures.load(&source, "block/alpha").unwrap();
+
+        assert!(!textures.has_transparency(opaque));
+        assert!(textures.has_transparency(alpha));
+        assert!(!textures.has_transparency(u16::MAX));
     }
 
     #[test]
