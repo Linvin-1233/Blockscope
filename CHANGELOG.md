@@ -9,8 +9,8 @@
 
 ### 新增
 
-- 新增 Cloudflare Workers 适配器（`blockscope-worker`），支持可配置 HTTP 端点，
-  并直接从 `.litematic` 请求体渲染纯色 PNG。
+- 新增 Cloudflare Workers 适配器（`blockscope-worker`），支持可配置 HTTP 端点和
+  CORS，直接从 `.litematic` 请求体渲染 PNG，并可从 Workers 静态资源加载资源包。
 
 ### 修复
 

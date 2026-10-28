@@ -3,9 +3,11 @@
 //
 // Set ENDPOINT=/api/render to override the render route without editing the
 // committed config. ALLOWED_ORIGIN and WORKER_NAME work the same way.
+// RESOURCE_PACK selects the local ZIP and RESOURCE_PACK_PATH selects its
+// static-asset URL inside the Worker.
 
-import { cpSync, existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, sep } from "node:path";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -68,6 +70,41 @@ if (process.env.COMPATIBILITY_DATE) config.compatibilityDate = process.env.COMPA
 if (process.env.ENDPOINT) config.env.ENDPOINT.value = process.env.ENDPOINT;
 if (process.env.ALLOWED_ORIGIN) config.env.ALLOWED_ORIGIN.value = process.env.ALLOWED_ORIGIN;
 if (process.env.CPU_MS) config.limits = { cpuMs: Number(process.env.CPU_MS) };
+
+const packSource = process.env.RESOURCE_PACK
+  ? resolve(root, process.env.RESOURCE_PACK)
+  : join(root, "pack.zip");
+const assetsDir = join(workerDir, "assets");
+const packTarget = join(assetsDir, "pack.zip");
+rmSync(assetsDir, { recursive: true, force: true });
+
+let packBytes = 0;
+if (existsSync(packSource) && statSync(packSource).isFile()) {
+  packBytes = statSync(packSource).size;
+  if (packBytes > 24 * 1024 * 1024) {
+    console.error(`resource pack is ${(packBytes / 1024 / 1024).toFixed(1)} MiB; the Worker limit is 24 MiB`);
+    process.exit(1);
+  }
+  mkdirSync(assetsDir, { recursive: true });
+  cpSync(packSource, packTarget);
+  config.assets = { runWorkerFirst: true };
+  config.env.ASSETS = { type: "assets" };
+  config.env.RESOURCE_PACK_PATH.value = "/pack.zip";
+} else {
+  delete config.assets;
+  delete config.env.ASSETS;
+  config.env.RESOURCE_PACK_PATH.value = "";
+  console.warn(`no resource pack at ${packSource}; building a color-only Worker`);
+}
+
+if (process.env.RESOURCE_PACK_PATH !== undefined) {
+  if (packBytes === 0) {
+    console.warn("RESOURCE_PACK_PATH is ignored because no resource pack was bundled");
+  } else {
+    config.env.RESOURCE_PACK_PATH.value = process.env.RESOURCE_PACK_PATH;
+  }
+}
+
 config.manifest = { type: "complete", mainModule, modules };
 
 writeFileSync(join(workerDir, "worker.config.json"), `${JSON.stringify(config, null, 2)}\n`);
@@ -80,4 +117,9 @@ const bytes = bundleFiles.reduce((total, path) => total + statSync(path).size, 0
 console.log(`packed ${bundleFiles.length} files (${(bytes / 1024 / 1024).toFixed(1)} MiB)`);
 console.log(`entry: ${mainModule}`);
 console.log(`endpoint: ${config.env.ENDPOINT.value}`);
+console.log(
+  packBytes
+    ? `resource pack: ${(packBytes / 1024 / 1024).toFixed(1)} MiB at ${config.env.RESOURCE_PACK_PATH.value}`
+    : "resource pack: none (color-only)",
+);
 console.log(`worker: ${config.name}`);

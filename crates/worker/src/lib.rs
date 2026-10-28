@@ -1,27 +1,32 @@
 //! Cloudflare Workers adapter for the Blockscope renderer.
 //!
-//! The worker accepts a `.litematic` body over POST and returns a PNG. It is
-//! intentionally color-only: resource-pack extraction needs a filesystem, which
-//! Workers do not provide. The render endpoint and CORS origin are text
-//! bindings (`ENDPOINT`, `ALLOWED_ORIGIN`) so deployments can change them
-//! without a rebuild.
+//! The worker accepts a `.litematic` body over POST and returns a PNG. A
+//! resource pack is loaded from Workers Static Assets when configured; without
+//! one it falls back to the built-in color catalog. The render endpoint, CORS
+//! origin, and pack path are text bindings (`ENDPOINT`, `ALLOWED_ORIGIN`,
+//! `RESOURCE_PACK_PATH`) so deployments can change them without a rebuild.
 
 use litematic_core::{
     DecodeLimits, LitematicError, LitematicErrorCode, LitematicFile, LitematicLimits,
 };
+use litematic_material::{AssetSource, MaterialError, MaterialErrorCode, MaterialSet};
 use litematic_mesh::{
     ColorBlockCatalog, MeshBuildOptions, MeshError, MeshLimits, Rgba, build_mesh_with_options,
 };
 use litematic_render::{
-    Background, LightingProfile, RenderError, RenderOptions, render_mesh, write_png,
+    Background, LightingProfile, RenderError, RenderOptions, render_mesh,
+    render_mesh_with_textures, write_png,
 };
 use litematic_scene::{Scene, aggregate_with_threads};
 use serde::{Deserialize, Serialize};
 use worker::{Context, Env, Method, Request, Response, Result, event};
 
 const DEFAULT_ENDPOINT: &str = "/render";
+const DEFAULT_PACK_PATH: &str = "/pack.zip";
 const HEALTH_ENDPOINT: &str = "/health";
+const ASSETS_BINDING: &str = "ASSETS";
 const MAX_INPUT_BYTES: usize = 8 * 1024 * 1024;
+const MAX_PACK_BYTES: usize = 24 * 1024 * 1024;
 const MAX_DECOMPRESSED_BYTES: usize = 32 * 1024 * 1024;
 const MAX_NBT_BYTES: usize = 64 * 1024 * 1024;
 const MAX_TOTAL_VOLUME: u64 = 64_000_000;
@@ -140,6 +145,29 @@ impl ApiError {
             hint: None,
         }
     }
+
+    fn from_material(error: MaterialError) -> Self {
+        let status = if error.code == MaterialErrorCode::AssetLimit {
+            413
+        } else {
+            500
+        };
+        Self {
+            status,
+            code: error.code.as_str().to_string(),
+            message: error.to_string(),
+            hint: Some("check the resource pack and its asset limits"),
+        }
+    }
+
+    fn resource_pack(message: impl Into<String>) -> Self {
+        Self {
+            status: 503,
+            code: "RESOURCE_PACK_UNAVAILABLE".to_string(),
+            message: message.into(),
+            hint: Some("check the ASSETS binding and RESOURCE_PACK_PATH"),
+        }
+    }
 }
 
 #[event(fetch)]
@@ -163,6 +191,7 @@ pub async fn fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Response
                 "engine": "blockscope",
                 "version": env!("CARGO_PKG_VERSION"),
                 "renderEndpoint": endpoint,
+                "textures": !binding(&env, "RESOURCE_PACK_PATH", DEFAULT_PACK_PATH).is_empty(),
             }),
             &origin,
         );
@@ -224,13 +253,66 @@ pub async fn fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Response
         }
     };
 
-    match render_png(&input, &query) {
+    let pack = match load_resource_pack(&env).await {
+        Ok(pack) => pack,
+        Err(error) => return error_response(error, &origin),
+    };
+
+    match render_png(&input, &query, pack) {
         Ok(png) => png_response(png, &origin),
         Err(error) => error_response(error, &origin),
     }
 }
 
-fn render_png(input: &[u8], query: &QueryOptions) -> std::result::Result<Vec<u8>, ApiError> {
+async fn load_resource_pack(env: &Env) -> std::result::Result<Option<Vec<u8>>, ApiError> {
+    let path = binding(env, "RESOURCE_PACK_PATH", DEFAULT_PACK_PATH);
+    if path.is_empty() {
+        return Ok(None);
+    }
+
+    let assets = env.assets(ASSETS_BINDING).map_err(|error| {
+        ApiError::resource_pack(format!("ASSETS binding is unavailable: {error}"))
+    })?;
+    // The assets binding ignores the host but still requires an absolute URL.
+    let asset_path = if path.starts_with('/') {
+        path.clone()
+    } else {
+        format!("/{path}")
+    };
+    let mut response = assets
+        .fetch(format!("https://assets.local{asset_path}"), None)
+        .await
+        .map_err(|error| ApiError::resource_pack(format!("cannot read {path}: {error}")))?;
+    if !(200..300).contains(&response.status_code()) {
+        return Err(ApiError::resource_pack(format!(
+            "{path} returned HTTP {}",
+            response.status_code()
+        )));
+    }
+
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|error| ApiError::resource_pack(format!("cannot read {path}: {error}")))?;
+    if bytes.len() > MAX_PACK_BYTES {
+        return Err(ApiError {
+            status: 413,
+            code: "RESOURCE_PACK_TOO_LARGE".to_string(),
+            message: format!(
+                "resource pack is {} bytes; the limit is {MAX_PACK_BYTES}",
+                bytes.len()
+            ),
+            hint: Some("use a resource pack under 24 MiB"),
+        });
+    }
+    Ok(Some(bytes))
+}
+
+fn render_png(
+    input: &[u8],
+    query: &QueryOptions,
+    pack: Option<Vec<u8>>,
+) -> std::result::Result<Vec<u8>, ApiError> {
     let width = query.width.unwrap_or(512);
     let height = query.height.unwrap_or(512);
     if width == 0 || height == 0 || width > MAX_DIMENSION || height > MAX_DIMENSION {
@@ -289,15 +371,11 @@ fn render_png(input: &[u8], query: &QueryOptions) -> std::result::Result<Vec<u8>
     };
     let scene: &Scene = aggregated.as_ref().unwrap_or(&scene);
 
-    let catalog = ColorBlockCatalog::new()
-        .map_err(|error| ApiError::internal(format!("color catalog is unavailable: {error}")))?;
     let mesh_limits = MeshLimits {
         max_pages: MAX_MESH_PAGES,
         max_quads: MAX_MESH_QUADS,
         max_vertices: MAX_MESH_VERTICES,
     };
-    let mesh = build_mesh_with_options(scene, &catalog, &mesh_limits, MeshBuildOptions::default())
-        .map_err(ApiError::from_mesh)?;
 
     let options = RenderOptions {
         width,
@@ -316,7 +394,28 @@ fn render_png(input: &[u8], query: &QueryOptions) -> std::result::Result<Vec<u8>
     };
     options.validate().map_err(ApiError::from_render)?;
 
-    let output = render_mesh(scene, &mesh, &options).map_err(ApiError::from_render)?;
+    let output = if let Some(pack) = pack {
+        let mut source = AssetSource::new();
+        source
+            .add_zip_bytes(pack)
+            .map_err(ApiError::from_material)?;
+        let materials = MaterialSet::open(source).map_err(ApiError::from_material)?;
+        let snapshot = materials.snapshot(scene.statistics.blocks.keys().cloned());
+        let mesh =
+            build_mesh_with_options(scene, &snapshot, &mesh_limits, MeshBuildOptions::default())
+                .map_err(ApiError::from_mesh)?;
+        render_mesh_with_textures(scene, &mesh, &options, snapshot.textures())
+            .map_err(ApiError::from_render)?
+    } else {
+        let catalog = ColorBlockCatalog::new().map_err(|error| {
+            ApiError::internal(format!("color catalog is unavailable: {error}"))
+        })?;
+        let mesh =
+            build_mesh_with_options(scene, &catalog, &mesh_limits, MeshBuildOptions::default())
+                .map_err(ApiError::from_mesh)?;
+        render_mesh(scene, &mesh, &options).map_err(ApiError::from_render)?
+    };
+
     let mut png = Vec::new();
     write_png(&output, &mut png).map_err(ApiError::from_render)?;
     Ok(png)

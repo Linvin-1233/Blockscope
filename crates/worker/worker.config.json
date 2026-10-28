@@ -2,7 +2,17 @@
   "name": "blockscope-render",
   "compatibilityDate": "2026-10-01",
   "workersDev": true,
+  "assets": {
+    "runWorkerFirst": true
+  },
   "env": {
+    "ASSETS": {
+      "type": "assets"
+    },
+    "RESOURCE_PACK_PATH": {
+      "type": "text",
+      "value": "/pack.zip"
+    },
     "ENDPOINT": {
       "type": "text",
       "value": "/render"

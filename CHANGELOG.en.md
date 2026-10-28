@@ -10,8 +10,9 @@ User-facing changes are recorded here. The format follows
 
 ### Added
 
-- Cloudflare Workers adapter (`blockscope-worker`) with a configurable HTTP
-  endpoint and color-only PNG rendering from a `.litematic` request body.
+- Cloudflare Workers adapter (`blockscope-worker`) with configurable HTTP and
+  CORS settings, PNG rendering from a `.litematic` request body, and an optional
+  resource pack loaded from Workers Static Assets.
 
 ### Fixed
 

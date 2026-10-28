@@ -1,11 +1,16 @@
 # Cloudflare Workers
 
 The `blockscope-worker` crate exposes the CPU renderer as a stateless HTTP
-endpoint. It accepts a `.litematic` body, renders a color-only PNG in a single
-request, and does not use a filesystem or resource pack.
+endpoint. It accepts a `.litematic` body and renders a PNG in a single request.
 
-This adapter renders **colors only**. Textured output needs a resource pack and
-a filesystem, which Workers do not provide.
+A resource pack can be bundled as a Workers Static Asset and read through the
+`ASSETS` binding. The pack ZIP is loaded in memory, so the Worker still does not
+need a filesystem. Without a pack, the Worker falls back to the built-in color
+catalog.
+
+Static assets are bundled with each Worker version. To change the pack, rebuild
+and redeploy; runtime pack selection needs R2 or another object store, which
+this adapter does not support yet.
 
 ## Deploy
 
@@ -23,6 +28,32 @@ cf deploy --prebuilt
 If the account has more than one account, set `CLOUDFLARE_ACCOUNT_ID` before
 deploying. `just worker` and `just worker-deploy` run the same commands.
 
+### Bundle a resource pack
+
+Put the pack at `pack.zip` in the repository root, or point at it explicitly:
+
+```bash
+RESOURCE_PACK=~/packs/vanilla.zip ./scripts/build-worker.sh
+cf deploy --prebuilt
+```
+
+The build copies the pack to the Worker's `assets/` directory, enables the
+`ASSETS` binding, and exposes it internally at `/pack.zip`. The committed
+default is `RESOURCE_PACK_PATH=/pack.zip`; override the URL without moving the
+file:
+
+```bash
+RESOURCE_PACK_PATH=/packs/vanilla.zip ./scripts/build-worker.sh
+```
+
+`pack.zip` is ignored by git. Do not commit Minecraft assets. If the file is
+missing, the build produces a color-only Worker and logs a warning.
+
+Limits: static assets allow 25 MiB per file and 20,000 files on Free
+(100,000 on Paid). This adapter caps the pack at 24 MiB so the runtime check
+fails before the isolate runs out of memory. A full client jar is usually too
+large; use a resource-pack ZIP.
+
 The Worker URL is printed by `cf deploy`:
 
 ```text
@@ -35,7 +66,10 @@ Edit `crates/worker/worker.config.json`:
 
 ```json
 {
+  "assets": { "runWorkerFirst": true },
   "env": {
+    "ASSETS": { "type": "assets" },
+    "RESOURCE_PACK_PATH": { "type": "text", "value": "/pack.zip" },
     "ENDPOINT": { "type": "text", "value": "/render" },
     "ALLOWED_ORIGIN": { "type": "text", "value": "*" }
   }
@@ -49,7 +83,9 @@ ENDPOINT=/api/render ALLOWED_ORIGIN=https://example.com ./scripts/build-worker.s
 ```
 
 `ENDPOINT` must start with `/`. `ALLOWED_ORIGIN` controls the CORS header for
-the render and health routes.
+the render and health routes. Setting `RESOURCE_PACK_PATH` to an empty string
+disables texture loading and forces color-only output. `runWorkerFirst` keeps
+the pack off the public asset routes; the Worker reads it through `ASSETS`.
 
 ### CPU limits
 
@@ -92,10 +128,13 @@ Successful responses are `image/png`. Errors are JSON:
 }
 ```
 
-`GET /health` returns engine status. `OPTIONS` handles CORS preflight.
+`GET /health` returns engine status, including `textures: true|false`.
+`OPTIONS` handles CORS preflight. When a pack is configured, block models and
+textures are resolved from it; missing textures keep their fallback color.
 
 Limits: 8 MiB input, 32 MiB decompressed NBT, 64,000,000 blocks, 200,000 mesh
-quads, and 1,048,576 output pixels.
+quads, 24 MiB resource pack, and 1,048,576 output pixels. Decoding a pack and
+its textures costs CPU and memory; keep the mesh cap low on the Free plan.
 
 ## Build a frontend
 
@@ -138,6 +177,6 @@ controls so callers can stay within the CPU and pixel budgets.
 
 ## Non-goals
 
-- Textured rendering or resource packs
+- Runtime pack switching without a redeploy (use R2 for that)
 - Persistent caches, job queues, or cancellation
 - Filesystem access

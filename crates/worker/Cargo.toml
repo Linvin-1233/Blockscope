@@ -9,6 +9,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 litematic-core = { path = "../litematic" }
+litematic-material = { path = "../material" }
 litematic-mesh = { path = "../mesh" }
 litematic-render = { path = "../render" }
 litematic-scene = { path = "../scene" }

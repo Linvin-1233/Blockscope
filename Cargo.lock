@@ -135,6 +135,7 @@ name = "blockscope-worker"
 version = "0.4.0"
 dependencies = [
  "litematic-core",
+ "litematic-material",
  "litematic-mesh",
  "litematic-render",
  "litematic-scene",

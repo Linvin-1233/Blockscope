@@ -10,6 +10,7 @@
 /crates/worker/build/
 
 # Local resource packs and fixtures (never commit Minecraft assets).
+/pack.zip
 /resourcepacks/
 /fixtures/private/
 /fixtures/litematic/*.litematic
