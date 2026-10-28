@@ -7,8 +7,9 @@ use crate::{
 };
 use clap::Args;
 use litematic_render::{
-    Background, LightingProfile, RenderOptions, render_mesh, render_mesh_with_progress,
-    render_mesh_with_textures, render_mesh_with_textures_and_progress, will_stream, write_png,
+    Background, LightingProfile, RenderBackend, RenderOptions, render_mesh,
+    render_mesh_with_progress, render_mesh_with_textures, render_mesh_with_textures_and_progress,
+    will_stream, write_png,
 };
 use std::path::PathBuf;
 use std::time::Instant;
@@ -45,6 +46,9 @@ pub(crate) struct BenchArgs {
     /// flat-v1 or simple-ao-v1.
     #[arg(long, default_value = "simple-ao-v1", value_name = "PROFILE")]
     lighting: String,
+    /// Rasterization backend: cpu, gpu, or auto.
+    #[arg(long, default_value = "cpu", value_name = "BACKEND")]
+    backend: String,
     /// Print the report as JSON.
     #[arg(long)]
     json: bool,
@@ -80,6 +84,12 @@ pub(crate) fn run(args: BenchArgs) -> Result<(), CliError> {
         ))
     })?;
 
+    let backend = RenderBackend::parse(&args.backend).ok_or_else(|| {
+        CliError::input(format!(
+            "INVALID_RENDER_OPTIONS: unknown backend '{}'",
+            args.backend
+        ))
+    })?;
     let texture_filter = parse_texture_filter(&args.assets.texture_filter)?;
     let materials_stage = progress.stage("Loading materials");
     let materials = load_materials(&args.assets)?;
@@ -131,6 +141,7 @@ pub(crate) fn run(args: BenchArgs) -> Result<(), CliError> {
         supersample: args.supersample,
         threads: args.threads,
         texture_filter,
+        backend,
         ..Default::default()
     };
     apply_render_limits(args.limits.force_limits, &mut options);
@@ -142,12 +153,20 @@ pub(crate) fn run(args: BenchArgs) -> Result<(), CliError> {
     let mut last_output = None;
 
     for iteration in 0..args.iterations {
-        let streaming = will_stream(&mesh, &options);
-        let render_bar = (!streaming).then(|| progress.bar("Rendering"));
+        let gpu = options.backend != RenderBackend::Cpu;
+        let streaming = !gpu && will_stream(&mesh, &options);
+        let show_tile_progress = !gpu && !streaming;
+        let render_bar = show_tile_progress.then(|| progress.bar("Rendering"));
         if let Some(bar) = &render_bar {
             bar.message(format!("Rendering {}/{}", iteration + 1, args.iterations));
         }
-        let render_stage = streaming.then(|| progress.stage("Rendering (streaming)"));
+        let render_stage = (gpu || streaming).then(|| {
+            progress.stage(if gpu {
+                "Rendering (gpu)"
+            } else {
+                "Rendering (streaming)"
+            })
+        });
         let render_started = Instant::now();
         let output = {
             let update = |done, total| {
@@ -155,8 +174,8 @@ pub(crate) fn run(args: BenchArgs) -> Result<(), CliError> {
                     bar.update(done, total);
                 }
             };
-            match (&snapshot, streaming) {
-                (Some(snapshot), false) => render_mesh_with_textures_and_progress(
+            match (&snapshot, show_tile_progress) {
+                (Some(snapshot), true) => render_mesh_with_textures_and_progress(
                     &scene,
                     &mesh,
                     &options,
@@ -164,13 +183,13 @@ pub(crate) fn run(args: BenchArgs) -> Result<(), CliError> {
                     &update,
                 )
                 .map_err(CliError::from)?,
-                (None, false) => render_mesh_with_progress(&scene, &mesh, &options, &update)
+                (None, true) => render_mesh_with_progress(&scene, &mesh, &options, &update)
                     .map_err(CliError::from)?,
-                (Some(snapshot), true) => {
+                (Some(snapshot), false) => {
                     render_mesh_with_textures(&scene, &mesh, &options, snapshot.textures())
                         .map_err(CliError::from)?
                 }
-                (None, true) => render_mesh(&scene, &mesh, &options).map_err(CliError::from)?,
+                (None, false) => render_mesh(&scene, &mesh, &options).map_err(CliError::from)?,
             }
         };
         if let Some(bar) = render_bar {
@@ -211,6 +230,7 @@ pub(crate) fn run(args: BenchArgs) -> Result<(), CliError> {
             "height": options.height,
             "supersample": options.supersample,
             "threads": options.threads,
+            "backend": output.statistics.backend_used.as_str(),
             "lod": factor,
             "parseMs": parse_ms,
             "lodMs": lod_ms,

@@ -1,5 +1,6 @@
-//! CPU color-block rasterizer and PNG output.
+//! Color-block rasterizer and PNG output.
 
+mod backend;
 mod camera;
 mod error;
 mod options;
@@ -7,6 +8,7 @@ mod png;
 mod rasterizer;
 pub mod terminal;
 
+pub use backend::RenderBackend;
 pub use camera::Camera;
 pub use error::{RenderError, RenderErrorCode};
 pub use litematic_material::TextureFilter;

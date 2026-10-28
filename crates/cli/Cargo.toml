@@ -7,6 +7,12 @@ edition.workspace = true
 name = "blockscope"
 path = "src/main.rs"
 
+[features]
+default = []
+# Opt-in offscreen wgpu rasterizer (`--backend gpu`). Binaries built with this
+# feature still default to the CPU backend.
+gpu = ["litematic-render/gpu"]
+
 [dependencies]
 anstream.workspace = true
 anstyle.workspace = true
