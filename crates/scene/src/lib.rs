@@ -13,6 +13,7 @@ mod packed;
 mod region;
 mod scene;
 mod statistics;
+mod threads;
 
 pub use block_entity::BlockEntity;
 pub use block_state::BlockStateKey;
@@ -30,5 +31,6 @@ pub use packed::PackedIndices;
 pub use region::Region;
 pub use scene::Scene;
 pub use statistics::BlockStatistics;
+pub use threads::{MAX_WORKERS, worker_count};
 
 pub const CRATE_NAME: &str = "litematic-scene";

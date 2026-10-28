@@ -237,6 +237,19 @@ impl<'a> Decoder<'a> {
             ));
         }
 
+        // Every element consumes at least one byte (a compound needs its end
+        // tag, a scalar its payload). Reject impossible lengths before
+        // reserving the element table, so a tiny truncated input cannot force a
+        // large allocation.
+        let remaining = self.remaining();
+        if len > remaining {
+            return Err(NbtError::new(
+                NbtErrorCode::TruncatedInput,
+                offset,
+                format!("list declares {len} elements, only {remaining} bytes remain"),
+            ));
+        }
+
         let reserved = len
             .checked_mul(std::mem::size_of::<NbtValue>())
             .ok_or_else(|| limit_error(offset, "list allocation overflow"))?;
@@ -352,6 +365,7 @@ impl<'a> Decoder<'a> {
         let size = len
             .checked_mul(4)
             .ok_or_else(|| limit_error(offset, "int array allocation overflow"))?;
+        self.ensure_available(size, offset, "int array")?;
         self.add_allocation(size, offset)?;
 
         let mut values = Vec::with_capacity(len);
@@ -367,6 +381,7 @@ impl<'a> Decoder<'a> {
         let size = len
             .checked_mul(8)
             .ok_or_else(|| limit_error(offset, "long array allocation overflow"))?;
+        self.ensure_available(size, offset, "long array")?;
         self.add_allocation(size, offset)?;
 
         let mut values = Vec::with_capacity(len);
@@ -487,6 +502,24 @@ impl<'a> Decoder<'a> {
 
     fn read_f64(&mut self) -> Result<f64, NbtError> {
         Ok(f64::from_bits(self.read_i64()? as u64))
+    }
+
+    fn remaining(&self) -> usize {
+        self.data.len().saturating_sub(self.pos)
+    }
+
+    /// Reject a declared payload that cannot possibly fit in the remaining
+    /// input before reserving memory for it.
+    fn ensure_available(&self, bytes: usize, offset: usize, label: &str) -> Result<(), NbtError> {
+        let remaining = self.remaining();
+        if bytes > remaining {
+            return Err(NbtError::new(
+                NbtErrorCode::TruncatedInput,
+                offset,
+                format!("{label} needs {bytes} bytes, only {remaining} bytes remain"),
+            ));
+        }
+        Ok(())
     }
 
     fn add_allocation(&mut self, bytes: usize, offset: usize) -> Result<(), NbtError> {

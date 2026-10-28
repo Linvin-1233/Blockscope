@@ -4,7 +4,7 @@ Blockscope is a headless Rust image-rendering engine that turns
 Minecraft `.litematic` projections into PNG images. It is designed for general
 backend services, batch tools, and automation pipelines.
 
-The current workspace version is `0.1.2` and supports Windows, Linux, and macOS. The
+The current workspace version is `0.4.0` and supports Windows, Linux, and macOS. The
 repository contains parsing, materials, meshing, CPU rasterization, a CLI, and a
 stdio service. It does not contain a chat-platform or bot adapter.
 
@@ -20,6 +20,8 @@ stdio service. It does not contain a chat-platform or bot adapter.
   tint, cutout/translucent layers, PNG textures, and overlays
 - Built-in chest body/lid/lock model and entity textures
 - Mesh export: OBJ and colored PLY
+- Optional `--greedy-mesh` coplanar merging for large flat or repetitive
+  surfaces
 - CPU orthographic camera, tiled rasterization, `flat-v1` / `simple-ao-v1`
   lighting, and PNG output
 - Supersampling 1-4, multi-view output, parallel tiles, and paged streaming
@@ -40,24 +42,9 @@ stdio service. It does not contain a chat-platform or bot adapter.
 - Resource packs, client jars, and private `.litematic` files are not committed
 - No network listener; `serve`/`supervise` communicate over stdio only
 
-## Repository Layout
-
-| Path | Contents |
-|---|---|
-| `../../../crates/nbt` | NBT decoding, compression detection, limits |
-| `../../../crates/litematic` | `.litematic` container parsing and Scene construction |
-| `../../../crates/scene` | Scene IR, statistics, diagnostics, manifest, hash, LOD |
-| `../../../crates/material` | Blockstates/models, resource packs, PNG, tint, chest |
-| `../../../crates/mesh` | Color-block/pack meshing, culling, AO, OBJ/PLY |
-| `../../../crates/render` | CPU rasterization, tiles, supersampling, PNG |
-| `../../../crates/cli` | `blockscope` CLI, serve, supervise, capacity detection |
-| `../..` | Format, rendering, material, protocol, and deployment docs |
-| `../../../fixtures/golden` | Golden manifests and PNGs |
-| `../../../scripts` | Windows/Linux quality gates |
-
 ## Next
 
-- [Installation and Quick Start](getting-started.md)
-- [CLI Reference](cli.md)
-- [Limits and Security](limits.md)
+- [Installation and Quick Start](./getting-started.md)
+- [CLI Reference](./cli.md)
+- [Limits and Security](./limits.md)
 - [中文](../features.md)

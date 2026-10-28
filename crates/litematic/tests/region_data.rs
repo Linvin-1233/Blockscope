@@ -197,7 +197,11 @@ fn parses_modern_block_entity() {
         entity.data.get("CustomName"),
         Some(&NbtValue::String("test".into()))
     );
-    assert!(data.diagnostics.is_empty());
+    assert!(
+        data.diagnostics
+            .iter()
+            .all(|diagnostic| diagnostic.code == DiagnosticCode::EmptyRegion)
+    );
 }
 
 #[test]

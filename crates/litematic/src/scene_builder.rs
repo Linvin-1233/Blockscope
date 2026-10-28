@@ -74,8 +74,9 @@ impl LitematicFile {
 
 fn map_scene_error(error: SceneError) -> LitematicError {
     let code = match error.code {
-        SceneErrorCode::EmptyScene => LitematicErrorCode::InvalidLitematic,
-        SceneErrorCode::InvalidLodFactor => LitematicErrorCode::InvalidLitematic,
+        SceneErrorCode::EmptyScene
+        | SceneErrorCode::InvalidLodFactor
+        | SceneErrorCode::RegionLayoutMismatch => LitematicErrorCode::InvalidLitematic,
         SceneErrorCode::BoundsOverflow
         | SceneErrorCode::StatisticsOverflow
         | SceneErrorCode::LodAggregationFailed => LitematicErrorCode::ResourceLimit,

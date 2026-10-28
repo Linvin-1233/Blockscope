@@ -1,5 +1,6 @@
 use crate::CliError;
 use crate::capacity::Capacity;
+use crate::ui::{self, ACCENT, BOLD, MUTED};
 use clap::Args;
 
 #[derive(Debug, Args)]
@@ -18,24 +19,39 @@ pub(crate) fn run(args: CapacityArgs) -> Result<(), CliError> {
         return Ok(());
     }
 
-    println!("platform: {}", capacity.platform);
-    println!("cores: {}", capacity.cores);
+    ui::outln!("{MUTED}platform:{MUTED:#} {}", capacity.platform);
+    ui::outln!("{MUTED}cores:{MUTED:#} {}", capacity.cores);
     match capacity.cpu_quota_milli {
-        Some(milli) => println!("cpu quota: {:.1} cores", f64::from(milli) / 1000.0),
-        None => println!("cpu quota: unlimited"),
+        Some(milli) => ui::outln!(
+            "{MUTED}cpu quota:{MUTED:#} {:.1} cores",
+            f64::from(milli) / 1000.0
+        ),
+        None => ui::outln!("{MUTED}cpu quota:{MUTED:#} unlimited"),
     }
-    println!(
-        "memory limit: {}",
+    ui::outln!(
+        "{MUTED}memory limit:{MUTED:#} {}",
         format_megabytes(capacity.memory_limit_bytes)
     );
-    println!(
-        "memory available: {}",
+    ui::outln!(
+        "{MUTED}memory available:{MUTED:#} {}",
         format_megabytes(capacity.memory_available_bytes)
     );
-    println!("suggested workers: {}", capacity.suggested_workers);
-    println!("suggested threads: {}", capacity.suggested_threads);
-    println!("suggested max quads: {}", capacity.suggested_max_quads);
-    println!("default tier: {}", capacity.tier());
+    ui::outln!(
+        "{MUTED}suggested workers:{MUTED:#} {BOLD}{}{BOLD:#}",
+        capacity.suggested_workers
+    );
+    ui::outln!(
+        "{MUTED}suggested threads:{MUTED:#} {BOLD}{}{BOLD:#}",
+        capacity.suggested_threads
+    );
+    ui::outln!(
+        "{MUTED}suggested max quads:{MUTED:#} {BOLD}{}{BOLD:#}",
+        capacity.suggested_max_quads
+    );
+    ui::outln!(
+        "{MUTED}default tier:{MUTED:#} {ACCENT}{}{ACCENT:#}",
+        capacity.tier()
+    );
 
     Ok(())
 }

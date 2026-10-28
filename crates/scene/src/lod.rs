@@ -1,9 +1,10 @@
-use crate::{BlockStateKey, PackedIndices, Region, Scene, SceneError, SceneErrorCode};
+use crate::{
+    BlockStateKey, PackedIndices, Region, Scene, SceneError, SceneErrorCode, worker_count,
+};
 use std::collections::HashMap;
 
 const MIN_FACTOR: u32 = 2;
 const MAX_FACTOR: u32 = 16;
-const MAX_WORKERS: usize = 256;
 const AIR: u32 = u32::MAX;
 
 /// Aggregate a scene into `factor`-sized cells for level-of-detail rendering.
@@ -61,34 +62,22 @@ pub fn aggregate_with_threads(
     // so the palette order stays identical to the single-threaded path.
     let mut values = vec![AIR; capacity];
 
-    let workers = worker_count(threads, size[1]);
+    let workers = worker_count(threads, capacity);
     let plane = size[0] as usize * size[2] as usize;
 
     if workers <= 1 || capacity < 8192 || plane == 0 {
-        fill_rows(
-            scene,
-            &table,
-            factor,
-            min_cell,
-            size,
-            0,
-            size[1],
-            &mut values,
-        );
+        fill_cells(scene, &table, factor, min_cell, size, 0, &mut values);
     } else {
-        let rows_per_chunk = (size[1] as usize).div_ceil(workers);
-        let chunk_cells = rows_per_chunk * plane;
+        let chunk_cells = capacity.div_ceil(workers);
         std::thread::scope(|scope| {
             let handles: Vec<_> = values
                 .chunks_mut(chunk_cells)
                 .enumerate()
                 .map(|(chunk_index, chunk)| {
-                    let start_y =
-                        u32::try_from(chunk_index * rows_per_chunk).expect("chunk row fits u32");
-                    let rows = u32::try_from(chunk.len() / plane).expect("chunk rows fit u32");
+                    let global_start = chunk_index * chunk_cells;
                     let table = &table;
                     scope.spawn(move || {
-                        fill_rows(scene, table, factor, min_cell, size, start_y, rows, chunk);
+                        fill_cells(scene, table, factor, min_cell, size, global_start, chunk);
                     })
                 })
                 .collect();
@@ -150,61 +139,60 @@ pub fn aggregate_with_threads(
     Scene::new(scene.metadata.clone(), vec![region], Vec::new())
 }
 
-/// Fill `rows` output rows starting at `start_y` with chosen state ids.
-#[allow(clippy::too_many_arguments)]
-fn fill_rows(
+/// Fill output cells starting at `global_start` with chosen state ids.
+fn fill_cells(
     scene: &Scene,
     table: &StateTable<'_>,
     factor: i64,
     min_cell: [i64; 3],
     size: [u32; 3],
-    start_y: u32,
-    rows: u32,
+    global_start: usize,
     out: &mut [u32],
 ) {
     let size_x = size[0] as usize;
-    let size_z = size[2] as usize;
-    let plane = size_x * size_z;
-    debug_assert_eq!(out.len(), rows as usize * plane);
+    let plane = size_x * size[2] as usize;
+    if plane == 0 {
+        return;
+    }
 
     let mut counts: HashMap<u32, u32> = HashMap::new();
-    for local_y in 0..rows {
-        let y = start_y + local_y;
-        for z in 0..size[2] {
-            for x in 0..size[0] {
-                let base = [
-                    (min_cell[0] + i64::from(x)) * factor,
-                    (min_cell[1] + i64::from(y)) * factor,
-                    (min_cell[2] + i64::from(z)) * factor,
-                ];
+    for (local_index, cell_out) in out.iter_mut().enumerate() {
+        let global_index = global_start + local_index;
+        let y = u32::try_from(global_index / plane).expect("cell y fits u32");
+        let rem = global_index % plane;
+        let z = u32::try_from(rem / size_x).expect("cell z fits u32");
+        let x = u32::try_from(rem % size_x).expect("cell x fits u32");
 
-                counts.clear();
-                for dy in 0..factor {
-                    for dz in 0..factor {
-                        for dx in 0..factor {
-                            let world = [base[0] + dx, base[1] + dy, base[2] + dz];
-                            let Some(id) = resolve_id(scene, table, world) else {
-                                continue;
-                            };
-                            *counts.entry(id).or_insert(0) += 1;
-                        }
-                    }
+        let base = [
+            (min_cell[0] + i64::from(x)) * factor,
+            (min_cell[1] + i64::from(y)) * factor,
+            (min_cell[2] + i64::from(z)) * factor,
+        ];
+
+        counts.clear();
+        for dy in 0..factor {
+            for dz in 0..factor {
+                for dx in 0..factor {
+                    let world = [base[0] + dx, base[1] + dy, base[2] + dz];
+                    let Some(id) = resolve_id(scene, table, world) else {
+                        continue;
+                    };
+                    *counts.entry(id).or_insert(0) += 1;
                 }
-
-                let chosen = counts
-                    .iter()
-                    .max_by(|left, right| {
-                        left.1.cmp(right.1).then_with(|| {
-                            table.states[*right.0 as usize].cmp(table.states[*left.0 as usize])
-                        })
-                    })
-                    .map(|(id, _)| *id)
-                    .unwrap_or(AIR);
-
-                let index = local_y as usize * plane + z as usize * size_x + x as usize;
-                out[index] = chosen;
             }
         }
+
+        let chosen = counts
+            .iter()
+            .max_by(|left, right| {
+                left.1.cmp(right.1).then_with(|| {
+                    table.states[*right.0 as usize].cmp(table.states[*left.0 as usize])
+                })
+            })
+            .map(|(id, _)| *id)
+            .unwrap_or(AIR);
+
+        *cell_out = chosen;
     }
 }
 
@@ -275,18 +263,6 @@ fn resolve_id(scene: &Scene, table: &StateTable<'_>, world: [i64; 3]) -> Option<
     None
 }
 
-fn worker_count(requested: u32, rows: u32) -> usize {
-    let requested = if requested == 0 {
-        std::thread::available_parallelism()
-            .map(|value| value.get())
-            .unwrap_or(1)
-    } else {
-        requested as usize
-    };
-
-    requested.clamp(1, MAX_WORKERS.min(rows.max(1) as usize))
-}
-
 fn ceil_div(value: i64, divisor: i64) -> i64 {
     let quotient = value.div_euclid(divisor);
     if value.rem_euclid(divisor) == 0 {
@@ -301,17 +277,4 @@ fn size_overflow<E: std::fmt::Display>(error: E) -> SceneError {
         SceneErrorCode::BoundsOverflow,
         format!("aggregated scene dimensions do not fit u32: {error}"),
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn worker_count_is_capped() {
-        assert_eq!(worker_count(u32::MAX, u32::MAX), MAX_WORKERS);
-        assert_eq!(worker_count(1, 100), 1);
-        assert_eq!(worker_count(0, 1), 1);
-        assert!(worker_count(0, u32::MAX) <= MAX_WORKERS);
-    }
 }

@@ -100,10 +100,20 @@ impl Default for RenderOptions {
     }
 }
 
+/// Maximum output width or height. The pixel budget alone would allow extreme
+/// aspect ratios that are not useful for previews and complicate the service
+/// contract.
+const MAX_DIMENSION: u32 = 4096;
+
 impl RenderOptions {
     pub fn validate(&self) -> Result<(), RenderError> {
         if self.width == 0 || self.height == 0 {
             return Err(RenderError::invalid("width and height must be positive"));
+        }
+        if self.width > MAX_DIMENSION || self.height > MAX_DIMENSION {
+            return Err(RenderError::too_large(format!(
+                "width and height must be at most {MAX_DIMENSION}"
+            )));
         }
 
         let pixels = u64::from(self.width) * u64::from(self.height);
@@ -137,9 +147,9 @@ impl RenderOptions {
         if !self.yaw.is_finite() || !self.elevation.is_finite() {
             return Err(RenderError::invalid("yaw and elevation must be finite"));
         }
-        if self.elevation.abs() >= 89.9 {
+        if self.elevation.abs() > 89.9 {
             return Err(RenderError::invalid(
-                "elevation must be between -89.9 and 89.9 degrees",
+                "elevation must be within -89.9..=89.9 degrees",
             ));
         }
         if self.tile_size == 0 {
@@ -170,5 +180,25 @@ impl RenderOptions {
 
     pub fn internal_height(&self) -> u32 {
         self.height * self.supersample
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn elevation_accepts_the_documented_boundary() {
+        let options = RenderOptions {
+            elevation: 89.9,
+            ..Default::default()
+        };
+        assert!(options.validate().is_ok());
+
+        let options = RenderOptions {
+            elevation: 89.91,
+            ..Default::default()
+        };
+        assert!(options.validate().is_err());
     }
 }

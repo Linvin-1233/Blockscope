@@ -5,22 +5,31 @@ mod catalog;
 mod color;
 mod error;
 mod export;
+mod greedy;
 mod mesh;
 mod model;
+mod page;
 mod shape;
+mod util;
 mod view;
 mod voxel;
 
-pub use builder::{build_mesh, build_mesh_parallel};
+pub use builder::{
+    PageProgress, build_mesh, build_mesh_parallel, build_mesh_parallel_with_options,
+    build_mesh_parallel_with_options_and_progress, build_mesh_streaming,
+    build_mesh_streaming_with_options, build_mesh_streaming_with_options_and_progress,
+    build_mesh_with_options, count_mesh_quads, estimate_mesh_quads,
+};
 pub use catalog::{
     BlockCatalog, CatalogError, CatalogErrorCode, ColorBlockCatalog, ColorSnapshot, ResolvedBlock,
+    ResolvedStyle, needs_water_style,
 };
-pub use color::{RenderLayer, Rgba};
+pub use color::{RenderLayer, Rgba, redstone_color};
 pub use error::{MeshError, MeshErrorCode};
 pub use export::{write_obj, write_ply};
 pub use mesh::{
-    AO_LEVELS, Mesh, MeshLimits, MeshPage, MeshStatistics, Quad, UV_SCALE, Vertex,
-    ambient_occlusion_level, decode_uv, encode_uv,
+    AO_LEVELS, Mesh, MeshBuildOptions, MeshLimits, MeshPage, MeshStatistics, Quad, UV_SCALE,
+    Vertex, ambient_occlusion_level, decode_uv, encode_uv,
 };
 pub use model::{
     BlockModel, FaceDirection, ModelBox, ModelQuad, NO_TEXTURE, empty_model, face_uv,

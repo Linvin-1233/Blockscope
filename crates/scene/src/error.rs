@@ -5,6 +5,7 @@ use std::fmt;
 pub enum SceneErrorCode {
     EmptyScene,
     BoundsOverflow,
+    RegionLayoutMismatch,
     StatisticsOverflow,
     InvalidLodFactor,
     LodAggregationFailed,
@@ -15,6 +16,7 @@ impl SceneErrorCode {
         match self {
             Self::EmptyScene => "EMPTY_SCENE",
             Self::BoundsOverflow => "BOUNDS_OVERFLOW",
+            Self::RegionLayoutMismatch => "REGION_LAYOUT_MISMATCH",
             Self::StatisticsOverflow => "STATISTICS_OVERFLOW",
             Self::InvalidLodFactor => "INVALID_LOD_FACTOR",
             Self::LodAggregationFailed => "LOD_AGGREGATION_FAILED",

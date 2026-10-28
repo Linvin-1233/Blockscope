@@ -9,16 +9,18 @@ Blockscope 是一个把 Minecraft `.litematic` 投影文件渲染成 PNG 的
 它不是 Minecraft 客户端截图工具：引擎直接解析 `.litematic`，在 CPU 上生成
 确定性 PNG，并可在服务端无图形环境中运行。
 
-- 当前版本：`0.1.2`
+- 当前版本：`0.4.0`
 - 支持平台：Windows x86_64、Linux x86_64 / aarch64、macOS aarch64 / x86_64
 - 下载：预编译二进制见 [GitHub Releases](https://github.com/Linvin-1233/Blockscope/releases)
 - English: [README.en.md](README.en.md)
 
 ## 文档导航
 
+文档位于 `docs/` 并配置为 [Mintlify](https://mintlify.com) 站点，本地可通过 `cd docs && mint dev` 启动实时预览。
+
 ### 用户文档
 
-- [用户文档总览](docs/user/README.md)
+- [用户文档总览](docs/user/index.md)
 - [功能与限制](docs/user/features.md)
 - [安装与快速开始](docs/user/getting-started.md)
 - [CLI 命令](docs/user/cli.md)
@@ -62,5 +64,4 @@ cargo test --workspace
 
 ## 许可证
 
-仓库当前未包含 `LICENSE` 文件。在维护者补充许可证之前，代码默认保留所有权利；
-如需在其它项目中使用，请先联系维护者。
+MIT

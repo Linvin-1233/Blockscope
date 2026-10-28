@@ -1,24 +1,24 @@
-use clap::{Args, Parser, Subcommand};
-use litematic_core::{DecodeLimits, LitematicError, LitematicFile, LitematicLimits};
-use litematic_material::{AssetSource, MaterialSet, MaterialSnapshot, TextureFilter};
-use litematic_mesh::{ColorBlockCatalog, Mesh, MeshError, MeshLimits, Rgba, build_mesh_parallel};
-use litematic_render::{Background, RenderError, RenderOptions};
-use litematic_scene::{Manifest, Scene, SceneError, aggregate_with_threads, sha256};
+use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand};
+use litematic_core::LitematicError;
+use litematic_mesh::{MeshBuildOptions, MeshError};
+use litematic_render::RenderError;
+use litematic_scene::{Manifest, SceneError, sha256};
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::time::Instant;
+
+use crate::ui::{ACCENT, BOLD, MUTED};
 
 mod capacity;
 mod commands;
 mod file_io;
+mod runtime;
 mod serve;
 mod supervise;
+mod ui;
 
 pub(crate) use file_io::read_file_limited;
-
-/// Upper bound for mesh, LOD, and rasterizer worker threads.
-pub(crate) const MAX_THREADS: u32 = 256;
+pub(crate) use runtime::*;
 
 /// Litematic parser and render service.
 #[derive(Debug, Parser)]
@@ -26,11 +26,23 @@ pub(crate) const MAX_THREADS: u32 = 256;
     name = "blockscope",
     version,
     about = "Blockscope - headless Litematic image renderer",
-    after_help = "Default limits: input 64 MiB, decompressed 256 MiB, NBT depth 64, regions 1024, total volume 200M."
+    after_help = "Default limits: input 64 MiB, decompressed 256 MiB, NBT depth 64, regions 1024, total volume 200M.",
+    after_long_help = "\
+Examples:
+  blockscope render model.litematic --output out.png
+  blockscope render model.litematic --terminal --no-file
+  blockscope inspect model.litematic --json
+  blockscope serve
+
+Color: --color auto|always|never. NO_COLOR is honored in auto mode.
+Run `blockscope help <command>` for command-specific help."
 )]
 struct Cli {
+    /// When to use color in output: auto, always, or never.
+    #[arg(long, global = true, value_name = "WHEN", default_value = "auto")]
+    color: ui::ColorMode,
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -43,7 +55,8 @@ enum Command {
     Stats(StatsArgs),
     /// Build a color-block mesh and optionally export it.
     Mesh(commands::mesh::MeshArgs),
-    /// Render a color-block mesh to PNG.
+    /// Render a color-block mesh to PNG or directly to terminal graphics.
+    #[command(alias = "preview", alias = "term")]
     Render(commands::render::RenderArgs),
     /// Measure parse, mesh, render, and PNG timings.
     Bench(commands::bench::BenchArgs),
@@ -55,6 +68,22 @@ enum Command {
     Serve(serve::ServeArgs),
     /// Spawn and route jobs across a pool of worker processes.
     Supervise(supervise::SuperviseArgs),
+}
+
+#[derive(Debug, Args, Clone, Copy, Default)]
+pub(crate) struct MeshOptionArgs {
+    /// Merge coplanar faces with identical material and lighting into larger
+    /// quads. Most useful for large flat or repetitive surfaces.
+    #[arg(long)]
+    greedy_mesh: bool,
+}
+
+impl MeshOptionArgs {
+    pub(crate) const fn options(self) -> MeshBuildOptions {
+        MeshBuildOptions {
+            greedy: self.greedy_mesh,
+        }
+    }
 }
 
 #[derive(Debug, Args, Clone, Copy, Default)]
@@ -136,19 +165,31 @@ impl AssetArgs {
 }
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
+    let early_color = ui::color_mode_from_args();
+    let command = Cli::command()
+        .color(early_color.clap_choice())
+        .styles(ui::clap_styles());
+    let matches = command.get_matches();
+    let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|error| error.exit());
+    ui::init(cli.color);
+    let _console = ui::ConsoleGuard::enable_utf8();
 
     match run(cli) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("{error}");
+            ui::errln!("{}error:{:#} {}", ui::ERROR, ui::ERROR, error.message);
             ExitCode::from(error.exit_code)
         }
     }
 }
 
 fn run(cli: Cli) -> Result<(), CliError> {
-    match cli.command {
+    let Some(command) = cli.command else {
+        ui::banner::print();
+        return Ok(());
+    };
+
+    match command {
         Command::Inspect(args) => inspect(args),
         Command::Validate(args) => validate(args),
         Command::Stats(args) => stats(args),
@@ -194,23 +235,36 @@ fn validate(args: ValidateArgs) -> Result<(), CliError> {
         args.limits.ignore_block_entity_nbt,
     )?;
 
-    println!("OK: {}", args.file.display());
-    println!(
-        "  litematic: v{} (data {})",
-        scene.metadata.litematic_version, scene.metadata.minecraft_data_version
+    ui::outln!(
+        "{}OK:{:#} {}",
+        ui::SUCCESS,
+        ui::SUCCESS,
+        args.file.display()
     );
-    println!("  regions: {}", scene.regions.len());
-    println!("  bounds: {:?}", scene.bounds.size());
-    println!(
-        "  volume: {} (air {}, non-air {})",
-        scene.statistics.volume, scene.statistics.air, scene.statistics.non_air
+    ui::outln!(
+        "  {MUTED}litematic:{MUTED:#} v{} {MUTED}(data {}){MUTED:#}",
+        scene.metadata.litematic_version,
+        scene.metadata.minecraft_data_version
+    );
+    ui::outln!("  {MUTED}regions:{MUTED:#} {}", scene.regions.len());
+    ui::outln!("  {MUTED}bounds:{MUTED:#} {:?}", scene.bounds.size());
+    ui::outln!(
+        "  {MUTED}volume:{MUTED:#} {} {MUTED}(air {}, non-air {}){MUTED:#}",
+        scene.statistics.volume,
+        scene.statistics.air,
+        scene.statistics.non_air
     );
 
     if !scene.diagnostics.is_empty() {
-        println!("  diagnostics: {}", scene.diagnostics.len());
+        ui::outln!("  {MUTED}diagnostics:{MUTED:#} {}", scene.diagnostics.len());
         for diagnostic in &scene.diagnostics {
-            println!(
-                "    {} [{}] {}",
+            let style = match diagnostic.severity.as_str() {
+                "error" => ui::ERROR,
+                "warning" => ui::WARNING,
+                _ => ui::MUTED,
+            };
+            ui::outln!(
+                "    {style}{}{style:#} [{style}{}{style:#}] {}",
                 diagnostic.severity.as_str(),
                 diagnostic.code.as_str(),
                 diagnostic.message
@@ -238,12 +292,15 @@ fn stats(args: StatsArgs) -> Result<(), CliError> {
     }
 
     let statistics = &scene.statistics;
-    println!("volume: {}", statistics.volume);
-    println!("air: {}", statistics.air);
-    println!("non-air: {}", statistics.non_air);
-    println!("block entities: {}", statistics.block_entities);
-    println!("entities: {}", statistics.entities);
-    println!("blocks:");
+    ui::outln!("{MUTED}volume:{MUTED:#} {}", statistics.volume);
+    ui::outln!("{MUTED}air:{MUTED:#} {}", statistics.air);
+    ui::outln!("{MUTED}non-air:{MUTED:#} {}", statistics.non_air);
+    ui::outln!(
+        "{MUTED}block entities:{MUTED:#} {}",
+        statistics.block_entities
+    );
+    ui::outln!("{MUTED}entities:{MUTED:#} {}", statistics.entities);
+    ui::outln!("{MUTED}blocks:{MUTED:#}");
 
     let mut blocks: Vec<_> = statistics.blocks.iter().collect();
     blocks.sort_by(|left, right| {
@@ -253,337 +310,62 @@ fn stats(args: StatsArgs) -> Result<(), CliError> {
             .then_with(|| left.0.canonical().cmp(&right.0.canonical()))
     });
 
+    ui::outln!("{MUTED}{:>10}  BLOCK STATE{MUTED:#}", "COUNT");
     for (state, count) in blocks {
-        println!("{count:>10}  {}", state.canonical());
+        if state.is_air() {
+            continue;
+        }
+        ui::outln!("{MUTED}{count:>10}{MUTED:#}  {}", state.canonical());
     }
 
     Ok(())
 }
 
-fn build_scene_mesh(
-    scene: &Scene,
-    snapshot: Option<&MaterialSnapshot>,
-    limits: &MeshLimits,
-    threads: u32,
-) -> Result<Mesh, CliError> {
-    match snapshot {
-        Some(snapshot) => {
-            build_mesh_parallel(scene, snapshot, limits, threads).map_err(CliError::from)
-        }
-        None => {
-            let catalog = ColorBlockCatalog::new().map_err(CliError::internal)?;
-            let states = scene
-                .regions
-                .iter()
-                .flat_map(|region| region.palette.iter().cloned());
-            let snapshot = catalog.snapshot(states);
-            build_mesh_parallel(scene, &snapshot, limits, threads).map_err(CliError::from)
-        }
-    }
-}
-
-/// Limits used for parsing and meshing. `--force-limits` removes the caps but
-/// leaves a warning so an operator can see the risk in the logs.
-fn decode_limits(force: bool, ignore_block_entity_nbt: bool) -> DecodeLimits {
-    if force {
-        DecodeLimits {
-            max_input_bytes: 1 << 40,
-            max_decompressed_bytes: 1 << 40,
-            max_total_bytes: 1 << 40,
-            ignore_block_entity_nbt,
-            ..DecodeLimits::default()
-        }
-    } else {
-        DecodeLimits {
-            ignore_block_entity_nbt,
-            ..DecodeLimits::default()
-        }
-    }
-}
-
-fn scene_limits(force: bool) -> LitematicLimits {
-    if force {
-        LitematicLimits {
-            max_volume_per_region: 1_000_000_000_000,
-            max_total_volume: 1_000_000_000_000,
-            ..LitematicLimits::default()
-        }
-    } else {
-        LitematicLimits::default()
-    }
-}
-
-fn mesh_limits(force: bool) -> MeshLimits {
-    if force {
-        MeshLimits {
-            max_pages: usize::MAX,
-            max_quads: usize::MAX,
-            max_vertices: usize::MAX,
-        }
-    } else {
-        let default = MeshLimits::default();
-        let budget =
-            usize::try_from(capacity::Capacity::detect().suggested_max_quads).unwrap_or(usize::MAX);
-        MeshLimits {
-            max_pages: default.max_pages,
-            max_quads: default.max_quads.min(budget),
-            max_vertices: default.max_vertices.min(budget.saturating_mul(4)),
-        }
-    }
-}
-
-fn apply_render_limits(force: bool, options: &mut RenderOptions) {
-    if force {
-        options.max_pixels = u64::MAX;
-        options.max_supersampled_pixels = u64::MAX;
-    }
-}
-
-fn warn_forced(force: bool) {
-    if force {
-        eprintln!("WARNING: resource limits are disabled; a large input can exhaust memory");
-    }
-}
-
-/// Resolve every block state used by the scene once, so meshing and rendering
-/// share one immutable material set.
-fn material_snapshot(scene: &Scene, materials: &MaterialSet) -> MaterialSnapshot {
-    let states = scene
-        .regions
-        .iter()
-        .flat_map(|region| region.palette.iter().cloned());
-    materials.snapshot(states)
-}
-
-fn load_materials(args: &AssetArgs) -> Result<Option<MaterialSet>, CliError> {
-    if args.client_jar.is_none() && args.assets.is_none() && args.resource_pack.is_none() {
-        return Ok(None);
-    }
-
-    let mut source = AssetSource::new();
-    if let Some(path) = &args.client_jar {
-        source.add_jar(path).map_err(CliError::from)?;
-    }
-    if let Some(path) = &args.assets {
-        source.add_dir(path).map_err(CliError::from)?;
-    }
-    if let Some(path) = &args.resource_pack {
-        if path.is_dir() {
-            source.add_overlay_dir(path).map_err(CliError::from)?;
-        } else {
-            source.add_overlay_zip(path).map_err(CliError::from)?;
-        }
-    }
-
-    MaterialSet::open(source).map(Some).map_err(CliError::from)
-}
-
-fn parse_texture_filter(value: &str) -> Result<TextureFilter, CliError> {
-    match value {
-        "nearest" => Ok(TextureFilter::Nearest),
-        "linear" => Ok(TextureFilter::Linear),
-        other => Err(CliError::input(format!(
-            "INVALID_RENDER_OPTIONS: unknown texture filter '{other}'"
-        ))),
-    }
-}
-
-fn parse_background(value: &str) -> Result<Background, CliError> {
-    if value == "transparent" {
-        return Ok(Background::Transparent);
-    }
-
-    let color = Rgba::from_hex(value)
-        .map_err(|error| CliError::input(format!("INVALID_RENDER_OPTIONS: {error}")))?;
-    Ok(Background::Solid(color))
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum LodMode {
-    Fixed(u32),
-    Auto,
-}
-
-fn parse_lod(value: &str) -> Result<LodMode, CliError> {
-    if value.eq_ignore_ascii_case("auto") {
-        return Ok(LodMode::Auto);
-    }
-
-    let factor = value.parse::<u32>().map_err(|_| {
-        CliError::input(format!(
-            "INVALID_RENDER_OPTIONS: invalid lod '{value}', expected 1-16 or auto"
-        ))
-    })?;
-    if !(1..=16).contains(&factor) {
-        return Err(CliError::input(
-            "INVALID_RENDER_OPTIONS: lod must be between 1 and 16, or auto",
-        ));
-    }
-    Ok(LodMode::Fixed(factor))
-}
-
-struct PreparedScene {
-    scene: Scene,
-    mesh: Mesh,
-    snapshot: Option<MaterialSnapshot>,
-    factor: u32,
-    lod_ms: f64,
-    mesh_ms: f64,
-}
-
-fn prepare_scene(
-    scene: Scene,
-    materials: Option<&MaterialSet>,
-    lod: LodMode,
-    limits: &MeshLimits,
-    threads: u32,
-) -> Result<PreparedScene, CliError> {
-    if threads > MAX_THREADS {
-        return Err(CliError::input(format!(
-            "INVALID_RENDER_OPTIONS: threads must be at most {MAX_THREADS}"
-        )));
-    }
-
-    match lod {
-        LodMode::Fixed(factor) => {
-            let lod_started = Instant::now();
-            let scene = apply_lod(scene, factor, threads)?;
-            let lod_ms = lod_started.elapsed().as_secs_f64() * 1000.0;
-
-            let mesh_started = Instant::now();
-            let snapshot = materials.map(|materials| material_snapshot(&scene, materials));
-            let mesh = build_scene_mesh(&scene, snapshot.as_ref(), limits, threads)?;
-            let mesh_ms = mesh_started.elapsed().as_secs_f64() * 1000.0;
-
-            Ok(PreparedScene {
-                scene,
-                mesh,
-                snapshot,
-                factor,
-                lod_ms,
-                mesh_ms,
-            })
-        }
-        LodMode::Auto => prepare_auto(scene, materials, limits, threads),
-    }
-}
-
-fn prepare_auto(
-    scene: Scene,
-    materials: Option<&MaterialSet>,
-    base_limits: &MeshLimits,
-    threads: u32,
-) -> Result<PreparedScene, CliError> {
-    let capacity = capacity::Capacity::detect();
-    let budget_quads = usize::try_from(capacity.suggested_max_quads).unwrap_or(usize::MAX);
-    let limits = MeshLimits {
-        max_quads: budget_quads,
-        max_vertices: budget_quads.saturating_mul(4),
-        max_pages: base_limits.max_pages,
-    };
-
-    let mut lod_total = 0.0;
-    let mut mesh_total = 0.0;
-    let mut last_error = None;
-
-    for factor in [1u32, 2, 4, 8, 16] {
-        let lod_started = Instant::now();
-        let aggregated = if factor == 1 {
-            None
-        } else {
-            Some(aggregate_with_threads(&scene, factor, threads).map_err(CliError::from)?)
-        };
-        lod_total += lod_started.elapsed().as_secs_f64() * 1000.0;
-
-        let attempt = {
-            let candidate = aggregated.as_ref().unwrap_or(&scene);
-            let snapshot = materials.map(|materials| material_snapshot(candidate, materials));
-            let mesh_started = Instant::now();
-            let result = build_scene_mesh(candidate, snapshot.as_ref(), &limits, threads);
-            mesh_total += mesh_started.elapsed().as_secs_f64() * 1000.0;
-            result.map(|mesh| (mesh, snapshot))
-        };
-
-        match attempt {
-            Ok((mesh, snapshot)) => {
-                let scene = aggregated.unwrap_or(scene);
-                return Ok(PreparedScene {
-                    scene,
-                    mesh,
-                    snapshot,
-                    factor,
-                    lod_ms: lod_total,
-                    mesh_ms: mesh_total,
-                });
-            }
-            Err(error) if is_mesh_limit_error(&error) => last_error = Some(error),
-            Err(error) => return Err(error),
-        }
-    }
-
-    Err(last_error.unwrap_or_else(|| {
-        CliError::input("MESH_LIMIT_EXCEEDED: no LOD factor fits the memory budget")
-    }))
-}
-
-fn is_mesh_limit_error(error: &CliError) -> bool {
-    error.message.starts_with("MESH_LIMIT_EXCEEDED")
-        || error.message.starts_with("PAGE_LIMIT_EXCEEDED")
-}
-
-fn apply_lod(scene: Scene, lod: u32, threads: u32) -> Result<Scene, CliError> {
-    if lod <= 1 {
-        return Ok(scene);
-    }
-    aggregate_with_threads(&scene, lod, threads).map_err(CliError::from)
-}
-
-/// Geometry commands never read block entity contents.
-const GEOMETRY_IGNORES_BLOCK_ENTITY_NBT: bool = true;
-
-fn load_scene(
-    path: &Path,
-    force_limits: bool,
-    ignore_block_entity_nbt: bool,
-) -> Result<(Vec<u8>, Scene), CliError> {
-    let limits = decode_limits(force_limits, ignore_block_entity_nbt);
-    let input = read_file_limited(path, limits.max_input_bytes)?;
-
-    let file = LitematicFile::parse_bytes(&input, &limits, &scene_limits(force_limits))
-        .map_err(CliError::from)?;
-
-    let scene = file.into_scene().map_err(CliError::from)?;
-    Ok((input, scene))
-}
-
 fn print_summary(path: &Path, manifest: &Manifest) {
-    println!("file: {}", path.display());
-    println!(
-        "litematic: v{} (data {})",
-        manifest.parser.litematic_version, manifest.parser.minecraft_data_version
+    ui::outln!("{MUTED}file:{MUTED:#} {ACCENT}{}{ACCENT:#}", path.display());
+    ui::outln!(
+        "{MUTED}litematic:{MUTED:#} v{} {MUTED}(data {}){MUTED:#}",
+        manifest.parser.litematic_version,
+        manifest.parser.minecraft_data_version
     );
 
     if let Some(name) = &manifest.metadata.name {
-        println!("name: {name}");
+        ui::outln!("{MUTED}name:{MUTED:#} {BOLD}{name}{BOLD:#}");
     }
     if let Some(author) = &manifest.metadata.author {
-        println!("author: {author}");
+        ui::outln!("{MUTED}author:{MUTED:#} {author}");
     }
 
-    println!("regions: {}", manifest.regions.len());
-    println!(
-        "bounds: min {:?}, max {:?}, size {:?}",
-        manifest.bounds.min, manifest.bounds.max_exclusive, manifest.bounds.size
+    ui::outln!("{MUTED}regions:{MUTED:#} {}", manifest.regions.len());
+    ui::outln!(
+        "{MUTED}bounds:{MUTED:#} min {:?}, max {:?}, size {:?}",
+        manifest.bounds.min,
+        manifest.bounds.max_exclusive,
+        manifest.bounds.size
     );
-    println!(
-        "volume: {} (air {}, non-air {})",
-        manifest.statistics.volume, manifest.statistics.air, manifest.statistics.non_air
+    ui::outln!(
+        "{MUTED}volume:{MUTED:#} {} {MUTED}(air {}, non-air {}){MUTED:#}",
+        manifest.statistics.volume,
+        manifest.statistics.air,
+        manifest.statistics.non_air
     );
-    println!("block entities: {}", manifest.statistics.block_entities);
-    println!("entities: {}", manifest.statistics.entities);
-    println!("diagnostics: {}", manifest.diagnostics.len());
-    println!("input hash: {}", manifest.input_hash);
-    println!("scene hash: {}", manifest.scene_hash);
+    ui::outln!(
+        "{MUTED}block entities:{MUTED:#} {}",
+        manifest.statistics.block_entities
+    );
+    ui::outln!("{MUTED}entities:{MUTED:#} {}", manifest.statistics.entities);
+    ui::outln!(
+        "{MUTED}diagnostics:{MUTED:#} {}",
+        manifest.diagnostics.len()
+    );
+    ui::outln!(
+        "{MUTED}input hash:{MUTED:#} {MUTED}{}{MUTED:#}",
+        manifest.input_hash
+    );
+    ui::outln!(
+        "{MUTED}scene hash:{MUTED:#} {MUTED}{}{MUTED:#}",
+        manifest.scene_hash
+    );
 }
 
 #[derive(Debug)]
@@ -647,7 +429,9 @@ impl From<SceneError> for CliError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use litematic_scene::{BlockStateKey, PackedIndices, Region, SceneMetadata};
+    use litematic_mesh::MeshLimits;
+    use litematic_render::RenderOptions;
+    use litematic_scene::{BlockStateKey, PackedIndices, Region, Scene, SceneMetadata};
 
     fn one_block_scene() -> Scene {
         let states = PackedIndices::from_values(2, &[0]).unwrap();
@@ -674,6 +458,7 @@ mod tests {
             LodMode::Fixed(1),
             &MeshLimits::default(),
             100_000,
+            MeshBuildOptions::default(),
         ) {
             Ok(_) => panic!("oversized thread request must be rejected"),
             Err(error) => error,

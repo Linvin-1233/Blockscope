@@ -2,10 +2,11 @@ mod support;
 
 use litematic_mesh::{ColorBlockCatalog, Mesh, MeshLimits, Rgba, build_mesh};
 use litematic_render::{
-    Background, LightingProfile, RenderErrorCode, RenderOptions, RenderOutput, render_mesh,
-    write_png,
+    Background, LightingProfile, RenderErrorCode, RenderOptions, RenderOutput, StreamingRenderer,
+    render_mesh, write_png,
 };
-use litematic_scene::Scene;
+use litematic_scene::{BlockStateKey, Scene};
+use std::collections::BTreeMap;
 use support::*;
 
 fn build(scene: &Scene) -> Mesh {
@@ -159,6 +160,59 @@ fn translucent_water_keeps_partial_alpha() {
 }
 
 #[test]
+fn color_only_redstone_uses_power_brightness() {
+    let low = render_redstone(0);
+    let one = render_redstone(1);
+    let high = render_redstone(15);
+    let low_red = max_red(&low);
+    let one_red = max_red(&one);
+    let high_red = max_red(&high);
+
+    assert!(
+        one_red > low_red + 20,
+        "power 1 should be clearly brighter than power 0: low={low_red} one={one_red}"
+    );
+    assert!(
+        high_red > one_red + 20,
+        "power 15 should be much brighter than power 1: one={one_red} high={high_red}"
+    );
+}
+
+fn render_redstone(power: u8) -> RenderOutput {
+    let mut state = BlockStateKey::simple("minecraft:redstone_wire");
+    state.properties = [
+        ("east".to_string(), "none".to_string()),
+        ("north".to_string(), "none".to_string()),
+        ("power".to_string(), power.to_string()),
+        ("south".to_string(), "none".to_string()),
+        ("west".to_string(), "none".to_string()),
+    ]
+    .into_iter()
+    .collect::<BTreeMap<_, _>>();
+
+    let scene = scene(vec![region_states(
+        "main",
+        [0, 0, 0],
+        [1, 1, 1],
+        &[BlockStateKey::simple("minecraft:air"), state],
+        &[1],
+    )]);
+    render(&scene, &options())
+}
+
+fn max_red(output: &RenderOutput) -> u8 {
+    output
+        .rgba
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .filter(|pixel| pixel[3] > 0)
+        .map(|pixel| pixel[0])
+        .max()
+        .unwrap_or(0)
+}
+
+#[test]
 fn png_output_is_deterministic() {
     let output = render(&stone_scene(), &options());
 
@@ -205,6 +259,84 @@ fn parallel_tiles_match_single_thread() {
 }
 
 #[test]
+fn tile_size_does_not_change_output() {
+    let scene = scene(vec![region(
+        "main",
+        [0, 0, 0],
+        [2, 2, 1],
+        &["minecraft:air", "minecraft:stone"],
+        &[1, 0, 0, 1],
+    )]);
+    let render_with = |tile_size| {
+        render(
+            &scene,
+            &RenderOptions {
+                width: 512,
+                height: 512,
+                supersample: 1,
+                tile_size,
+                threads: 4,
+                ..Default::default()
+            },
+        )
+    };
+
+    let large = render_with(64);
+    let small = render_with(8);
+
+    assert_eq!(large.rgba, small.rgba);
+    assert_eq!(
+        large.statistics.pixels_tested,
+        small.statistics.pixels_tested
+    );
+    assert_eq!(
+        large.statistics.pixels_written,
+        small.statistics.pixels_written
+    );
+    assert!(large.statistics.tiles < small.statistics.tiles);
+}
+
+#[test]
+fn multi_page_parallel_render_matches_single_thread() {
+    let mut values = vec![0u32; 34 * 34];
+    for (i, v) in values.iter_mut().enumerate() {
+        if i % 3 == 0 {
+            *v = 1;
+        }
+    }
+    let scene = scene(vec![region(
+        "main",
+        [0, 0, 0],
+        [34, 34, 1],
+        &["minecraft:air", "minecraft:stone"],
+        &values,
+    )]);
+
+    let single = render(
+        &scene,
+        &RenderOptions {
+            width: 128,
+            height: 128,
+            threads: 1,
+            ..Default::default()
+        },
+    );
+    for threads in [2, 4, 8] {
+        let parallel = render(
+            &scene,
+            &RenderOptions {
+                width: 128,
+                height: 128,
+                threads,
+                ..Default::default()
+            },
+        );
+        assert_eq!(single.rgba, parallel.rgba, "threads={threads}");
+        assert_eq!(single.statistics, parallel.statistics, "threads={threads}");
+    }
+}
+
+#[test]
 fn supersampling_changes_edge_pixels() {
     let scene = stone_scene();
     let single = render(
@@ -224,6 +356,19 @@ fn supersampling_changes_edge_pixels() {
 
     assert_eq!(single.rgba.len(), supersampled.rgba.len());
     assert_ne!(single.rgba, supersampled.rgba);
+}
+
+#[test]
+fn rejects_dimensions_above_4096() {
+    let scene = stone_scene();
+    let options = RenderOptions {
+        width: 4097,
+        height: 64,
+        ..Default::default()
+    };
+
+    let error = render_mesh(&scene, &build(&scene), &options).unwrap_err();
+    assert_eq!(error.code, RenderErrorCode::OutputTooLarge);
 }
 
 #[test]
@@ -301,6 +446,73 @@ fn streaming_matches_the_table_path() {
 }
 
 #[test]
+fn streaming_renderer_matches_the_table_path_page_by_page() {
+    let scene = scene(vec![region(
+        "main",
+        [0, 0, 0],
+        [3, 2, 1],
+        &["minecraft:air", "minecraft:stone", "minecraft:water"],
+        &[1, 2, 1, 0, 2, 1],
+    )]);
+    let mesh = build_mesh(
+        &scene,
+        &ColorBlockCatalog::default(),
+        &MeshLimits::default(),
+    )
+    .unwrap();
+    let options = RenderOptions {
+        width: 96,
+        height: 96,
+        supersample: 2,
+        ..Default::default()
+    };
+
+    let table = render_mesh(&scene, &mesh, &options).unwrap();
+    let mut renderer = StreamingRenderer::new(&scene, &options, None).unwrap();
+    for page in &mesh.pages {
+        renderer.render_pages(std::slice::from_ref(page)).unwrap();
+    }
+    let streamed = renderer.finish().unwrap();
+
+    assert_eq!(table.rgba, streamed.rgba);
+    assert_eq!(table.statistics, streamed.statistics);
+}
+
+#[test]
+fn spilled_translucent_matches_the_table_path() {
+    let scene = scene(vec![region(
+        "main",
+        [0, 0, 0],
+        [3, 2, 1],
+        &["minecraft:air", "minecraft:stone", "minecraft:water"],
+        &[1, 2, 1, 0, 2, 1],
+    )]);
+    let mesh = build_mesh(
+        &scene,
+        &ColorBlockCatalog::default(),
+        &MeshLimits::default(),
+    )
+    .unwrap();
+    let options = RenderOptions {
+        width: 96,
+        height: 96,
+        supersample: 2,
+        ..Default::default()
+    };
+
+    let table = render_mesh(&scene, &mesh, &options).unwrap();
+    let mut renderer =
+        StreamingRenderer::with_translucent_budget(&scene, &options, None, 1).expect("renderer");
+    for page in &mesh.pages {
+        renderer.render_pages(std::slice::from_ref(page)).unwrap();
+    }
+    let streamed = renderer.finish().unwrap();
+
+    assert_eq!(table.rgba, streamed.rgba);
+    assert_eq!(table.statistics, streamed.statistics);
+}
+
+#[test]
 fn rejects_invalid_options() {
     let scene = stone_scene();
 
@@ -318,4 +530,51 @@ fn rejects_invalid_options() {
     };
     let error = render_mesh(&scene, &build(&scene), &bad_elevation).unwrap_err();
     assert_eq!(error.code, RenderErrorCode::InvalidOptions);
+}
+
+#[test]
+fn progress_reports_every_rasterizer_tile() {
+    use litematic_render::{render_mesh_with_progress, will_stream};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    let scene = stone_scene();
+    let mesh = build(&scene);
+    let options = options();
+    assert!(!will_stream(&mesh, &options));
+
+    let calls = AtomicU64::new(0);
+    let highest = AtomicU64::new(0);
+    let total_seen = AtomicU64::new(0);
+    let output = render_mesh_with_progress(&scene, &mesh, &options, &|done, total| {
+        calls.fetch_add(1, Ordering::Relaxed);
+        highest.fetch_max(done, Ordering::Relaxed);
+        total_seen.store(total, Ordering::Relaxed);
+    })
+    .unwrap();
+
+    assert!(output.statistics.tiles > 0);
+    assert_eq!(total_seen.load(Ordering::Relaxed), output.statistics.tiles);
+    assert_eq!(highest.load(Ordering::Relaxed), output.statistics.tiles);
+    assert_eq!(calls.load(Ordering::Relaxed), output.statistics.tiles + 1);
+}
+
+#[test]
+fn progress_is_silent_when_the_rasterizer_streams() {
+    use litematic_render::{render_mesh_with_progress, will_stream};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    let scene = stone_scene();
+    let mesh = build(&scene);
+    let options = RenderOptions {
+        force_streaming: true,
+        ..options()
+    };
+    assert!(will_stream(&mesh, &options));
+
+    let calls = AtomicU64::new(0);
+    let _ = render_mesh_with_progress(&scene, &mesh, &options, &|_, _| {
+        calls.fetch_add(1, Ordering::Relaxed);
+    })
+    .unwrap();
+    assert_eq!(calls.load(Ordering::Relaxed), 0);
 }

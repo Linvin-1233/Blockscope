@@ -180,12 +180,21 @@ fn resolves_fluids_and_static_block_entities() {
     let catalog = ColorBlockCatalog::default();
 
     let source = catalog.resolve(&state("minecraft:water", &[("level", "0")]));
-    assert!(source.model.is_full_cube);
+    assert!(!source.model.is_full_cube);
+    assert_eq!(source.model.quads.len(), 6);
     assert_eq!(source.layer, RenderLayer::Translucent);
 
     let flowing = catalog.resolve(&state("minecraft:water", &[("level", "8")]));
     assert!(!flowing.model.is_full_cube);
     assert_eq!(flowing.model.quads.len(), 6);
+
+    let legacy = catalog.resolve(&state("minecraft:flowing_water", &[("level", "3")]));
+    assert!(legacy.known);
+    assert_eq!(legacy.layer, RenderLayer::Translucent);
+
+    let bubble = catalog.resolve(&state("minecraft:bubble_column", &[("drag", "false")]));
+    assert!(bubble.known);
+    assert_eq!(bubble.layer, RenderLayer::Translucent);
 
     let lava = catalog.resolve(&state("minecraft:lava", &[("level", "4")]));
     assert!(!lava.model.is_full_cube);

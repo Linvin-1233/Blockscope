@@ -1,17 +1,17 @@
 use crate::capacity::Capacity;
-use crate::{AssetArgs, CliError, load_materials, parse_background, parse_texture_filter};
+use crate::{
+    AssetArgs, CliError, MeshOptionArgs, load_materials, parse_background, parse_texture_filter,
+};
 use clap::Args;
 use litematic_core::LitematicFile;
 use litematic_material::{MaterialSet, MaterialSnapshot};
-use litematic_mesh::Mesh;
-use litematic_render::{
-    LightingProfile, RenderOptions, render_mesh, render_mesh_with_textures, write_png,
-};
+use litematic_mesh::{Mesh, MeshLimits};
+use litematic_render::{LightingProfile, RenderOptions, write_png};
 use litematic_scene::{Scene, sha256};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::fs::{self, File};
-use std::io::{BufRead, BufWriter, Write};
+use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
@@ -32,6 +32,11 @@ pub struct ServeArgs {
     /// Parsed scenes and meshes to keep for repeated inputs.
     #[arg(long, default_value_t = 1)]
     cache: u32,
+    /// Estimated cache budget in bytes; 0 uses half of available memory.
+    #[arg(long, default_value_t = 0)]
+    cache_bytes: u64,
+    #[command(flatten)]
+    mesh: MeshOptionArgs,
     #[command(flatten)]
     limits: crate::LimitArgs,
 }
@@ -44,6 +49,18 @@ struct CachedScene {
     scene: Arc<Scene>,
     mesh: Arc<Mesh>,
     snapshot: Option<Arc<MaterialSnapshot>>,
+    bytes: u64,
+}
+
+struct ServeContext<'a> {
+    materials: Option<&'a MaterialSet>,
+    default_threads: u32,
+    force_limits: bool,
+    ignore_block_entity_nbt: bool,
+    cache_limit: usize,
+    cache_bytes: u64,
+    mesh_options: litematic_mesh::MeshBuildOptions,
+    mesh_limits: MeshLimits,
 }
 
 #[derive(Debug, Deserialize)]
@@ -109,16 +126,59 @@ pub fn run(args: ServeArgs) -> Result<(), CliError> {
     let materials = load_materials(&args.assets)?;
     let mut cache: Vec<CachedScene> = Vec::new();
     let cache_limit = args.cache as usize;
-    let force_limits = args.limits.force_limits;
-    let ignore_block_entity_nbt = args.limits.ignore_block_entity_nbt;
+    let cache_bytes = cache_budget(args.cache_bytes, &capacity);
+    let context = ServeContext {
+        materials: materials.as_ref(),
+        default_threads: args.threads,
+        force_limits: args.limits.force_limits,
+        ignore_block_entity_nbt: args.limits.ignore_block_entity_nbt,
+        cache_limit,
+        cache_bytes,
+        mesh_options: args.mesh.options(),
+        // Capacity is fixed for the process lifetime, so detect the mesh cap
+        // once instead of once per uncached job.
+        mesh_limits: crate::mesh_limits(args.limits.force_limits),
+    };
 
     let stdout = std::io::stdout();
     let mut out = BufWriter::new(stdout.lock());
-    write_line(&mut out, &hello(&capacity))?;
+    write_line(&mut out, &hello(&capacity, cache_bytes))?;
 
     let stdin = std::io::stdin();
-    for line in stdin.lock().lines() {
-        let line = line.map_err(|error| CliError::input(format!("IO_ERROR: stdin: {error}")))?;
+    let mut input = stdin.lock();
+    loop {
+        let line = match crate::file_io::read_line_limited(
+            &mut input,
+            crate::file_io::MAX_REQUEST_LINE_BYTES,
+        ) {
+            Ok(crate::file_io::LineRead::Line(line)) => line,
+            Ok(crate::file_io::LineRead::Eof) => break,
+            Ok(crate::file_io::LineRead::TooLong) => {
+                write_line(
+                    &mut out,
+                    &error_result(
+                        "",
+                        "INVALID_REQUEST",
+                        &format!(
+                            "request line exceeds {} bytes",
+                            crate::file_io::MAX_REQUEST_LINE_BYTES
+                        ),
+                    ),
+                )?;
+                continue;
+            }
+            Ok(crate::file_io::LineRead::InvalidUtf8) => {
+                write_line(
+                    &mut out,
+                    &error_result("", "INVALID_REQUEST", "request line is not valid UTF-8"),
+                )?;
+                continue;
+            }
+            Err(error) => {
+                return Err(CliError::input(format!("IO_ERROR: stdin: {error}")));
+            }
+        };
+
         let line = line.trim();
         if line.is_empty() {
             continue;
@@ -130,15 +190,7 @@ pub fn run(args: ServeArgs) -> Result<(), CliError> {
                 return Ok(());
             }
             Ok(Message::Render(request)) => {
-                let response = handle(
-                    *request,
-                    materials.as_ref(),
-                    args.threads,
-                    force_limits,
-                    ignore_block_entity_nbt,
-                    &mut cache,
-                    cache_limit,
-                );
+                let response = handle(*request, &mut cache, &context);
                 write_line(&mut out, &response)?;
             }
             Err(error) => {
@@ -154,7 +206,7 @@ pub fn run(args: ServeArgs) -> Result<(), CliError> {
     Ok(())
 }
 
-fn hello(capacity: &Capacity) -> Value {
+fn hello(capacity: &Capacity, cache_bytes: u64) -> Value {
     json!({
         "type": "hello",
         "protocolVersion": PROTOCOL_VERSION,
@@ -164,6 +216,7 @@ fn hello(capacity: &Capacity) -> Value {
         "cpuQuota": capacity.cpu_quota_milli.map(|milli| f64::from(milli) / 1000.0),
         "memoryLimitBytes": capacity.memory_limit_bytes,
         "memoryAvailableBytes": capacity.memory_available_bytes,
+        "cacheBytes": cache_bytes,
         "suggestedWorkers": capacity.suggested_workers,
         "suggestedThreads": capacity.suggested_threads,
         "suggestedMaxQuads": capacity.suggested_max_quads,
@@ -178,29 +231,17 @@ fn hello(capacity: &Capacity) -> Value {
 
 fn handle(
     request: RenderRequest,
-    materials: Option<&MaterialSet>,
-    default_threads: u32,
-    force_limits: bool,
-    ignore_block_entity_nbt: bool,
     cache: &mut Vec<CachedScene>,
-    cache_limit: usize,
+    context: &ServeContext<'_>,
 ) -> Value {
     let id = request.id.clone();
-    match process(
-        &request,
-        materials,
-        default_threads,
-        force_limits,
-        ignore_block_entity_nbt,
-        cache,
-        cache_limit,
-    ) {
+    match process(&request, cache, context) {
         Ok(result) => result,
         Err(error) => {
             let code = error_code(&error.message);
             let retryable = matches!(
                 code.as_str(),
-                "PNG_ENCODE_FAILED" | "IO_ERROR" | "INTERNAL_ERROR"
+                "PNG_ENCODE_FAILED" | "TEMP_STORAGE_FAILED" | "IO_ERROR" | "INTERNAL_ERROR"
             );
             json!({
                 "type": "result",
@@ -214,12 +255,8 @@ fn handle(
 
 fn process(
     request: &RenderRequest,
-    materials: Option<&MaterialSet>,
-    default_threads: u32,
-    force_limits: bool,
-    ignore_block_entity_nbt: bool,
     cache: &mut Vec<CachedScene>,
-    cache_limit: usize,
+    context: &ServeContext<'_>,
 ) -> Result<Value, CliError> {
     let started = Instant::now();
     validate_id(&request.id)?;
@@ -242,105 +279,17 @@ fn process(
         ));
     }
 
-    let limits = crate::decode_limits(force_limits, ignore_block_entity_nbt);
-    let input = crate::read_file_limited(&request.input.path, limits.max_input_bytes)?;
-    let input_hash = sha256(&input).to_hex();
-
-    if let Some(expected) = &request.input.hash
-        && !input_hash.eq_ignore_ascii_case(expected)
-    {
-        return Err(CliError::input(format!(
-            "INPUT_HASH_MISMATCH: expected {expected}, got {input_hash}"
-        )));
-    }
-
-    let lod_mode = match request.lod.as_ref() {
-        None => crate::LodMode::Fixed(1),
-        Some(LodRequest::Factor(factor)) => {
-            if !(1..=16).contains(factor) {
-                return Err(CliError::input(
-                    "INVALID_RENDER_OPTIONS: lod must be between 1 and 16, or auto",
-                ));
-            }
-            crate::LodMode::Fixed(*factor)
-        }
-        Some(LodRequest::Text(text)) if text.eq_ignore_ascii_case("auto") => crate::LodMode::Auto,
-        Some(LodRequest::Text(text)) => {
-            return Err(CliError::input(format!(
-                "INVALID_RENDER_OPTIONS: invalid lod '{text}', expected 1-16 or auto"
-            )));
-        }
-    };
-    let lod_key = match lod_mode {
-        crate::LodMode::Fixed(factor) => factor.to_string(),
-        crate::LodMode::Auto => "auto".to_string(),
-    };
-
-    let cached = cache
-        .iter()
-        .position(|entry| entry.hash == input_hash && entry.lod_key == lod_key)
-        .map(|index| cache.remove(index));
-
-    let (scene, mesh, snapshot, factor, parse_ms, lod_ms, mesh_ms, cache_hit) = match cached {
-        Some(entry) => {
-            let scene = Arc::clone(&entry.scene);
-            let mesh = Arc::clone(&entry.mesh);
-            let snapshot = entry.snapshot.clone();
-            let factor = entry.lod;
-            cache.insert(0, entry);
-            (scene, mesh, snapshot, factor, 0.0, 0.0, 0.0, true)
-        }
-        None => {
-            let parse_started = Instant::now();
-            let file =
-                LitematicFile::parse_bytes(&input, &limits, &crate::scene_limits(force_limits))
-                    .map_err(CliError::from)?;
-            let scene = file.into_scene().map_err(CliError::from)?;
-            let parse_ms = parse_started.elapsed().as_secs_f64() * 1000.0;
-
-            let prepared = crate::prepare_scene(
-                scene,
-                materials,
-                lod_mode,
-                &crate::mesh_limits(force_limits),
-                request.threads.unwrap_or(default_threads),
-            )?;
-            let crate::PreparedScene {
-                scene,
-                mesh,
-                snapshot,
-                factor,
-                lod_ms,
-                mesh_ms,
-            } = prepared;
-
-            let scene = Arc::new(scene);
-            let mesh = Arc::new(mesh);
-            let snapshot = snapshot.map(Arc::new);
-            let entry = CachedScene {
-                hash: input_hash.clone(),
-                lod_key,
-                lod: factor,
-                scene: Arc::clone(&scene),
-                mesh: Arc::clone(&mesh),
-                snapshot: snapshot.clone(),
-            };
-            if cache_limit > 0 {
-                cache.insert(0, entry);
-                cache.truncate(cache_limit);
-            }
-
-            (
-                scene, mesh, snapshot, factor, parse_ms, lod_ms, mesh_ms, false,
-            )
-        }
-    };
-
     let views = if request.views.is_empty() {
         vec![DEFAULT_YAW]
     } else {
         request.views.clone()
     };
+    if views.len() > crate::MAX_VIEWS {
+        return Err(CliError::input(format!(
+            "INVALID_RENDER_OPTIONS: views must contain at most {} angles",
+            crate::MAX_VIEWS
+        )));
+    }
     for yaw in &views {
         if !yaw.is_finite() || !(0.0..=360.0).contains(yaw) {
             return Err(CliError::input(format!(
@@ -367,68 +316,196 @@ fn process(
         ))
     })?;
 
-    let view_count = views.len();
+    let view_options: Vec<RenderOptions> = views
+        .iter()
+        .map(|&yaw| {
+            let mut options = RenderOptions {
+                width: request.width.unwrap_or(DEFAULT_SIZE),
+                height: request.height.unwrap_or(DEFAULT_SIZE),
+                yaw,
+                elevation: request.elevation.unwrap_or(DEFAULT_ELEVATION),
+                background,
+                lighting,
+                supersample: request.supersample.unwrap_or(DEFAULT_SUPERSAMPLE),
+                threads: request.threads.unwrap_or(context.default_threads),
+                texture_filter,
+                ..Default::default()
+            };
+            crate::apply_render_limits(context.force_limits, &mut options);
+            options
+        })
+        .collect();
+    // Validate before parsing or meshing so a bad size, elevation, or thread
+    // count cannot force a full expensive job.
+    for options in &view_options {
+        options.validate().map_err(CliError::from)?;
+    }
+
+    let limits = crate::decode_limits(context.force_limits, context.ignore_block_entity_nbt);
+    let lod_mode = match request.lod.as_ref() {
+        None => crate::LodMode::Fixed(1),
+        Some(LodRequest::Factor(factor)) => {
+            if !(1..=16).contains(factor) {
+                return Err(CliError::input(
+                    "INVALID_RENDER_OPTIONS: lod must be between 1 and 16, or auto",
+                ));
+            }
+            crate::LodMode::Fixed(*factor)
+        }
+        Some(LodRequest::Text(text)) if text.eq_ignore_ascii_case("auto") => crate::LodMode::Auto,
+        Some(LodRequest::Text(text)) => {
+            return Err(CliError::input(format!(
+                "INVALID_RENDER_OPTIONS: invalid lod '{text}', expected 1-16 or auto"
+            )));
+        }
+    };
+    let lod_key = match lod_mode {
+        crate::LodMode::Fixed(factor) => factor.to_string(),
+        crate::LodMode::Auto => "auto".to_string(),
+    };
+
+    // A caller-supplied hash is an identity, so a cache hit must not re-read the
+    // file. The supervisor already hashes inputs for routing and forwards it.
+    let requested_hash = request
+        .input
+        .hash
+        .as_ref()
+        .map(|hash| hash.to_ascii_lowercase());
+    let cached = requested_hash
+        .as_deref()
+        .and_then(|hash| take_cached(cache, hash, &lod_key));
+
+    let (scene, mesh, snapshot, factor, parse_ms, lod_ms, mesh_ms, cache_hit, input_hash) =
+        if let Some(entry) = cached {
+            let input_hash = entry.hash.clone();
+            let factor = entry.lod;
+            let scene = Arc::clone(&entry.scene);
+            let mesh = Arc::clone(&entry.mesh);
+            let snapshot = entry.snapshot.clone();
+            cache.insert(0, entry);
+            (
+                scene, mesh, snapshot, factor, 0.0, 0.0, 0.0, true, input_hash,
+            )
+        } else {
+            let input = crate::read_file_limited(&request.input.path, limits.max_input_bytes)?;
+            let input_hash = sha256(&input).to_hex();
+
+            if let Some(expected) = &request.input.hash
+                && !input_hash.eq_ignore_ascii_case(expected)
+            {
+                return Err(CliError::input(format!(
+                    "INPUT_HASH_MISMATCH: expected {expected}, got {input_hash}"
+                )));
+            }
+
+            if let Some(entry) = take_cached(cache, &input_hash, &lod_key) {
+                let factor = entry.lod;
+                let scene = Arc::clone(&entry.scene);
+                let mesh = Arc::clone(&entry.mesh);
+                let snapshot = entry.snapshot.clone();
+                cache.insert(0, entry);
+                (
+                    scene, mesh, snapshot, factor, 0.0, 0.0, 0.0, true, input_hash,
+                )
+            } else {
+                let parse_started = Instant::now();
+                let file = LitematicFile::parse_bytes(
+                    &input,
+                    &limits,
+                    &crate::scene_limits(context.force_limits),
+                )
+                .map_err(CliError::from)?;
+                let scene = file.into_scene().map_err(CliError::from)?;
+                let parse_ms = parse_started.elapsed().as_secs_f64() * 1000.0;
+
+                let prepared = crate::prepare_scene(
+                    scene,
+                    context.materials,
+                    lod_mode,
+                    &context.mesh_limits,
+                    request.threads.unwrap_or(context.default_threads),
+                    context.mesh_options,
+                )?;
+                let crate::PreparedScene {
+                    scene,
+                    mesh,
+                    snapshot,
+                    factor,
+                    lod_ms,
+                    mesh_ms,
+                } = prepared;
+
+                let scene = Arc::new(scene);
+                let mesh = Arc::new(mesh);
+                let snapshot = snapshot.map(Arc::new);
+                let entry = CachedScene {
+                    hash: input_hash.clone(),
+                    lod_key,
+                    lod: factor,
+                    scene: Arc::clone(&scene),
+                    mesh: Arc::clone(&mesh),
+                    snapshot: snapshot.clone(),
+                    bytes: estimated_cache_bytes(&scene, &mesh, snapshot.as_deref()),
+                };
+                cache_insert(cache, entry, context.cache_limit, context.cache_bytes);
+
+                (
+                    scene, mesh, snapshot, factor, parse_ms, lod_ms, mesh_ms, false, input_hash,
+                )
+            }
+        };
+
+    let view_count = view_options.len();
     let mut outputs = Vec::with_capacity(view_count);
-    let mut render_total = 0.0;
     let mut png_total = 0.0;
     let mut last_statistics = None;
 
-    for yaw in views {
-        let mut options = RenderOptions {
-            width: request.width.unwrap_or(DEFAULT_SIZE),
-            height: request.height.unwrap_or(DEFAULT_SIZE),
-            yaw,
-            elevation: request.elevation.unwrap_or(DEFAULT_ELEVATION),
-            background,
-            lighting,
-            supersample: request.supersample.unwrap_or(DEFAULT_SUPERSAMPLE),
-            threads: request.threads.unwrap_or(default_threads),
-            texture_filter,
-            ..Default::default()
-        };
-        crate::apply_render_limits(force_limits, &mut options);
+    // Write each view as soon as it is rendered instead of retaining every RGBA
+    // buffer until the whole request finishes.
+    let (_, render_total) = crate::render_views_with(
+        &scene,
+        &mesh,
+        snapshot.as_deref(),
+        &view_options,
+        request.threads.unwrap_or(context.default_threads),
+        None,
+        |output, render_ms, options| {
+            let name = if view_count == 1 {
+                format!("{}.png", request.id)
+            } else {
+                format!("{}-{}.png", request.id, options.yaw)
+            };
+            let path = request.output_dir.join(name);
 
-        let render_started = Instant::now();
-        let output = match &snapshot {
-            Some(snapshot) => {
-                render_mesh_with_textures(&scene, &mesh, &options, snapshot.textures())
-                    .map_err(CliError::from)?
-            }
-            None => render_mesh(&scene, &mesh, &options).map_err(CliError::from)?,
-        };
-        let render_ms = render_started.elapsed().as_secs_f64() * 1000.0;
-        render_total += render_ms;
+            let png_started = Instant::now();
+            let file = File::create(&path).map_err(|error| {
+                CliError::input(format!("IO_ERROR: {}: {error}", path.display()))
+            })?;
+            let mut writer = BufWriter::new(file);
+            write_png(&output, &mut writer).map_err(CliError::from)?;
+            writer.flush().map_err(|error| {
+                CliError::input(format!("IO_ERROR: {}: {error}", path.display()))
+            })?;
+            let png_ms = png_started.elapsed().as_secs_f64() * 1000.0;
+            png_total += png_ms;
 
-        let name = if view_count == 1 {
-            format!("{}.png", request.id)
-        } else {
-            format!("{}-{yaw}.png", request.id)
-        };
-        let path = request.output_dir.join(name);
-
-        let png_started = Instant::now();
-        let file = File::create(&path)
-            .map_err(|error| CliError::input(format!("IO_ERROR: {}: {error}", path.display())))?;
-        let mut writer = BufWriter::new(file);
-        write_png(&output, &mut writer).map_err(CliError::from)?;
-        writer
-            .flush()
-            .map_err(|error| CliError::input(format!("IO_ERROR: {}: {error}", path.display())))?;
-        let png_ms = png_started.elapsed().as_secs_f64() * 1000.0;
-        png_total += png_ms;
-
-        let bytes = fs::metadata(&path).map(|meta| meta.len()).unwrap_or(0);
-        last_statistics = Some(output.statistics);
-        outputs.push(json!({
-            "path": path.display().to_string(),
-            "yaw": yaw,
-            "width": output.width,
-            "height": output.height,
-            "bytes": bytes,
-            "renderMs": render_ms,
-            "pngMs": png_ms,
-        }));
-    }
+            let bytes = fs::metadata(&path).map(|meta| meta.len()).unwrap_or(0);
+            let width = output.width;
+            let height = output.height;
+            let statistics = output.statistics;
+            last_statistics = Some(statistics);
+            outputs.push(json!({
+                "path": path.display().to_string(),
+                "yaw": options.yaw,
+                "width": width,
+                "height": height,
+                "bytes": bytes,
+                "renderMs": render_ms,
+                "pngMs": png_ms,
+            }));
+            Ok(())
+        },
+    )?;
 
     let statistics = last_statistics.expect("views are never empty");
     Ok(json!({
@@ -454,6 +531,61 @@ fn process(
             "textures": snapshot.as_ref().map(|value| value.textures().len()).unwrap_or(0),
         },
     }))
+}
+
+fn estimated_cache_bytes(scene: &Scene, mesh: &Mesh, snapshot: Option<&MaterialSnapshot>) -> u64 {
+    scene
+        .heap_bytes()
+        .saturating_add(mesh.heap_bytes())
+        .saturating_add(
+            snapshot
+                .map(|snapshot| snapshot.textures().bytes())
+                .unwrap_or(0),
+        )
+        .saturating_add(std::mem::size_of::<CachedScene>() as u64)
+}
+
+fn cache_insert(
+    cache: &mut Vec<CachedScene>,
+    entry: CachedScene,
+    cache_limit: usize,
+    cache_bytes: u64,
+) {
+    if cache_limit == 0 {
+        return;
+    }
+
+    let mut total = cache.iter().map(|entry| entry.bytes).sum::<u64>();
+    while !cache.is_empty() {
+        let count_over = cache.len() + 1 > cache_limit;
+        let bytes_over = cache_bytes != u64::MAX && total.saturating_add(entry.bytes) > cache_bytes;
+        if !count_over && !bytes_over {
+            break;
+        }
+        if let Some(removed) = cache.pop() {
+            total = total.saturating_sub(removed.bytes);
+        }
+    }
+
+    cache.insert(0, entry);
+    cache.truncate(cache_limit);
+}
+
+fn cache_budget(requested: u64, capacity: &Capacity) -> u64 {
+    if requested > 0 {
+        requested
+    } else if capacity.memory_available_bytes > 0 {
+        capacity.memory_available_bytes / 2
+    } else {
+        u64::MAX
+    }
+}
+
+fn take_cached(cache: &mut Vec<CachedScene>, hash: &str, lod_key: &str) -> Option<CachedScene> {
+    let index = cache
+        .iter()
+        .position(|entry| entry.hash.eq_ignore_ascii_case(hash) && entry.lod_key == lod_key)?;
+    Some(cache.remove(index))
 }
 
 fn validate_id(id: &str) -> Result<(), CliError> {

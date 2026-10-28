@@ -344,6 +344,33 @@ fn rejects_oversized_values_and_budgets() {
 }
 
 #[test]
+fn rejects_impossible_list_lengths_before_allocating() {
+    let mut payload = vec![3u8];
+    payload.extend_from_slice(&1_000_000i32.to_be_bytes());
+    let data = root(&named(9, "huge_list", &payload));
+
+    let err = decode(&data, &DecodeLimits::default()).unwrap_err();
+    assert_eq!(err.code, NbtErrorCode::TruncatedInput);
+}
+
+#[test]
+fn rejects_impossible_array_lengths_before_allocating() {
+    let mut int_array = Vec::new();
+    int_array.extend_from_slice(&64_000_000i32.to_be_bytes());
+    let data = root(&named(11, "huge_ints", &int_array));
+
+    let err = decode(&data, &DecodeLimits::default()).unwrap_err();
+    assert_eq!(err.code, NbtErrorCode::TruncatedInput);
+
+    let mut long_array = Vec::new();
+    long_array.extend_from_slice(&64_000_000i32.to_be_bytes());
+    let data = root(&named(12, "huge_longs", &long_array));
+
+    let err = decode(&data, &DecodeLimits::default()).unwrap_err();
+    assert_eq!(err.code, NbtErrorCode::TruncatedInput);
+}
+
+#[test]
 fn rejects_negative_lengths() {
     let mut payload = Vec::new();
     payload.extend_from_slice(&(-1i32).to_be_bytes());

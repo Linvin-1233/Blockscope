@@ -4,10 +4,11 @@ use crate::model::{ModelChain, ResolvedTexture, build_model, resolve_model, reso
 use crate::source::AssetSource;
 use crate::texture::TextureSet;
 use crate::tint::tint_for;
+use crate::util::strip_namespace;
 use crate::{MaterialError, MaterialErrorCode};
 use litematic_mesh::{
     BlockCatalog, BlockModel, ColorBlockCatalog, FaceDirection, NO_TEXTURE, RenderLayer,
-    ResolvedBlock, Rgba,
+    ResolvedBlock, Rgba, needs_water_style,
 };
 use litematic_scene::{BlockStateKey, Scene};
 use serde::Serialize;
@@ -83,7 +84,7 @@ pub struct MaterialSet {
     fallback: ColorBlockCatalog,
     textures: RefCell<TextureSet>,
     blockstates: RefCell<HashMap<String, Option<Arc<BlockstateFile>>>>,
-    models: RefCell<HashMap<String, Option<ModelChain>>>,
+    models: RefCell<HashMap<String, Option<Arc<ModelChain>>>>,
     resolved: RefCell<HashMap<BlockStateKey, Arc<ResolvedBlock>>>,
     info: RefCell<HashMap<BlockStateKey, MaterialInfo>>,
     diagnostics: RefCell<MaterialDiagnostics>,
@@ -172,14 +173,16 @@ impl MaterialSet {
     }
 
     fn resolve_uncached(&self, state: &BlockStateKey) -> ResolvedBlock {
-        let fallback = self.fallback.resolve(state);
-
         if state.is_air() {
-            return fallback;
+            return self.fallback.resolve(state);
         }
 
-        let pack = self.pack_model(state);
+        // Pack models and chests replace the fallback geometry, so resolve the
+        // palette style first and only build the fallback model when it is used.
+        let style = self.fallback.resolve_style(state);
 
+        // Chests use an entity model, so checking them before the blockstate
+        // model avoids resolving a pack model that would be discarded.
         if let Some(model) =
             crate::chest::build_chest_model(state, &self.source, &mut self.textures.borrow_mut())
         {
@@ -192,16 +195,16 @@ impl MaterialSet {
                 },
             );
             return ResolvedBlock {
-                color: fallback.color,
+                color: style.color,
                 layer: RenderLayer::Opaque,
                 model: Arc::new(model),
-                known: fallback.known,
+                known: style.known,
             };
         }
 
-        if let Some(pack) = pack {
+        if let Some(pack) = self.pack_model(state) {
             if let Some(mut model) = pack.model {
-                if fallback.layer == RenderLayer::Opaque {
+                if style.layer == RenderLayer::Opaque {
                     let textures = self.textures.borrow();
                     for quad in &mut model.quads {
                         if quad.layer.is_none()
@@ -223,15 +226,16 @@ impl MaterialSet {
                     },
                 );
                 return ResolvedBlock {
-                    color: fallback.color,
-                    layer: fallback.layer,
+                    color: style.color,
+                    layer: style.layer,
                     model: Arc::new(model),
-                    known: fallback.known,
+                    known: style.known,
                 };
             }
 
+            let fallback = self.fallback.resolve(state);
             let (model, textured) =
-                self.fallback_model(state, fallback.model.clone(), pack.particle, fallback.layer);
+                self.fallback_model(state, fallback.model.clone(), pack.particle, style.layer);
             self.diagnostics.borrow_mut().fallback_shapes += 1;
             self.info.borrow_mut().insert(
                 state.clone(),
@@ -241,20 +245,21 @@ impl MaterialSet {
                 },
             );
             return ResolvedBlock {
-                color: fallback.color,
-                layer: fallback.layer,
+                color: style.color,
+                layer: style.layer,
                 model: Arc::new(model),
-                known: fallback.known,
+                known: style.known,
             };
         }
 
+        let fallback = self.fallback.resolve(state);
         let (model, textured) =
-            self.fallback_model(state, fallback.model.clone(), None, fallback.layer);
+            self.fallback_model(state, fallback.model.clone(), None, style.layer);
         self.diagnostics.borrow_mut().fallback_shapes += 1;
         self.info.borrow_mut().insert(
             state.clone(),
             MaterialInfo {
-                kind: if fallback.known {
+                kind: if style.known {
                     MaterialKind::Fallback
                 } else {
                     MaterialKind::Unknown
@@ -263,10 +268,10 @@ impl MaterialSet {
             },
         );
         ResolvedBlock {
-            color: fallback.color,
-            layer: fallback.layer,
+            color: style.color,
+            layer: style.layer,
             model: Arc::new(model),
-            known: fallback.known,
+            known: style.known,
         }
     }
 
@@ -450,17 +455,28 @@ impl MaterialSet {
     {
         let mut resolved = HashMap::new();
         let mut info = HashMap::new();
+        let mut needs_water = false;
 
         for state in states {
             if state.is_air() || resolved.contains_key(&state) {
                 continue;
             }
 
+            needs_water |= needs_water_style(&state);
             let block = self.resolve(&state);
             if let Some(entry) = self.info_for(&state) {
                 info.insert(state.clone(), entry);
             }
             resolved.insert(state, block);
+        }
+
+        // Waterlogged blocks need a water style even when the scene has no
+        // standalone water cell.
+        if needs_water {
+            let water = BlockStateKey::simple("minecraft:water");
+            resolved
+                .entry(water.clone())
+                .or_insert_with(|| self.resolve(&water));
         }
 
         let textures = self.textures.borrow().clone();
@@ -502,14 +518,13 @@ struct PackResolution {
 }
 
 fn fallback_texture_name(state: &BlockStateKey, face: FaceDirection) -> Option<String> {
-    let path = state
-        .name
-        .split_once(':')
-        .map(|(_, path)| path)
-        .unwrap_or(&state.name);
+    let path = strip_namespace(&state.name);
 
-    if path == "water" || path == "lava" {
-        return Some(format!("block/{path}_still"));
+    if path == "water" || path == "flowing_water" || path == "bubble_column" {
+        return Some("block/water_still".to_string());
+    }
+    if path == "lava" || path == "flowing_lava" {
+        return Some("block/lava_still".to_string());
     }
     if path == "grass_block" {
         return Some(match face {
@@ -620,11 +635,7 @@ fn fallback_texture_name(state: &BlockStateKey, face: FaceDirection) -> Option<S
 }
 
 fn fallback_tint(state: &BlockStateKey, face: FaceDirection) -> Rgba {
-    let path = state
-        .name
-        .split_once(':')
-        .map(|(_, path)| path)
-        .unwrap_or(&state.name);
+    let path = strip_namespace(&state.name);
 
     if path == "grass_block" && face == FaceDirection::Up {
         return tint_for(state, Some(0));
@@ -632,7 +643,12 @@ fn fallback_tint(state: &BlockStateKey, face: FaceDirection) -> Rgba {
     if path == "grass_block" {
         return Rgba::WHITE;
     }
-    if path == "water" || path == "redstone_wire" || path.contains("leaves") {
+    if path == "water"
+        || path == "flowing_water"
+        || path == "bubble_column"
+        || path == "redstone_wire"
+        || path.contains("leaves")
+    {
         return tint_for(state, Some(0));
     }
     if path == "short_grass" || path == "tall_grass" || path == "fern" || path == "large_fern" {

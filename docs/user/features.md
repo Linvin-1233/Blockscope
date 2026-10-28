@@ -3,7 +3,7 @@
 Blockscope 是一个把 Minecraft `.litematic` 投影文件渲染成 PNG 的
 无头 Rust 图像渲染引擎，面向通用后端服务、批处理工具和自动化管线。
 
-当前 workspace 版本为 `0.1.2`，支持 Windows、Linux 和 macOS。仓库包含解析、材质、
+当前 workspace 版本为 `0.4.0`，支持 Windows、Linux 和 macOS。仓库包含解析、材质、
 网格、CPU 光栅化、CLI 和 stdio 服务；不包含特定聊天平台或机器人适配层。
 
 ## 功能
@@ -16,6 +16,7 @@ Blockscope 是一个把 Minecraft `.litematic` 投影文件渲染成 PNG 的
   cutout/translucent、PNG 贴图和 overlay
 - 内置箱子 body/lid/lock 模型和 entity 贴图
 - 网格导出：OBJ、带顶点颜色的 PLY
+- 可选 `--greedy-mesh` 共面合并，降低大平面和重复结构的 quad 数
 - CPU 正交相机、tile 光栅化、`flat-v1` / `simple-ao-v1` 光照、PNG 输出
 - 超采样 1-4、多视角、并行 tile、分页流式渲染
 - LOD 固定因子 `2..=16` 或 `auto`，用于超大结构降级
@@ -34,24 +35,9 @@ Blockscope 是一个把 Minecraft `.litematic` 投影文件渲染成 PNG 的
 - 资源包、客户端 jar 和私有 `.litematic` 不随仓库提交
 - 没有网络端口；`serve`/`supervise` 只通过 stdio 与上层服务通信
 
-## 项目结构
-
-| 路径 | 内容 |
-|---|---|
-| `../../crates/nbt` | NBT 解码、压缩检测、资源限制 |
-| `../../crates/litematic` | `.litematic` 容器解析和 Scene 构建 |
-| `../../crates/scene` | Scene IR、统计、诊断、manifest、hash、LOD |
-| `../../crates/material` | blockstate/model、资源包、PNG、tint、chest |
-| `../../crates/mesh` | 色块/资源包网格、面剔除、AO、OBJ/PLY |
-| `../../crates/render` | CPU 光栅化、tile、超采样、PNG |
-| `../../crates/cli` | `blockscope` CLI、serve、supervise、容量检测 |
-| `..` | 格式、渲染、材质、协议和部署文档 |
-| `../../fixtures/golden` | 黄金 manifest 和 PNG |
-| `../../scripts` | Windows/Linux 质量门禁 |
-
 ## 下一步
 
-- [安装与快速开始](getting-started.md)
-- [CLI 命令](cli.md)
-- [限制与安全](limits.md)
-- [English](en/features.md)
+- [安装与快速开始](./getting-started.md)
+- [CLI 命令](./cli.md)
+- [限制与安全](./limits.md)
+- [English](./en/features.md)

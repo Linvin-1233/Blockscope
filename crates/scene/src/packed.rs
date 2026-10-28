@@ -71,6 +71,11 @@ impl PackedIndices {
         self.volume
     }
 
+    /// Estimated heap bytes held by the packed words.
+    pub fn heap_bytes(&self) -> u64 {
+        self.longs.capacity() as u64 * std::mem::size_of::<i64>() as u64
+    }
+
     /// Read one entry. `index` must be lower than `volume`.
     pub fn get(&self, index: u64) -> u32 {
         assert!(index < self.volume, "packed index out of range");
@@ -92,7 +97,66 @@ impl PackedIndices {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = u32> + '_ {
-        (0..self.volume).map(|index| self.get(index))
+        self.cursor()
+    }
+
+    /// Sequential decoder with a one-word buffer. Random `get` calls recompute
+    /// the word and bit offset for every index; scanning uses this cursor.
+    pub(crate) fn cursor(&self) -> PackedCursor<'_> {
+        PackedCursor {
+            states: self,
+            remaining: self.volume,
+            next_long: 0,
+            buffer: 0,
+            buffered: 0,
+        }
+    }
+}
+
+pub(crate) struct PackedCursor<'a> {
+    states: &'a PackedIndices,
+    remaining: u64,
+    next_long: usize,
+    buffer: u64,
+    buffered: u32,
+}
+
+impl Iterator for PackedCursor<'_> {
+    type Item = u32;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.remaining == 0 {
+            return None;
+        }
+
+        let bits = u32::from(self.states.bits);
+        let mask = (1u64 << bits) - 1;
+        let value = if self.buffered >= bits {
+            let value = (self.buffer & mask) as u32;
+            self.buffer >>= bits;
+            self.buffered -= bits;
+            value
+        } else {
+            let word = self.states.longs.get(self.next_long).copied().unwrap_or(0) as u64;
+            self.next_long += 1;
+
+            let low = self.buffered;
+            let need = bits - low;
+            let low_mask = (1u64 << low) - 1;
+            let need_mask = (1u64 << need) - 1;
+            let value = ((self.buffer & low_mask) | ((word & need_mask) << low)) as u32;
+            self.buffer = word >> need;
+            self.buffered = 64 - need;
+            value
+        };
+
+        self.remaining -= 1;
+        Some(value)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = usize::try_from(self.remaining).unwrap_or(usize::MAX);
+        (remaining, Some(remaining))
     }
 }
 
@@ -116,5 +180,26 @@ fn set_at(longs: &mut [i64], bits: u8, index: u64, value: u32) {
         let shifted = (second >> high_bits) << high_bits;
         let tail = (value & mask) >> end_offset;
         longs[end_array as usize] = (shifted | tail) as i64;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PackedIndices;
+
+    #[test]
+    fn cursor_matches_random_access() {
+        for bits in 2..=32 {
+            let count = 1000;
+            let mask = if bits == 32 {
+                u32::MAX
+            } else {
+                (1u32 << bits) - 1
+            };
+            let values: Vec<u32> = (0..count).map(|index| (index as u32 * 37) & mask).collect();
+            let packed = PackedIndices::from_values(bits, &values).unwrap();
+            let decoded: Vec<u32> = packed.iter().collect();
+            assert_eq!(decoded, values, "bits={bits}");
+        }
     }
 }

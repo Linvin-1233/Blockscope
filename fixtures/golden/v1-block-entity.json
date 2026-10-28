@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "parser": {
-    "version": "0.1.2",
+    "version": "0.4.0",
     "litematicVersion": 1,
     "minecraftDataVersion": 3700
   },
@@ -82,5 +82,12 @@
       "minecraft:air": 8
     }
   },
-  "diagnostics": []
+  "diagnostics": [
+    {
+      "code": "EMPTY_REGION",
+      "severity": "info",
+      "message": "region palette contains only air",
+      "region": "main"
+    }
+  ]
 }

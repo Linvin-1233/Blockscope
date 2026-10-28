@@ -18,9 +18,28 @@ pub struct Texture {
     pub rgba: Vec<u8>,
 }
 
+impl Texture {
+    /// Sample one texel or a bilinear blend. UVs repeat outside `0..1`.
+    #[inline]
+    pub fn sample(&self, uv: [f32; 2], filter: TextureFilter) -> Option<[f32; 4]> {
+        if self.width == 0 || self.height == 0 {
+            return None;
+        }
+
+        let x = repeat(uv[0]) * self.width as f32;
+        let y = repeat(uv[1]) * self.height as f32;
+        Some(match filter {
+            TextureFilter::Nearest => texel(self, x.floor() as i32, y.floor() as i32),
+            TextureFilter::Linear => bilinear(self, x - 0.5, y - 0.5),
+        })
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct TextureSet {
     textures: Vec<Texture>,
+    /// Per-texture alpha flag, computed once when the texture is decoded.
+    transparency: Vec<bool>,
     lookup: HashMap<String, Option<u16>>,
     bytes: u64,
     missing: u64,
@@ -41,6 +60,11 @@ impl TextureSet {
 
     pub fn missing(&self) -> u64 {
         self.missing
+    }
+
+    /// Decoded texture bytes currently held by this set.
+    pub const fn bytes(&self) -> u64 {
+        self.bytes
     }
 
     /// Load a texture path such as `block/stone` or `minecraft:block/stone`.
@@ -76,11 +100,13 @@ impl TextureSet {
         self.bytes += size;
 
         let id = u16::try_from(self.textures.len()).ok()?;
+        let has_alpha = rgba.as_chunks::<4>().0.iter().any(|pixel| pixel[3] < 255);
         self.textures.push(Texture {
             width,
             height,
             rgba,
         });
+        self.transparency.push(has_alpha);
         Some(id)
     }
 
@@ -89,32 +115,15 @@ impl TextureSet {
     }
 
     pub fn has_transparency(&self, id: u16) -> bool {
-        let Some(texture) = self.get(id) else {
-            return false;
-        };
-        texture
-            .rgba
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .any(|pixel| pixel[3] < 255)
+        self.transparency
+            .get(usize::from(id))
+            .copied()
+            .unwrap_or(false)
     }
 
+    #[inline]
     pub fn sample(&self, id: u16, uv: [f32; 2], filter: TextureFilter) -> Option<[f32; 4]> {
-        let texture = self.get(id)?;
-        let width = texture.width as f32;
-        let height = texture.height as f32;
-        if width <= 0.0 || height <= 0.0 {
-            return None;
-        }
-
-        let x = uv[0].rem_euclid(1.0) * width;
-        let y = uv[1].rem_euclid(1.0) * height;
-
-        match filter {
-            TextureFilter::Nearest => Some(texel(texture, x.floor() as i32, y.floor() as i32)),
-            TextureFilter::Linear => Some(bilinear(texture, x - 0.5, y - 0.5)),
-        }
+        self.get(id)?.sample(uv, filter)
     }
 }
 
@@ -123,20 +132,32 @@ fn normalize_texture_path(path: &str) -> String {
     path.trim_start_matches("textures/").to_string()
 }
 
+#[inline]
+fn repeat(value: f32) -> f32 {
+    if (0.0..1.0).contains(&value) {
+        value
+    } else {
+        value.rem_euclid(1.0)
+    }
+}
+
+#[inline]
 fn texel(texture: &Texture, x: i32, y: i32) -> [f32; 4] {
     let width = texture.width as i32;
     let height = texture.height as i32;
     let x = x.rem_euclid(width) as usize;
     let y = y.rem_euclid(height) as usize;
     let index = (y * texture.width as usize + x) * 4;
+    const INV_255: f32 = 1.0 / 255.0;
     [
-        f32::from(texture.rgba[index]) / 255.0,
-        f32::from(texture.rgba[index + 1]) / 255.0,
-        f32::from(texture.rgba[index + 2]) / 255.0,
-        f32::from(texture.rgba[index + 3]) / 255.0,
+        f32::from(texture.rgba[index]) * INV_255,
+        f32::from(texture.rgba[index + 1]) * INV_255,
+        f32::from(texture.rgba[index + 2]) * INV_255,
+        f32::from(texture.rgba[index + 3]) * INV_255,
     ]
 }
 
+#[inline]
 fn bilinear(texture: &Texture, x: f32, y: f32) -> [f32; 4] {
     let x0 = x.floor();
     let y0 = y.floor();
@@ -290,6 +311,66 @@ mod tests {
             .sample(id, [0.5, 0.5], TextureFilter::Nearest)
             .unwrap();
         assert!(sample[0] > 0.9 && sample[1] < 0.1);
+    }
+
+    #[test]
+    fn texture_sampling_repeats_and_blends() {
+        let texture = Texture {
+            width: 2,
+            height: 2,
+            rgba: vec![
+                255, 0, 0, 255, // red
+                0, 255, 0, 255, // green
+                0, 0, 255, 255, // blue
+                255, 255, 255, 255, // white
+            ],
+        };
+
+        assert_eq!(
+            texture.sample([1.0, 0.0], TextureFilter::Nearest).unwrap(),
+            [1.0, 0.0, 0.0, 1.0]
+        );
+        assert_eq!(
+            texture
+                .sample([0.75, 0.25], TextureFilter::Nearest)
+                .unwrap(),
+            [0.0, 1.0, 0.0, 1.0]
+        );
+        let blended = texture.sample([0.5, 0.5], TextureFilter::Linear).unwrap();
+        assert!((blended[0] - 0.5).abs() < 1e-6);
+        assert!((blended[1] - 0.5).abs() < 1e-6);
+        assert!((blended[2] - 0.5).abs() < 1e-6);
+        assert!((blended[3] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn transparency_is_detected_from_decoded_pixels() {
+        let dir = tempfile::tempdir().unwrap();
+        write_png(
+            &dir.path()
+                .join("assets/minecraft/textures/block/opaque.png"),
+            2,
+            2,
+            &[255u8; 16],
+        );
+        write_png(
+            &dir.path().join("assets/minecraft/textures/block/alpha.png"),
+            2,
+            2,
+            &[
+                255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 128, 255, 255, 255, 255,
+            ],
+        );
+
+        let mut source = AssetSource::new();
+        source.add_dir(dir.path()).unwrap();
+        let mut textures = TextureSet::new();
+        let opaque = textures.load(&source, "block/opaque").unwrap();
+        let alpha = textures.load(&source, "block/alpha").unwrap();
+
+        assert!(!textures.has_transparency(opaque));
+        assert!(textures.has_transparency(alpha));
+        assert!(!textures.has_transparency(u16::MAX));
     }
 
     #[test]

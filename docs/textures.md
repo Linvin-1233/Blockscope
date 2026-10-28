@@ -4,33 +4,11 @@ Phase 3C resolves block states through a Minecraft Java resource pack, loads the
 referenced textures, and renders them on the CPU. The pack is supplied at
 runtime; no Minecraft assets are stored in this repository.
 
-## Quick Start
+## Overview
 
-Point the CLI at a client jar:
-
-```powershell
-blockscope render model.litematic `
-  --client-jar "D:\hmcl\.minecraft\versions\26.2-Fabric\26.2-Fabric.jar" `
-  --output out.png
-```
-
-Or at extracted assets:
-
-```powershell
-blockscope render model.litematic --assets D:\mc-assets --output out.png
-```
-
-Add an overlay resource pack on top of the base:
-
-```powershell
-blockscope render model.litematic `
-  --client-jar "D:\...\26.2-Fabric.jar" `
-  --resource-pack "D:\...\resourcepacks\MyPack" `
-  --output out.png
-```
-
-Without `--client-jar`, `--assets`, or `--resource-pack`, rendering stays in the
-original color-block mode.
+For end-user CLI workflows using `--client-jar`, `--assets`, and `--resource-pack`,
+see [Materials and Resource Packs](./user/en/materials.md). Without resource pack
+options, rendering defaults to the built-in color-block mode.
 
 ## Asset Layout
 
@@ -84,6 +62,10 @@ resource-pack overlay -> base jar/assets -> built-in name mapping -> color palet
   not implemented.
 - Nearest-neighbor sampling is the default. `--texture-filter linear` enables
   bilinear sampling for HD packs.
+- The rasterizer resolves a face's texture once and reuses it for every covered
+  pixel. The sampler is inlined across the material/render crate boundary; a
+  synthetic 16x16 microbenchmark measured 1.7-2.7x higher sampling throughput
+  for nearest and bilinear filters.
 - Texture alpha drives cutout and translucent rendering.
 - Textures are indexed per face; there is no atlas, so no atlas bleeding.
 
@@ -107,6 +89,11 @@ The first version uses fixed plains colors:
 | foliage | `#77AB2F` |
 | water | `#3F76E4` |
 | redstone wire | dark red to bright red by `power` |
+
+The built-in color catalog uses the same redstone power gradient and a flat
+dust plane, so `power=0..15` stays visible even without a resource pack. The
+gradient is square-root shaped; power 0 and 1 are deliberately far apart so
+thin dust lines remain distinguishable.
 
 Biome colormaps, `tintindex` 1 behavior, and world-specific tint are later
 additive features.
@@ -148,17 +135,11 @@ texture coordinates or materials yet; use `blockscope render` for textured outpu
 
 ## Coverage Report
 
-```powershell
-blockscope materials model.litematic `
-  --client-jar "D:\...\26.2-Fabric.jar"
-blockscope materials model.litematic --client-jar "D:\...\26.2-Fabric.jar" --json
-```
+The `materials` command (documented in [CLI Reference](./user/en/cli.md))
+reports per-block kinds (`pack-model`, `chest`, `fallback`, `unknown`), texture
+status, and missing texture counts.
 
-The report includes per-block counts, `pack-model` / `chest` / `fallback` /
-`unknown` kinds, whether the block rendered with a texture, and missing texture
-counts.
-
-On the private `四边形大宗` fixture with `26.2-Fabric.jar`:
+On a private large Fabric fixture with a matching client jar:
 
 - 36,444 blocks use pack models;
 - 4,400 chests use the built-in chest model;

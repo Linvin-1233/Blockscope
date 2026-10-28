@@ -299,6 +299,7 @@ fn platform_limits() -> Limits {
         avail_extended_virtual: u64,
     }
 
+    // SAFETY: the signature matches the Win32 `GlobalMemoryStatusEx` export.
     unsafe extern "system" {
         fn GlobalMemoryStatusEx(buffer: *mut MemoryStatusEx) -> i32;
     }
@@ -315,6 +316,8 @@ fn platform_limits() -> Limits {
         avail_extended_virtual: 0,
     };
 
+    // SAFETY: `status` is a live `MemoryStatusEx` with `length` initialized to
+    // the size the API expects.
     let ok = unsafe { GlobalMemoryStatusEx(&mut status) } != 0;
     if !ok {
         return Limits::default();
@@ -361,6 +364,7 @@ fn platform_limits() -> Limits {
     const HOST_VM_INFO64_COUNT: u32 =
         (std::mem::size_of::<VmStatistics64>() / std::mem::size_of::<i32>()) as u32;
 
+    // SAFETY: these signatures match the macOS libc/Mach exports used below.
     unsafe extern "C" {
         fn sysctlbyname(
             name: *const std::ffi::c_char,
@@ -380,6 +384,8 @@ fn platform_limits() -> Limits {
 
     let mut memsize: u64 = 0;
     let mut len = std::mem::size_of::<u64>();
+    // SAFETY: `hw.memsize` is a NUL-terminated static string, and `memsize` /
+    // `len` are live stack values matching the requested value size.
     let ok = unsafe {
         sysctlbyname(
             c"hw.memsize".as_ptr(),
@@ -395,6 +401,8 @@ fn platform_limits() -> Limits {
 
     let mut pagesize: u64 = 0;
     let mut ps_len = std::mem::size_of::<u64>();
+    // SAFETY: `hw.pagesize` is a NUL-terminated static string, and `pagesize` /
+    // `ps_len` are live stack values matching the requested value size.
     let ps_ok = unsafe {
         sysctlbyname(
             c"hw.pagesize".as_ptr(),
@@ -410,9 +418,14 @@ fn platform_limits() -> Limits {
         4096
     };
 
+    // SAFETY: `VmStatistics64` is a plain C-layout struct, and an all-zero
+    // value is a valid starting point for the API call.
     let mut vm_stat: VmStatistics64 = unsafe { std::mem::zeroed() };
     let mut count = HOST_VM_INFO64_COUNT;
+    // SAFETY: `mach_host_self` takes no arguments and returns a host port.
     let host = unsafe { mach_host_self() };
+    // SAFETY: `vm_stat` is a live `VmStatistics64` buffer and `count` matches
+    // its element count as required by `host_statistics64`.
     let stat_ok = unsafe {
         host_statistics64(
             host,

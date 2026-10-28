@@ -1,47 +1,57 @@
+use crate::ui::progress::Progress;
+use crate::ui::{self, ACCENT, BOLD, MUTED};
 use crate::{
-    AssetArgs, CliError, GEOMETRY_IGNORES_BLOCK_ENTITY_NBT, LimitArgs, LodMode, PreparedScene,
-    apply_render_limits, load_materials, load_scene, mesh_limits, parse_lod, parse_texture_filter,
-    prepare_scene, warn_forced,
+    AssetArgs, CliError, GEOMETRY_IGNORES_BLOCK_ENTITY_NBT, LimitArgs, LodMode, MeshOptionArgs,
+    PreparedScene, apply_render_limits, load_materials, load_scene, mesh_limits, parse_lod,
+    parse_texture_filter, prepare_scene, warn_forced,
 };
 use clap::Args;
 use litematic_render::{
-    Background, LightingProfile, RenderOptions, render_mesh, render_mesh_with_textures, write_png,
+    Background, LightingProfile, RenderOptions, render_mesh, render_mesh_with_progress,
+    render_mesh_with_textures, render_mesh_with_textures_and_progress, will_stream, write_png,
 };
 use std::path::PathBuf;
 use std::time::Instant;
 
 #[derive(Debug, Args)]
+#[command(after_help = "\
+Examples:
+  blockscope bench model.litematic
+  blockscope bench model.litematic --iterations 5 --threads 8
+  blockscope bench model.litematic --client-jar client.jar --json")]
 pub(crate) struct BenchArgs {
     file: PathBuf,
     /// Output width in pixels.
-    #[arg(long, default_value_t = 1024)]
+    #[arg(long, default_value_t = 1024, value_name = "PIXELS")]
     width: u32,
     /// Output height in pixels.
-    #[arg(long, default_value_t = 1024)]
+    #[arg(long, default_value_t = 1024, value_name = "PIXELS")]
     height: u32,
     /// Camera elevation in degrees.
-    #[arg(long, default_value_t = 30.0)]
+    #[arg(long, default_value_t = 30.0, value_name = "DEGREES")]
     elevation: f32,
     /// Supersampling factor: 1, 2, 3, or 4.
-    #[arg(long, default_value_t = 2)]
+    #[arg(long, default_value_t = 2, value_name = "N")]
     supersample: u32,
     /// Rasterizer worker threads; 0 selects available parallelism.
-    #[arg(long, default_value_t = 0)]
+    #[arg(long, default_value_t = 0, value_name = "N")]
     threads: u32,
     /// Level of detail: 1 disables, 2-16 sets a factor, "auto" picks one.
-    #[arg(long, default_value = "1")]
+    #[arg(long, default_value = "1", value_name = "FACTOR|auto")]
     lod: String,
     /// Number of render iterations.
-    #[arg(long, default_value_t = 3)]
+    #[arg(long, default_value_t = 3, value_name = "N")]
     iterations: u32,
     /// flat-v1 or simple-ao-v1.
-    #[arg(long, default_value = "simple-ao-v1")]
+    #[arg(long, default_value = "simple-ao-v1", value_name = "PROFILE")]
     lighting: String,
     /// Print the report as JSON.
     #[arg(long)]
     json: bool,
     #[command(flatten)]
     assets: AssetArgs,
+    #[command(flatten)]
+    mesh: MeshOptionArgs,
     #[command(flatten)]
     limits: LimitArgs,
 }
@@ -61,6 +71,7 @@ pub(crate) fn run(args: BenchArgs) -> Result<(), CliError> {
         ));
     }
     warn_forced(args.limits.force_limits);
+    let progress = Progress::new(args.json);
 
     let lighting = LightingProfile::parse(&args.lighting).ok_or_else(|| {
         CliError::input(format!(
@@ -70,17 +81,50 @@ pub(crate) fn run(args: BenchArgs) -> Result<(), CliError> {
     })?;
 
     let texture_filter = parse_texture_filter(&args.assets.texture_filter)?;
+    let materials_stage = progress.stage("Loading materials");
     let materials = load_materials(&args.assets)?;
+    materials_stage.finish();
 
     let parse_started = Instant::now();
+    let parse_stage = progress.stage("Parsing scene");
     let (_, scene) = load_scene(
         &args.file,
         args.limits.force_limits,
         GEOMETRY_IGNORES_BLOCK_ENTITY_NBT,
     )?;
+    parse_stage.finish();
     let parse_ms = parse_started.elapsed().as_secs_f64() * 1000.0;
     let lod = parse_lod(&args.lod)?;
 
+    let prepared = if matches!(lod, LodMode::Auto) {
+        let stage = progress.stage("Selecting LOD and building mesh");
+        let prepared = prepare_scene(
+            scene,
+            materials.as_ref(),
+            lod,
+            &mesh_limits(args.limits.force_limits),
+            args.threads,
+            args.mesh.options(),
+        );
+        stage.finish();
+        prepared?
+    } else {
+        let bar = progress.bar("Building mesh");
+        let prepared = {
+            let update = |done, total| bar.update(done, total);
+            crate::prepare_scene_with_progress(
+                scene,
+                materials.as_ref(),
+                lod,
+                &mesh_limits(args.limits.force_limits),
+                args.threads,
+                args.mesh.options(),
+                Some(&update),
+            )
+        };
+        bar.finish();
+        prepared?
+    };
     let PreparedScene {
         scene,
         mesh,
@@ -88,13 +132,7 @@ pub(crate) fn run(args: BenchArgs) -> Result<(), CliError> {
         factor,
         lod_ms,
         mesh_ms,
-    } = prepare_scene(
-        scene,
-        materials.as_ref(),
-        lod,
-        &mesh_limits(args.limits.force_limits),
-        args.threads,
-    )?;
+    } = prepared;
 
     let mut options = RenderOptions {
         width: args.width,
@@ -116,20 +154,51 @@ pub(crate) fn run(args: BenchArgs) -> Result<(), CliError> {
     let mut png_bytes = 0u64;
     let mut last_output = None;
 
-    for _ in 0..args.iterations {
+    for iteration in 0..args.iterations {
+        let streaming = will_stream(&mesh, &options);
+        let render_bar = (!streaming).then(|| progress.bar("Rendering"));
+        if let Some(bar) = &render_bar {
+            bar.message(format!("Rendering {}/{}", iteration + 1, args.iterations));
+        }
+        let render_stage = streaming.then(|| progress.stage("Rendering (streaming)"));
         let render_started = Instant::now();
-        let output = match &snapshot {
-            Some(snapshot) => {
-                render_mesh_with_textures(&scene, &mesh, &options, snapshot.textures())
-                    .map_err(CliError::from)?
+        let output = {
+            let update = |done, total| {
+                if let Some(bar) = &render_bar {
+                    bar.update(done, total);
+                }
+            };
+            match (&snapshot, streaming) {
+                (Some(snapshot), false) => render_mesh_with_textures_and_progress(
+                    &scene,
+                    &mesh,
+                    &options,
+                    snapshot.textures(),
+                    &update,
+                )
+                .map_err(CliError::from)?,
+                (None, false) => render_mesh_with_progress(&scene, &mesh, &options, &update)
+                    .map_err(CliError::from)?,
+                (Some(snapshot), true) => {
+                    render_mesh_with_textures(&scene, &mesh, &options, snapshot.textures())
+                        .map_err(CliError::from)?
+                }
+                (None, true) => render_mesh(&scene, &mesh, &options).map_err(CliError::from)?,
             }
-            None => render_mesh(&scene, &mesh, &options).map_err(CliError::from)?,
         };
+        if let Some(bar) = render_bar {
+            bar.finish();
+        }
+        if let Some(stage) = render_stage {
+            stage.finish();
+        }
         render_samples.push(render_started.elapsed().as_secs_f64() * 1000.0);
 
+        let png_stage = progress.stage("Encoding PNG");
         let png_started = Instant::now();
         let mut bytes = Vec::new();
         write_png(&output, &mut bytes).map_err(CliError::from)?;
+        png_stage.finish();
         png_samples.push(png_started.elapsed().as_secs_f64() * 1000.0);
 
         png_bytes = bytes.len() as u64;
@@ -163,6 +232,7 @@ pub(crate) fn run(args: BenchArgs) -> Result<(), CliError> {
             "pngMs": timing_json(&png),
             "totalMs": timing_json(&total),
             "mesh": mesh.statistics,
+            "meshBytes": mesh.heap_bytes(),
             "renderStatistics": output.statistics,
             "pngBytes": png_bytes,
             "rgbaBytes": output.rgba.len() as u64,
@@ -172,43 +242,51 @@ pub(crate) fn run(args: BenchArgs) -> Result<(), CliError> {
         let json = serde_json::to_string_pretty(&report).map_err(CliError::internal)?;
         println!("{json}");
     } else {
-        println!("file: {}", args.file.display());
-        println!(
-            "size: {}x{} (supersample {})",
-            options.width, options.height, options.supersample
+        ui::outln!(
+            "{MUTED}file:{MUTED:#} {ACCENT}{}{ACCENT:#}",
+            args.file.display()
         );
-        println!(
-            "threads: {}",
+        ui::outln!(
+            "{MUTED}size:{MUTED:#} {}x{} {MUTED}(supersample {}){MUTED:#}",
+            options.width,
+            options.height,
+            options.supersample
+        );
+        ui::outln!(
+            "{MUTED}threads:{MUTED:#} {}",
             if options.threads == 0 {
                 "auto".to_string()
             } else {
                 options.threads.to_string()
             }
         );
-        println!("parse: {parse_ms:.2} ms");
+        ui::outln!("{MUTED}parse:{MUTED:#} {parse_ms:.2} ms");
         if factor > 1 || matches!(lod, LodMode::Auto) {
-            println!("lod: {lod_ms:.2} ms (factor {factor})");
+            ui::outln!("{MUTED}lod:{MUTED:#} {lod_ms:.2} ms {MUTED}(factor {factor}){MUTED:#}");
         }
-        println!("mesh: {mesh_ms:.2} ms");
+        ui::outln!("{MUTED}mesh:{MUTED:#} {mesh_ms:.2} ms");
         print_timing("render", &render);
         print_timing("png", &png);
         print_timing("total", &total);
-        println!(
-            "mesh: {} pages, {} quads, {} vertices",
-            mesh.statistics.pages, mesh.statistics.quads, mesh.statistics.vertices
+        ui::outln!(
+            "{MUTED}mesh:{MUTED:#} {} pages, {} quads, {} vertices, {} bytes",
+            mesh.statistics.pages,
+            mesh.statistics.quads,
+            mesh.statistics.vertices,
+            mesh.heap_bytes()
         );
-        println!(
-            "buffers: {} rgba bytes, {} png bytes",
+        ui::outln!(
+            "{MUTED}buffers:{MUTED:#} {} rgba bytes, {} png bytes",
             output.rgba.len(),
             png_bytes
         );
         if let Some(peak_rss) = peak_rss {
-            println!("peak rss: {} bytes", peak_rss);
+            ui::outln!("{MUTED}peak rss:{MUTED:#} {} bytes", peak_rss);
         }
         if let Some(snapshot) = &snapshot {
             let diagnostics = snapshot.diagnostics();
-            println!(
-                "materials: pack {} states, chest {} states, fallback {} states, missing models {} missing textures {}",
+            ui::outln!(
+                "{MUTED}materials:{MUTED:#} pack {} states, chest {} states, fallback {} states, missing models {} missing textures {}",
                 diagnostics.pack_models,
                 diagnostics.chests,
                 diagnostics.fallback_shapes,
@@ -254,9 +332,12 @@ fn timing_json(summary: &TimingSummary) -> serde_json::Value {
 }
 
 fn print_timing(name: &str, summary: &TimingSummary) {
-    println!(
-        "{name}: min {:.2} ms, median {:.2} ms, mean {:.2} ms, max {:.2} ms",
-        summary.min, summary.median, summary.mean, summary.max
+    ui::outln!(
+        "{BOLD}{name}:{BOLD:#} min {:.2} ms, median {:.2} ms, mean {:.2} ms, max {:.2} ms",
+        summary.min,
+        summary.median,
+        summary.mean,
+        summary.max
     );
 }
 
@@ -307,10 +388,14 @@ fn peak_rss_bytes() -> Option<u64> {
             ru_nivcsw: i64,
         }
         const RUSAGE_SELF: i32 = 0;
+        // SAFETY: the signature matches the platform libc `getrusage`.
         unsafe extern "C" {
             fn getrusage(who: i32, usage: *mut RUsage) -> i32;
         }
+        // SAFETY: `RUsage` is a plain C-layout struct, and an all-zero value is
+        // a valid starting point for the call.
         let mut usage: RUsage = unsafe { std::mem::zeroed() };
+        // SAFETY: `usage` points to a live `RUsage` buffer.
         let ret = unsafe { getrusage(RUSAGE_SELF, &mut usage) };
         if ret == 0 && usage.ru_maxrss > 0 {
             Some(usage.ru_maxrss as u64)

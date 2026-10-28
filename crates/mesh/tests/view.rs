@@ -60,6 +60,17 @@ fn handles_negative_coordinates_and_page_boundaries() {
 }
 
 #[test]
+fn air_only_pages_resolve_but_are_not_meshed() {
+    let region = make_region("air", [0, 0, 0], [2, 1, 1], &["minecraft:air"], &[0, 0]);
+    let scene = make_scene(vec![region]);
+    let view = SceneBlockView::new(&scene, &MeshLimits::default()).unwrap();
+
+    assert_eq!(view.pages(), 0);
+    assert!(view.resolve([0, 0, 0]).unwrap().state.is_air());
+    assert!(view.resolve([1, 0, 0]).unwrap().state.is_air());
+}
+
+#[test]
 fn counts_pages_and_enforces_page_limit() {
     let values = vec![1u32; 17];
     let region = make_region(

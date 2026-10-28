@@ -1,101 +1,26 @@
 # Deployment
 
 The engine is a single static-ish binary with no runtime service dependencies.
-It runs the same way on Linux, in containers, and on Windows.
+It runs the same way on Linux, macOS, in containers, and on Windows.
 
-## Prebuilt binaries
+## Release Binaries
 
-Tagged releases publish standalone binaries, so a host does not need a Rust
-toolchain:
+Tagged releases publish standalone, statically linked binaries for Linux, macOS,
+and Windows (using musl on Linux and static CRT on Windows). For binary downloads,
+checksum verification, and desktop installer guides, see
+[Installation and Quick Start](./user/en/getting-started.md).
 
-| Platform | Asset |
-| --- | --- |
-| Linux x86_64 | `blockscope-v<version>-x86_64-unknown-linux-musl.tar.gz` |
-| Linux aarch64 | `blockscope-v<version>-aarch64-unknown-linux-musl.tar.gz` |
-| Windows x86_64 | `blockscope-v<version>-x86_64-pc-windows-msvc.msi` (installer) |
-| Windows x86_64 | `blockscope-v<version>-x86_64-pc-windows-msvc.zip` (portable) |
-| macOS aarch64 | `blockscope-v<version>-aarch64-apple-darwin.tar.gz` |
-| macOS x86_64 | `blockscope-v<version>-x86_64-apple-darwin.tar.gz` |
+## Container Deployment
 
-Each file ships with a `.sha256` file named after it without the extension
-(`blockscope-v<version>-<target>.sha256`); verify it before deploying. Linux
-artifacts are statically linked against musl and the Windows artifact uses the
-static CRT. The MSI installs per user under `%LOCALAPPDATA%\Programs\Blockscope`,
-maintains the user `PATH`, and removes both on uninstall; `msiexec /i <msi> /qn`
-is the unattended form. The container image is still built from this repository
-(see below); no prebuilt image is published.
+The container image contains only `blockscope` with no external runtime
+dependencies or assets. Client jars, resource packs, and job directories must be
+mounted at runtime.
 
-## Docker
+For container build commands, volume mounting, worker execution, and supervisor
+setup, see the [Docker Guide](./user/en/docker.md) and [Service Mode](./user/en/service.md).
 
-```bash
-docker build -t blockscope:local .
-
-docker run --rm --cpus=1 --memory=1g blockscope:local capacity --json
-```
-
-`capacity` reports what the engine would use inside that container. With
-`--cpus=1 --memory=1g` it prints `cores: 1`, `memoryLimitBytes: 1073741824`,
-`suggestedWorkers: 1`, `suggestedThreads: 1`, and a `1024x1024 supersample 1`
-default tier.
-
-Run a worker with a client jar mounted read-only and a writable data directory:
-
-```bash
-docker run --rm -i \
-  --cpus=1 --memory=1g \
-  -v "$PWD/assets/client.jar:/assets/client.jar:ro" \
-  -v "$PWD/jobs:/data" \
-  blockscope:local serve --client-jar /assets/client.jar
-```
-
-Run a supervisor with a pool instead of a single worker:
-
-```bash
-docker run --rm -i \
-  --cpus=2 --memory=2g \
-  -v "$PWD/assets/client.jar:/assets/client.jar:ro" \
-  -v "$PWD/jobs:/data" \
-  blockscope:local supervise --workers 1 --threads 2 --client-jar /assets/client.jar
-```
-
-On a 1 CPU / 1 GiB container the capacity suggestion is one worker and one
-thread; raising `--workers` there only splits one core and doubles memory.
-
-`blockscope supervise` also accepts:
-
-- `--timeout <seconds>`: per-job deadline, default 60, `0` disables.
-- `--memory <MiB>`: per-worker ceiling; defaults to 85 percent of available
-  memory divided by the worker count. A worker that crosses it is killed and
-  the job is retried once.
-- `--queue <jobs>`: queued jobs before `BUSY`; defaults to `workers * 2`.
-- `--cache <entries>`: parsed scenes cached per worker; defaults to 1.
-- `--force-limits`: disables parser, mesh, and render caps for every worker.
-  A warning is printed once at supervisor startup and once per worker.
-
-For an oversized schematic on a large host:
-
-```bash
-blockscope render huge.litematic --output huge.png \
-  --lod auto --force-limits --threads 0 \
-  --client-jar /assets/client.jar
-```
-
-`--lod auto` keeps the exact mesh when it fits and only degrades when the
-memory budget requires it. Use a fixed `--lod 2`/`4` when the output must be
-reproducible across hosts with different memory.
-
-Under the supervisor, raise the per-worker ceiling to match the chosen LOD:
-
-```bash
-blockscope supervise --workers 1 --threads 12 --memory 8000 \
-  --force-limits --client-jar /assets/client.jar
-```
-
-The client sends `"lod": 4` in each render request; the worker cache separates
-LOD levels, so switching LOD reparses and remeshes once.
-
-The container image never ships Minecraft assets. Mount the jar or an extracted
-`assets/` directory at runtime.
+Always verify container sizing using `blockscope capacity` against the host
+cgroup limits before deploying.
 
 ## Linux via WSL
 
@@ -103,7 +28,7 @@ WSL2 with Docker Desktop, or a plain Ubuntu distro, is enough for a local Linux
 check:
 
 ```bash
-cd /mnt/d/vscodeProj/Blockscope
+cd /mnt/<drive>/path/to/Blockscope
 export PATH="$HOME/.cargo/bin:$PATH"
 export CARGO_TARGET_DIR=/tmp/litematic-target
 
@@ -124,19 +49,22 @@ Expected output: `cores: 1`, `cpuQuotaMilli: 1000`,
 
 ## CI
 
-`.github/workflows/ci.yml` runs two jobs:
+`.github/workflows/ci.yml` runs three jobs:
 
 - `test` on `ubuntu-latest`, `windows-latest`, and `macos-latest`: fmt, clippy with
   `-D warnings`, and the full workspace test suite.
 - `container` on `ubuntu-latest`: builds the image, then runs `capacity` and a
   protocol smoke test inside `--cpus=1 --memory=1g` so cgroup parsing is
   exercised on every push.
+- `installer` on `windows-latest`: builds the static binary and MSI, runs the
+  install/uninstall lifecycle test, and uploads the artifacts.
 
 `.github/workflows/release.yml` runs on a `v*` tag: it checks that the tag
 matches `[workspace.package] version`, creates the GitHub Release from
-`CHANGELOG.md`, and uploads the five archives with sha256 files. Running the
-workflow manually builds and packages the same targets with `dry-run`, so the
-pipeline can be verified before the first tag exists.
+`CHANGELOG.md`, and uploads five platform archives with sha256 files plus the
+Windows MSI and its checksum. Running the workflow manually builds and packages
+the same five targets with `dry-run`; the MSI publish step runs only for tag
+pushes, so the pipeline can be verified before the first tag exists.
 
 ## Capacity reference
 
@@ -155,5 +83,5 @@ schematics earlier than a 32 GiB host. `--force-limits` bypasses the cap;
 | 12 CPU / 32 GiB | 4 | 3 | 2048 @ ss2 | ~350 MB |
 
 These values come from the formulas in `blockscope capacity`; override them with
-`--workers`, `--threads`, or `--memory-budget` when the automatic value is wrong
-for a deployment.
+`--workers`, `--threads`, or `--memory` when the automatic value is wrong for a
+deployment.

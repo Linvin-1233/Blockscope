@@ -1,18 +1,27 @@
 use crate::capacity::Capacity;
 use crate::serve::PROTOCOL_VERSION;
-use crate::{AssetArgs, CliError};
+use crate::{AssetArgs, CliError, MeshOptionArgs};
 use clap::Args;
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
 use std::ffi::OsString;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::mpsc::{self, Sender};
+use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread;
 use std::time::{Duration, Instant};
 
+mod rss;
+
+use self::rss::process_rss_bytes;
+
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
 const MIB: u64 = 1024 * 1024;
+/// Upper bound for worker processes; each worker also owns threads and a cache.
+const MAX_SUPERVISOR_WORKERS: u32 = 256;
+/// The sticky map is only a cache-locality hint; cap it so a long-lived
+/// supervisor does not grow with every distinct input file.
+const MAX_STICKY_ENTRIES: usize = 4096;
 
 #[derive(Debug, Args)]
 pub struct SuperviseArgs {
@@ -30,12 +39,17 @@ pub struct SuperviseArgs {
     /// Parsed scenes each worker keeps for repeated inputs.
     #[arg(long, default_value_t = 1)]
     cache: u32,
+    /// Estimated cache budget per worker in bytes; 0 uses half available memory.
+    #[arg(long, default_value_t = 0)]
+    cache_bytes: u64,
     /// Per-job timeout in seconds; 0 disables it.
     #[arg(long, default_value_t = 60)]
     timeout: u64,
     /// Per-worker memory ceiling in MiB; 0 derives it from capacity.
     #[arg(long, default_value_t = 0)]
     memory: u64,
+    #[command(flatten)]
+    mesh: MeshOptionArgs,
     #[command(flatten)]
     limits: crate::LimitArgs,
 }
@@ -59,6 +73,8 @@ struct Worker {
 struct Spec {
     threads: u32,
     cache: u32,
+    cache_bytes: u64,
+    greedy_mesh: bool,
     assets: Vec<OsString>,
     timeout: Option<Duration>,
     memory_limit: Option<u64>,
@@ -68,6 +84,7 @@ struct Spec {
 
 enum Event {
     Request(Job),
+    RequestReady(Job),
     WorkerLine {
         index: usize,
         generation: u64,
@@ -94,6 +111,11 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
         args.workers
     }
     .max(1);
+    if workers > MAX_SUPERVISOR_WORKERS {
+        return Err(CliError::input(format!(
+            "INVALID_RENDER_OPTIONS: workers must be at most {MAX_SUPERVISOR_WORKERS}"
+        )));
+    }
     let threads = if args.threads == 0 {
         capacity.suggested_threads.min(crate::MAX_THREADS)
     } else {
@@ -107,7 +129,7 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
         )));
     }
     let queue_limit = if args.queue == 0 {
-        workers * 2
+        workers.saturating_mul(2)
     } else {
         args.queue
     } as usize;
@@ -118,10 +140,13 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
         Some(Duration::from_secs(args.timeout))
     };
     let memory_limit = memory_limit(&capacity, workers, args.memory);
+    let cache_bytes = cache_budget(args.cache_bytes, memory_limit);
 
     let spec = Spec {
         threads,
         cache: args.cache,
+        cache_bytes,
+        greedy_mesh: args.mesh.options().greedy,
         assets: args.assets.cli_args(),
         timeout,
         memory_limit,
@@ -136,9 +161,16 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
         );
     }
 
-    let (tx, rx) = mpsc::channel();
+    let channel_capacity = queue_limit
+        .saturating_add(workers as usize)
+        .saturating_add(16);
+    let (tx, rx) = mpsc::sync_channel(channel_capacity);
     let input = tx.clone();
     thread::spawn(move || read_stdin(input));
+
+    let (hash_tx, hash_rx) = mpsc::sync_channel::<Job>(channel_capacity);
+    let hasher_tx = tx.clone();
+    thread::spawn(move || hash_requests(hash_rx, hasher_tx));
 
     let mut generation = 0u64;
     let mut pool = Vec::with_capacity(workers as usize);
@@ -163,6 +195,7 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
             "threadsPerWorker": threads,
             "queueLimit": queue_limit,
             "cacheEntries": spec.cache,
+            "cacheBytes": spec.cache_bytes,
             "defaultLod": 1,
             "suggestedMaxQuads": capacity.suggested_max_quads,
             "timeoutSeconds": timeout.map(|value| value.as_secs()),
@@ -177,6 +210,7 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
 
     let mut queue: VecDeque<Job> = VecDeque::new();
     let mut sticky: HashMap<String, usize> = HashMap::new();
+    let mut pending_hashes = 0usize;
     let mut shutdown_at: Option<Instant> = None;
     let mut last_sample = Instant::now();
 
@@ -188,18 +222,42 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
         };
 
         match event {
-            Some(Event::Request(mut job)) => {
+            Some(Event::Request(job)) => {
                 if shutdown_at.is_some() {
                     write_error(&mut out, &job.id, "SHUTDOWN", "worker is shutting down")?;
                     continue;
                 }
-                let idle = pool.iter().any(|worker| worker.busy.is_none());
-                if !idle && queue.len() >= queue_limit {
+                let busy = pool.iter().filter(|worker| worker.busy.is_some()).count();
+                let outstanding = queue
+                    .len()
+                    .saturating_add(pending_hashes)
+                    .saturating_add(busy);
+                if outstanding >= queue_limit.saturating_add(pool.len()) {
                     write_error(&mut out, &job.id, "BUSY", "queue is full")?;
                     continue;
                 }
+
                 if job.hash.is_empty() {
-                    job.hash = route_key(&job.line);
+                    pending_hashes = pending_hashes.saturating_add(1);
+                    if let Err(error) = hash_tx.send(job) {
+                        pending_hashes = pending_hashes.saturating_sub(1);
+                        write_error(
+                            &mut out,
+                            &error.0.id,
+                            "INTERNAL_ERROR",
+                            "hash worker stopped",
+                        )?;
+                    }
+                } else {
+                    queue.push_back(job);
+                    dispatch(&mut pool, &mut queue, &mut sticky, &spec, &mut out)?;
+                }
+            }
+            Some(Event::RequestReady(job)) => {
+                pending_hashes = pending_hashes.saturating_sub(1);
+                if shutdown_at.is_some() {
+                    write_error(&mut out, &job.id, "SHUTDOWN", "worker is shutting down")?;
+                    continue;
                 }
                 queue.push_back(job);
                 dispatch(&mut pool, &mut queue, &mut sticky, &spec, &mut out)?;
@@ -293,16 +351,6 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
         }
 
         if shutdown_at.is_none() {
-            enforce_limits(
-                &mut pool,
-                &mut queue,
-                &mut sticky,
-                &spec,
-                &tx,
-                &mut generation,
-                &mut out,
-            )?;
-
             if last_sample.elapsed() >= Duration::from_millis(500) {
                 last_sample = Instant::now();
                 for worker in &mut pool {
@@ -313,6 +361,16 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
                     };
                 }
             }
+
+            enforce_limits(
+                &mut pool,
+                &mut queue,
+                &mut sticky,
+                &spec,
+                &tx,
+                &mut generation,
+                &mut out,
+            )?;
         }
 
         if let Some(deadline) = shutdown_at {
@@ -342,7 +400,7 @@ fn enforce_limits(
     queue: &mut VecDeque<Job>,
     sticky: &mut HashMap<String, usize>,
     spec: &Spec,
-    tx: &Sender<Event>,
+    tx: &SyncSender<Event>,
     generation: &mut u64,
     out: &mut impl Write,
 ) -> Result<(), CliError> {
@@ -420,11 +478,18 @@ fn dispatch(
         };
 
         if !job.hash.is_empty() {
-            sticky.insert(job.hash.clone(), index);
+            remember_sticky(sticky, &job.hash, index);
         }
 
+        let line = job
+            .hash
+            .split_once(':')
+            .map(|(hash, _)| hash)
+            .filter(|hash| !hash.is_empty())
+            .map(|hash| inject_input_hash(&job.line, hash))
+            .unwrap_or_else(|| job.line.clone());
         let worker = &mut pool[index];
-        if writeln!(worker.stdin, "{}", job.line)
+        if writeln!(worker.stdin, "{line}")
             .and_then(|_| worker.stdin.flush())
             .is_err()
         {
@@ -436,6 +501,30 @@ fn dispatch(
         worker.deadline = spec.timeout.map(|timeout| Instant::now() + timeout);
         worker.busy = Some(job);
     }
+}
+
+/// Remember a routing hint while keeping the map bounded.
+fn remember_sticky(sticky: &mut HashMap<String, usize>, hash: &str, index: usize) {
+    if sticky.len() >= MAX_STICKY_ENTRIES && !sticky.contains_key(hash) {
+        sticky.clear();
+    }
+    sticky.insert(hash.to_string(), index);
+}
+
+/// Add the supervisor's already-computed hash when the caller omitted it, so
+/// the worker can answer cache hits without re-reading the input file.
+fn inject_input_hash(line: &str, hash: &str) -> String {
+    let Ok(mut value) = serde_json::from_str::<Value>(line) else {
+        return line.to_string();
+    };
+    let Some(input) = value.get_mut("input").and_then(Value::as_object_mut) else {
+        return line.to_string();
+    };
+    if input.contains_key("hash") {
+        return line.to_string();
+    }
+    input.insert("hash".to_string(), Value::String(hash.to_string()));
+    serde_json::to_string(&value).unwrap_or_else(|_| line.to_string())
 }
 
 fn fail_job(
@@ -466,11 +555,22 @@ fn memory_limit(capacity: &Capacity, workers: u32, override_mib: u64) -> Option<
     Some((per_worker * 85 / 100).max(256 * MIB))
 }
 
+/// Derive a per-worker cache budget from the memory ceiling.
+///
+/// A worker that derives its own budget uses half of the *host* available
+/// memory, which is far above its share when several workers share the host.
+fn cache_budget(requested: u64, memory_limit: Option<u64>) -> u64 {
+    if requested > 0 {
+        return requested;
+    }
+    memory_limit.map(|limit| limit / 2).unwrap_or(0)
+}
+
 fn spawn_worker(
     index: usize,
     generation: u64,
     spec: &Spec,
-    tx: Sender<Event>,
+    tx: SyncSender<Event>,
 ) -> Result<Worker, CliError> {
     let exe = std::env::current_exe()
         .map_err(|error| CliError::internal(format!("current exe: {error}")))?;
@@ -482,6 +582,8 @@ fn spawn_worker(
         .arg(spec.threads.to_string())
         .arg("--cache")
         .arg(spec.cache.to_string())
+        .arg("--cache-bytes")
+        .arg(spec.cache_bytes.to_string())
         .args(&spec.assets)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -491,6 +593,9 @@ fn spawn_worker(
     }
     if spec.ignore_block_entity_nbt {
         command.arg("--ignore-block-entity-nbt");
+    }
+    if spec.greedy_mesh {
+        command.arg("--greedy-mesh");
     }
 
     let mut child = command
@@ -543,10 +648,51 @@ fn spawn_worker(
     })
 }
 
-fn read_stdin(tx: Sender<Event>) {
+/// Hash requests off the supervisor's event loop.
+///
+/// The supervisor still validates the queue before accepting a job, so an
+/// overloaded pool rejects requests without reading their input files.
+fn hash_requests(rx: Receiver<Job>, tx: SyncSender<Event>) {
+    while let Ok(mut job) = rx.recv() {
+        if job.hash.is_empty() {
+            job.hash = route_key(&job.line);
+        }
+        if tx.send(Event::RequestReady(job)).is_err() {
+            break;
+        }
+    }
+}
+
+fn read_stdin(tx: SyncSender<Event>) {
     let stdin = std::io::stdin();
-    for line in stdin.lock().lines() {
-        let Ok(line) = line else { break };
+    let mut input = stdin.lock();
+    loop {
+        let line = match crate::file_io::read_line_limited(
+            &mut input,
+            crate::file_io::MAX_REQUEST_LINE_BYTES,
+        ) {
+            Ok(crate::file_io::LineRead::Line(line)) => line,
+            Ok(crate::file_io::LineRead::Eof) => break,
+            Ok(crate::file_io::LineRead::TooLong) => {
+                let _ = tx.send(Event::Invalid {
+                    id: String::new(),
+                    message: format!(
+                        "request line exceeds {} bytes",
+                        crate::file_io::MAX_REQUEST_LINE_BYTES
+                    ),
+                });
+                continue;
+            }
+            Ok(crate::file_io::LineRead::InvalidUtf8) => {
+                let _ = tx.send(Event::Invalid {
+                    id: String::new(),
+                    message: "request line is not valid UTF-8".to_string(),
+                });
+                continue;
+            }
+            Err(_) => break,
+        };
+
         let line = line.trim();
         if line.is_empty() {
             continue;
@@ -574,12 +720,24 @@ fn read_stdin(tx: Sender<Event>) {
                     .and_then(Value::as_str)
                     .unwrap_or_default()
                     .to_string();
-                let _ = tx.send(Event::Request(Job {
-                    id,
-                    hash: String::new(),
-                    line: line.to_string(),
-                    attempts: 0,
-                }));
+                let hash = value
+                    .pointer("/input/hash")
+                    .and_then(Value::as_str)
+                    .filter(|hash| !hash.is_empty())
+                    .map(|hash| hash.to_ascii_lowercase());
+                let lod = value.get("lod").and_then(Value::as_u64).unwrap_or(1);
+                let hash = hash.map(|hash| format!("{hash}:{lod}")).unwrap_or_default();
+                if tx
+                    .send(Event::Request(Job {
+                        id,
+                        hash,
+                        line: line.to_string(),
+                        attempts: 0,
+                    }))
+                    .is_err()
+                {
+                    return;
+                }
             }
             other => {
                 let id = value
@@ -619,126 +777,6 @@ fn route_key(line: &str) -> String {
     format!("{hash}:{lod}")
 }
 
-#[cfg(target_os = "linux")]
-fn process_rss_bytes(child: &Child) -> Option<u64> {
-    let status = std::fs::read_to_string(format!("/proc/{}/status", child.id())).ok()?;
-    for line in status.lines() {
-        if let Some(value) = line.strip_prefix("VmRSS:") {
-            let kb = value.split_whitespace().next()?.parse::<u64>().ok()?;
-            return Some(kb * 1024);
-        }
-    }
-    None
-}
-
-#[cfg(windows)]
-fn process_rss_bytes(child: &Child) -> Option<u64> {
-    use std::os::windows::io::AsRawHandle;
-
-    #[repr(C)]
-    struct ProcessMemoryCounters {
-        cb: u32,
-        page_fault_count: u32,
-        peak_working_set_size: usize,
-        working_set_size: usize,
-        quota_peak_paged_pool_usage: usize,
-        quota_paged_pool_usage: usize,
-        quota_peak_non_paged_pool_usage: usize,
-        quota_non_paged_pool_usage: usize,
-        pagefile_usage: usize,
-        peak_pagefile_usage: usize,
-    }
-
-    #[link(name = "kernel32")]
-    unsafe extern "system" {
-        fn K32GetProcessMemoryInfo(
-            process: *mut std::ffi::c_void,
-            counters: *mut ProcessMemoryCounters,
-            cb: u32,
-        ) -> i32;
-    }
-
-    let mut counters = ProcessMemoryCounters {
-        cb: std::mem::size_of::<ProcessMemoryCounters>() as u32,
-        page_fault_count: 0,
-        peak_working_set_size: 0,
-        working_set_size: 0,
-        quota_peak_paged_pool_usage: 0,
-        quota_paged_pool_usage: 0,
-        quota_peak_non_paged_pool_usage: 0,
-        quota_non_paged_pool_usage: 0,
-        pagefile_usage: 0,
-        peak_pagefile_usage: 0,
-    };
-
-    let handle = child.as_raw_handle();
-    let ok = unsafe { K32GetProcessMemoryInfo(handle, &mut counters, counters.cb) };
-    if ok == 0 {
-        None
-    } else {
-        Some(counters.working_set_size as u64)
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn process_rss_bytes(child: &Child) -> Option<u64> {
-    #[repr(C)]
-    struct ProcTaskInfo {
-        pti_virtual_size: u64,
-        pti_resident_size: u64,
-        pti_total_user: u64,
-        pti_total_system: u64,
-        pti_threads_user: u64,
-        pti_threads_system: u64,
-        pti_policy: i32,
-        pti_faults: i32,
-        pti_pageins: i32,
-        pti_cow_faults: i32,
-        pti_messages_sent: i32,
-        pti_messages_received: i32,
-        pti_syscalls_mach: i32,
-        pti_syscalls_unix: i32,
-        pti_csw: i32,
-        pti_threadnum: i32,
-        pti_numrunning: i32,
-        pti_priority: i32,
-    }
-
-    const PROC_PIDTASKINFO: i32 = 4;
-
-    unsafe extern "C" {
-        fn proc_pidinfo(
-            pid: i32,
-            flavor: i32,
-            arg: u64,
-            buffer: *mut std::ffi::c_void,
-            buffersize: i32,
-        ) -> i32;
-    }
-
-    let mut info: ProcTaskInfo = unsafe { std::mem::zeroed() };
-    let size = std::mem::size_of::<ProcTaskInfo>() as i32;
-    let ret = unsafe {
-        proc_pidinfo(
-            child.id() as i32,
-            PROC_PIDTASKINFO,
-            0,
-            &mut info as *mut _ as *mut std::ffi::c_void,
-            size,
-        )
-    };
-    if ret == size {
-        Some(info.pti_resident_size)
-    } else {
-        None
-    }
-}
-
-#[cfg(not(any(target_os = "linux", windows, target_os = "macos")))]
-fn process_rss_bytes(_child: &Child) -> Option<u64> {
-    None
-}
-
 fn write_error(out: &mut impl Write, id: &str, code: &str, message: &str) -> Result<(), CliError> {
     let retryable = !matches!(code, "INVALID_REQUEST" | "INVALID_RENDER_OPTIONS");
     write_line(
@@ -760,70 +798,4 @@ fn write_line(out: &mut impl Write, value: &Value) -> Result<(), CliError> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn capacity_with_memory(available: u64) -> Capacity {
-        Capacity {
-            platform: "test".to_string(),
-            cores: 4,
-            cpu_quota_milli: None,
-            memory_limit_bytes: available,
-            memory_available_bytes: available,
-            suggested_workers: 2,
-            suggested_threads: 2,
-            suggested_max_quads: 20_000_000,
-            default_width: 1024,
-            default_height: 1024,
-            default_supersample: 2,
-        }
-    }
-
-    #[test]
-    fn memory_limit_keeps_headroom() {
-        let capacity = capacity_with_memory(8 * 1024 * MIB);
-        let limit = memory_limit(&capacity, 2, 0).unwrap();
-        // 4 GiB per worker minus 15 percent headroom.
-        assert!(limit > 3 * 1024 * MIB && limit < 4 * 1024 * MIB, "{limit}");
-    }
-
-    #[test]
-    fn memory_limit_override_wins() {
-        let capacity = capacity_with_memory(8 * 1024 * MIB);
-        assert_eq!(memory_limit(&capacity, 2, 512), Some(512 * MIB));
-    }
-
-    #[test]
-    fn unknown_memory_disables_the_limit() {
-        let capacity = capacity_with_memory(0);
-        assert_eq!(memory_limit(&capacity, 2, 0), None);
-    }
-
-    #[test]
-    fn route_key_hashes_regular_files_and_preserves_lod() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("input.litematic");
-        std::fs::write(&path, b"data").unwrap();
-        let line = json!({
-            "type": "render",
-            "input": { "path": path },
-            "lod": 2,
-        })
-        .to_string();
-
-        let key = route_key(&line);
-        assert!(key.ends_with(":2"), "{key}");
-        assert_eq!(key.len(), 66, "{key}");
-    }
-
-    #[test]
-    fn route_key_returns_empty_hash_for_unreadable_paths() {
-        let line = json!({
-            "type": "render",
-            "input": { "path": "definitely-not-a-file" },
-        })
-        .to_string();
-
-        assert_eq!(route_key(&line), ":1");
-    }
-}
+mod tests;

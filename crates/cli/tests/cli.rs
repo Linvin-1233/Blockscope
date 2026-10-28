@@ -4,86 +4,7 @@ use litematic_mesh::MeshStatistics;
 use litematic_render::RenderStatistics;
 use litematic_scene::ManifestStatistics;
 use std::fs;
-use std::io::{BufWriter, Write};
-use std::path::Path;
-use std::process::{Command, Output};
 use support::*;
-use tempfile::NamedTempFile;
-
-fn write_fixture(bytes: &[u8]) -> NamedTempFile {
-    let mut file = NamedTempFile::new().unwrap();
-    file.write_all(bytes).unwrap();
-    file.flush().unwrap();
-    file
-}
-
-fn run(args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_blockscope"))
-        .args(args)
-        .output()
-        .unwrap()
-}
-
-fn write_material_pack(root: &Path) {
-    let assets = root.join("assets/minecraft");
-    fs::create_dir_all(assets.join("blockstates")).unwrap();
-    fs::create_dir_all(assets.join("models/block")).unwrap();
-    fs::create_dir_all(assets.join("textures/block")).unwrap();
-
-    fs::write(
-        assets.join("blockstates/stone.json"),
-        r##"{ "variants": { "": { "model": "block/test_cube" } } }"##,
-    )
-    .unwrap();
-    fs::write(
-        assets.join("models/block/cube.json"),
-        r##"{
-            "elements": [{
-                "from": [0, 0, 0],
-                "to": [16, 16, 16],
-                "faces": {
-                    "down":  { "texture": "#all", "cullface": "down" },
-                    "up":    { "texture": "#all", "cullface": "up" },
-                    "north": { "texture": "#all", "cullface": "north" },
-                    "south": { "texture": "#all", "cullface": "south" },
-                    "west":  { "texture": "#all", "cullface": "west" },
-                    "east":  { "texture": "#all", "cullface": "east" }
-                }
-            }]
-        }"##,
-    )
-    .unwrap();
-    fs::write(
-        assets.join("models/block/cube_all.json"),
-        r##"{
-            "parent": "block/cube",
-            "textures": {
-                "down": "#all", "up": "#all", "north": "#all",
-                "south": "#all", "west": "#all", "east": "#all"
-            }
-        }"##,
-    )
-    .unwrap();
-    fs::write(
-        assets.join("models/block/test_cube.json"),
-        r##"{
-            "parent": "block/cube_all",
-            "textures": { "all": "block/test_texture" }
-        }"##,
-    )
-    .unwrap();
-
-    let file = fs::File::create(assets.join("textures/block/test_texture.png")).unwrap();
-    let mut encoder = png::Encoder::new(BufWriter::new(file), 16, 16);
-    encoder.set_color(png::ColorType::Rgba);
-    encoder.set_depth(png::BitDepth::Eight);
-    let mut writer = encoder.write_header().unwrap();
-    writer
-        .write_image_data(&[200, 40, 40, 255].repeat(16 * 16))
-        .unwrap();
-    writer.finish().unwrap();
-}
-
 #[test]
 fn inspect_json_prints_manifest() {
     let file = write_fixture(&basic_fixture());
@@ -137,6 +58,32 @@ fn stats_json_parses() {
 }
 
 #[test]
+fn stats_human_summary_omits_air_from_the_block_list() {
+    let file = write_fixture(&basic_fixture());
+    let path = file.path().to_str().unwrap();
+    let output = run(&["stats", path]);
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("air: 1"));
+    assert!(stdout.contains("minecraft:stone"));
+    assert!(!stdout.contains("minecraft:air"));
+}
+
+#[test]
+fn render_rejects_too_many_views_before_reading_the_file() {
+    let views = std::iter::repeat_n("45", 65).collect::<Vec<_>>().join(",");
+    let output = run(&["render", "missing.litematic", "--views", &views]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("INVALID_RENDER_OPTIONS: views must contain at most"),
+        "{stderr}"
+    );
+}
+
+#[test]
 fn mesh_stats_prints_counts() {
     let file = write_fixture(&basic_fixture());
     let path = file.path().to_str().unwrap();
@@ -161,6 +108,23 @@ fn mesh_json_parses() {
     assert_eq!(stats.pages, 1);
     assert_eq!(stats.blocks_visited, 2);
     assert_eq!(stats.blocks_rendered, 1);
+}
+
+#[test]
+fn greedy_mesh_flag_merges_flat_faces() {
+    let file = write_fixture(&stone_pair_fixture());
+    let path = file.path().to_str().unwrap();
+
+    let plain = run(&["mesh", path, "--json"]);
+    assert!(plain.status.success());
+    let plain: MeshStatistics = serde_json::from_slice(&plain.stdout).unwrap();
+    assert_eq!(plain.quads, 10);
+
+    let greedy = run(&["mesh", path, "--json", "--greedy-mesh"]);
+    assert!(greedy.status.success());
+    let greedy: MeshStatistics = serde_json::from_slice(&greedy.stdout).unwrap();
+    assert_eq!(greedy.quads, 6);
+    assert_eq!(greedy.vertices, 24);
 }
 
 #[test]
@@ -193,6 +157,105 @@ fn mesh_exports_obj_and_ply() {
 }
 
 #[test]
+fn streamed_mesh_matches_full_render() {
+    let file = write_fixture(&basic_fixture());
+    let path = file.path().to_str().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let normal_path = dir.path().join("normal.png");
+    let streamed_path = dir.path().join("streamed.png");
+
+    let normal = run(&[
+        "render",
+        path,
+        "--output",
+        normal_path.to_str().unwrap(),
+        "--width",
+        "64",
+        "--height",
+        "64",
+        "--stream-mesh=off",
+    ]);
+    let streamed = run(&[
+        "render",
+        path,
+        "--output",
+        streamed_path.to_str().unwrap(),
+        "--width",
+        "64",
+        "--height",
+        "64",
+        "--stream-mesh",
+    ]);
+
+    assert!(normal.status.success());
+    assert!(streamed.status.success());
+    assert_eq!(
+        fs::read(&normal_path).unwrap(),
+        fs::read(&streamed_path).unwrap()
+    );
+}
+
+#[test]
+fn default_mesh_streaming_matches_full_render() {
+    let file = write_fixture(&basic_fixture());
+    let path = file.path().to_str().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let full_path = dir.path().join("full.png");
+    let default_path = dir.path().join("default.png");
+
+    let full = run(&[
+        "render",
+        path,
+        "--output",
+        full_path.to_str().unwrap(),
+        "--width",
+        "64",
+        "--height",
+        "64",
+        "--stream-mesh=off",
+    ]);
+    let default = run(&[
+        "render",
+        path,
+        "--output",
+        default_path.to_str().unwrap(),
+        "--width",
+        "64",
+        "--height",
+        "64",
+    ]);
+
+    assert!(full.status.success());
+    assert!(default.status.success());
+    assert_eq!(
+        fs::read(&full_path).unwrap(),
+        fs::read(&default_path).unwrap()
+    );
+}
+
+#[test]
+fn streamed_mesh_rejects_auto_lod() {
+    let file = write_fixture(&basic_fixture());
+    let path = file.path().to_str().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let output_path = dir.path().join("streamed.png");
+
+    let output = run(&[
+        "render",
+        path,
+        "--output",
+        output_path.to_str().unwrap(),
+        "--stream-mesh",
+        "--lod",
+        "auto",
+    ]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("--stream-mesh cannot be combined with --lod auto"));
+}
+
+#[test]
 fn render_writes_png() {
     let file = write_fixture(&basic_fixture());
     let path = file.path().to_str().unwrap();
@@ -217,6 +280,71 @@ fn render_writes_png() {
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("output:"));
     assert!(stdout.contains("triangles:"));
+}
+
+#[test]
+fn parallel_views_match_sequential_outputs() {
+    let file = write_fixture(&basic_fixture());
+    let path = file.path().to_str().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let parallel_path = dir.path().join("parallel.png");
+    let single_45 = dir.path().join("single-45.png");
+    let single_225 = dir.path().join("single-225.png");
+
+    let parallel = run(&[
+        "render",
+        path,
+        "--output",
+        parallel_path.to_str().unwrap(),
+        "--views",
+        "45,225",
+        "--width",
+        "64",
+        "--height",
+        "64",
+        "--threads",
+        "2",
+    ]);
+    let sequential_45 = run(&[
+        "render",
+        path,
+        "--output",
+        single_45.to_str().unwrap(),
+        "--yaw",
+        "45",
+        "--width",
+        "64",
+        "--height",
+        "64",
+        "--threads",
+        "2",
+    ]);
+    let sequential_225 = run(&[
+        "render",
+        path,
+        "--output",
+        single_225.to_str().unwrap(),
+        "--yaw",
+        "225",
+        "--width",
+        "64",
+        "--height",
+        "64",
+        "--threads",
+        "2",
+    ]);
+
+    assert!(parallel.status.success());
+    assert!(sequential_45.status.success());
+    assert!(sequential_225.status.success());
+    assert_eq!(
+        fs::read(dir.path().join("parallel-45.png")).unwrap(),
+        fs::read(&single_45).unwrap()
+    );
+    assert_eq!(
+        fs::read(dir.path().join("parallel-225.png")).unwrap(),
+        fs::read(&single_225).unwrap()
+    );
 }
 
 #[test]
@@ -558,7 +686,7 @@ fn force_limits_prints_a_warning() {
     assert!(forced.status.success());
     let stderr = String::from_utf8(forced.stderr).unwrap();
     assert!(
-        stderr.contains("WARNING: resource limits are disabled"),
+        stderr.contains("warning: resource limits are disabled"),
         "{stderr}"
     );
     let stats: MeshStatistics = serde_json::from_slice(&forced.stdout).unwrap();

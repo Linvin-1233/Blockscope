@@ -271,3 +271,32 @@ fn parallel_aggregation_keeps_region_priority() {
     assert_eq!(state_at(region, 0).name, "minecraft:dirt");
     assert_eq!(state_at(region, 7).name, "minecraft:white_wool");
 }
+
+#[test]
+fn flat_scene_parallel_aggregation_matches_serial() {
+    // 100 x 2 x 100 scene: total cells 20,000, but Y dimension is only 2.
+    let mut values = vec![0u32; 100 * 2 * 100];
+    for (i, v) in values.iter_mut().enumerate() {
+        if i % 3 == 0 {
+            *v = 1;
+        }
+    }
+    let scene = scene(vec![region(
+        "flat",
+        [0, 0, 0],
+        [100, 2, 100],
+        &["minecraft:air", "minecraft:stone"],
+        &values,
+    )]);
+
+    let serial = aggregate_with_threads(&scene, 2, 1).unwrap();
+    for threads in [2, 4, 8, 16] {
+        let parallel = aggregate_with_threads(&scene, 2, threads).unwrap();
+        assert_eq!(serial, parallel, "threads={threads}");
+        assert_eq!(
+            serial.scene_hash(),
+            parallel.scene_hash(),
+            "threads={threads}"
+        );
+    }
+}

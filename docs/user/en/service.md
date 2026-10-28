@@ -12,7 +12,13 @@ blockscope serve --client-jar client.jar --threads 4 --cache 2
 
 - `--threads`: default thread count for requests that omit `threads`; capped at
   256
-- `--cache`: number of parsed scenes/meshes to keep
+- `--cache`: maximum number of parsed scenes/meshes to keep
+- `--cache-bytes`: estimated cache budget in bytes; `0` uses half of available
+  memory. The oldest entries are evicted first; one oversized entry is still
+  allowed to remain. When started by `supervise` without an explicit value, the
+  supervisor derives it from the per-worker memory ceiling
+- `--greedy-mesh`: merge coplanar unit faces with identical material and
+  lighting; disabled by default
 - `--force-limits`: raise resource caps; trusted input only
 - `--ignore-block-entity-nbt`: skip container NBT
 
@@ -37,9 +43,16 @@ The worker prints one `hello` line after materials are ready, then accepts jobs.
 
 - `input.path` and `outputDir` must be absolute
 - The input must be a regular file
-- `input.hash` is optional and verifies SHA-256
-- An empty `views` array defaults to `[45]`
-- Output files are `{id}.png` or `{id}-{yaw}.png`
+- `input.hash` is optional and is a caller-asserted SHA-256 identity; on a cache
+  hit the worker trusts it and does not read the file, on a miss it recomputes
+  and verifies the digest
+- `supervise` injects the hash it computed for routing, so repeated inputs also
+  take the no-read cache path
+- An empty `views` array defaults to `[45]`; at most 64 angles are accepted;
+  multiple views render concurrently when a complete mesh is available
+- Output files are `{id}.png` or `{id}-{yaw}.png`; callers must keep `id` and
+  `outputDir` unique across concurrent jobs. Duplicate ids or yaw values
+  overwrite the same path
 - Full fields, results, and error codes are in
   [Engine protocol v1](../../engine-protocol.md)
 
@@ -60,12 +73,14 @@ blockscope supervise \
 
 | Option | Description |
 |---|---|
-| `--workers` | Worker process count; `0` uses the `capacity` suggestion |
+| `--workers` | Worker process count, at most 256; `0` uses the `capacity` suggestion |
 | `--threads` | Threads per worker; `0` uses the `capacity` suggestion |
 | `--timeout` | Per-job timeout in seconds; `0` disables |
 | `--memory` | Per-worker memory ceiling in MiB; `0` derives it from capacity |
 | `--queue` | Queue length; `0` uses `workers * 2` |
-| `--cache` | Cached scenes/meshes per worker |
+| `--cache` | Maximum cached scenes/meshes per worker |
+| `--cache-bytes` | Estimated cache budget per worker in bytes; `0` derives half of the per-worker memory ceiling |
+| `--greedy-mesh` | Enable greedy mesh merging in every worker; disabled by default |
 
 ## Security Boundary
 
@@ -76,6 +91,6 @@ the stdio service directly to untrusted network clients.
 ## See Also
 
 - [Engine protocol v1](../../engine-protocol.md)
-- [Docker](docker.md)
-- [Troubleshooting](troubleshooting.md)
+- [Docker](./docker.md)
+- [Troubleshooting](./troubleshooting.md)
 - [中文](../service.md)

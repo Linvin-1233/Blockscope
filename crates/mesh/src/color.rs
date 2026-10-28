@@ -1,5 +1,26 @@
 use serde::{Deserialize, Serialize};
 
+const REDSTONE_LOW: Rgba = Rgba::rgb(0x38, 0x00, 0x00);
+const REDSTONE_HIGH: Rgba = Rgba::rgb(0xFF, 0x20, 0x20);
+
+/// Redstone dust tint for a power level in `0..=15`.
+///
+/// The square-root curve spreads the dark low-power steps apart. A linear ramp
+/// leaves power 0 and 1 only about twelve red levels apart, which disappears on
+/// thin dust lines; this keeps every power visibly distinct.
+pub fn redstone_color(power: u8) -> Rgba {
+    let factor = (f32::from(power.min(15)) / 15.0).sqrt();
+    let channel = |low: u8, high: u8| {
+        (f32::from(low) + (f32::from(high) - f32::from(low)) * factor).round() as u8
+    };
+
+    Rgba::rgb(
+        channel(REDSTONE_LOW.r, REDSTONE_HIGH.r),
+        channel(REDSTONE_LOW.g, REDSTONE_HIGH.g),
+        channel(REDSTONE_LOW.b, REDSTONE_HIGH.b),
+    )
+}
+
 /// Straight-alpha RGBA color used by color-block meshes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Rgba {
@@ -66,6 +87,24 @@ mod tests {
             Rgba::from_hex("#11223344"),
             Ok(Rgba::new(0x11, 0x22, 0x33, 0x44))
         );
+    }
+
+    #[test]
+    fn redstone_power_spans_a_visible_gradient() {
+        let low = super::redstone_color(0);
+        let one = super::redstone_color(1);
+        let high = super::redstone_color(15);
+
+        assert_eq!(low, Rgba::rgb(0x38, 0x00, 0x00));
+        assert_eq!(high, Rgba::rgb(0xFF, 0x20, 0x20));
+        assert!(high.r > low.r);
+        assert!(
+            u16::from(one.r) - u16::from(low.r) >= 40,
+            "power 0 and 1 must be clearly different: {low:?} vs {one:?}"
+        );
+        assert!(super::redstone_color(7).r > one.r);
+        assert!(super::redstone_color(7).r < high.r);
+        assert_eq!(super::redstone_color(99), high);
     }
 }
 

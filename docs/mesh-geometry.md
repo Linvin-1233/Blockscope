@@ -29,14 +29,17 @@ Scene
 ```text
 Vertex {
   position: [f32; 3],   // page-local
-  normal:   [f32; 3],
-  color:    [u8; 4],    // straight alpha
-  uv:       [f32; 2],   // [0,0] for color blocks
+  uv:       [i16; 2],   // Q12 fixed point
 }
 
 Quad {
   vertices: [Vertex; 4],
+  normal:   [f32; 3],
+  color:    [u8; 4],    // straight alpha
+  ao:       [u8; 4],    // 2-bit levels
+  texture:  u16,
   layer:    opaque | cutout | translucent,
+  shade:    bool,
 }
 
 Mesh {
@@ -109,15 +112,8 @@ Both exporters are deterministic: the same mesh produces identical bytes.
 
 ## CLI
 
-```powershell
-cargo run -p blockscope-cli -- mesh path\to\model.litematic
-cargo run -p blockscope-cli -- mesh path\to\model.litematic --json
-cargo run -p blockscope-cli -- mesh path\to\model.litematic --obj out.obj
-cargo run -p blockscope-cli -- mesh path\to\model.litematic --ply out.ply
-```
-
-`--json` prints `MeshStatistics` with pages, quads, vertices, visited/rendered
-blocks, unknown blocks, and layer counts.
+For CLI invocation and mesh export options (`--obj`, `--ply`, `--json`), see
+[CLI Reference - mesh](./user/en/cli.md).
 
 ## Partial Shapes
 
@@ -143,8 +139,10 @@ canonical key:
 | rail | none | 16x1x16 plate |
 | cactus | none | 14x16x14 box |
 | cross plants | none | four quads (two crossed planes, double-sided) |
-| water / lava | `level=0..15` | height `16-level`; level 0 is a full cube |
-| chest / trapped / ender | none | 14x14x14 box |
+| water / lava | `level=0..15` | vanilla corner-averaged surface; shared fluid faces are hidden |
+| waterlogged blocks | `waterlogged=true` | keeps its own model and adds a water layer |
+| redstone wire | `power=0..15` | flat dust plane, tinted from dark red to bright red |
+| chest / trapped / ender | none | 14x14x14 body plus a lock box reaching z=16 |
 | barrel / shulker box | none | 14x16x14 box |
 | sign / banner | `facing` ignored | 2x16x16 panel |
 | skull / head | none | 8x8x8 box |
@@ -155,6 +153,34 @@ canonical key:
 These are deliberately approximate. They preserve the silhouette and material
 color; they do not try to reproduce every vanilla micro-detail. Block-entity
 text, item contents, banner patterns, and skull skins are not rendered yet.
+
+### Fluid surfaces
+
+Water and lava are not emitted as one flat box per block. The mesher reads the
+eight horizontal columns around a fluid cell plus the cell above, then computes
+the four top corner heights with vanilla's weighted averaging:
+
+- source and falling levels rest at `8/9` of a block, levels 1-7 at
+  `(8-level)/9`;
+- a column with the same fluid above becomes a full block and hides its top;
+- source-like columns get weight 10 in the corner average, lower flowing
+  columns get weight 1, and solid neighbours are excluded;
+- faces shared with the same fluid are hidden, including faces between
+  different levels.
+
+This makes a flowing channel a continuous slope instead of a staircase and
+removes the internal translucent faces that previously caused seams.
+
+Waterlogged blocks keep their own stairs, slabs, walls, leaves, or plant model
+and gain the same shaped water layer inside the cell. Waterlogged full opaque
+blocks are skipped because the water would be invisible. Kelp, seagrass, and
+bubble columns are treated as water-filled; bubble columns use the fluid
+surface directly instead of a separate block model.
+
+Redstone wire without a resource pack uses a built-in flat plane at the vanilla
+dust height. The color catalog tints it with the same `power=0..15` gradient as
+the textured path, so low-power dust is visibly darker. The gradient is
+square-root shaped so power 0 and 1 stay clearly distinct on thin dust lines.
 
 ## Voxel Mesher
 
@@ -177,9 +203,13 @@ A boundary face is culled when the neighbor is:
 - the same canonical block state, including partial shapes.
 
 The second rule removes shared boundary faces of adjacent slabs, stairs,
-fences, panes, glass, and water. It is state-based: stacked partial models can
-lose an exposed face when their geometry does not meet at the same plane.
-Different partial states keep their interface faces.
+fences, panes, and glass. It is state-based: stacked partial models can lose an
+exposed face when their geometry does not meet at the same plane. Different
+partial states keep their interface faces.
+
+Fluids use a separate rule: any face shared with the same fluid is hidden,
+even when the two cells have different `level` values. Their surfaces are
+merged by the corner averaging described above instead.
 
 ## Resource Packs
 

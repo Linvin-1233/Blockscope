@@ -11,20 +11,31 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.2"
+version = "0.4.0"
 edition = "2024"
 
 [workspace.dependencies]
-clap = { version = "4", features = ["derive"] }
+anstream = "1"
+anstyle = "1"
+clap = { version = "4", features = ["derive", "wrap_help"] }
+console = "0.15"
 flate2 = "1"
-png = "0.18"
+indicatif = "0.17"
+png = "0.17"
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Console"] }
 proptest = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sha2 = "0.11"
+sha2 = "0.10"
 tempfile = "3"
-zip = { version = "9", default-features = false, features = ["deflate"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [profile.dev]
 # Disables debuginfo to improve dev and test compile and link times.
 debug = false
+
+[profile.release]
+# Thin LTO and one codegen unit trade build time for runtime throughput in the
+# CPU-bound mesh builder and rasterizer.
+lto = "thin"
+codegen-units = 1

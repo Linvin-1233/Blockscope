@@ -6,6 +6,7 @@ pub enum RenderErrorCode {
     InvalidOptions,
     OutputTooLarge,
     PngEncodeFailed,
+    TempStorageFailed,
 }
 
 impl RenderErrorCode {
@@ -14,6 +15,7 @@ impl RenderErrorCode {
             Self::InvalidOptions => "INVALID_RENDER_OPTIONS",
             Self::OutputTooLarge => "OUTPUT_TOO_LARGE",
             Self::PngEncodeFailed => "PNG_ENCODE_FAILED",
+            Self::TempStorageFailed => "TEMP_STORAGE_FAILED",
         }
     }
 }
@@ -42,6 +44,10 @@ impl RenderError {
 
     pub fn png(message: impl Into<String>) -> Self {
         Self::new(RenderErrorCode::PngEncodeFailed, message)
+    }
+
+    pub fn temp_storage(message: impl Into<String>) -> Self {
+        Self::new(RenderErrorCode::TempStorageFailed, message)
     }
 }
 

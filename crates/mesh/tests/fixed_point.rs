@@ -45,6 +45,6 @@ fn ambient_occlusion_levels_match_the_old_float_values() {
 fn compact_vertices_stay_small() {
     // Guards the memory budget: these budgets leave room for alignment but
     // catch a regression back to f32 UVs or f32 ambient occlusion.
-    assert!(size_of::<Vertex>() <= 36, "{}", size_of::<Vertex>());
-    assert!(size_of::<Quad>() <= 160, "{}", size_of::<Quad>());
+    assert!(size_of::<Vertex>() <= 16, "{}", size_of::<Vertex>());
+    assert!(size_of::<Quad>() <= 88, "{}", size_of::<Quad>());
 }

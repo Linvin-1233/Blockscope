@@ -1,4 +1,5 @@
-use litematic_mesh::Rgba;
+use crate::util::strip_namespace;
+use litematic_mesh::{Rgba, redstone_color};
 use litematic_scene::BlockStateKey;
 
 const GRASS: Rgba = Rgba::rgb(0x91, 0xBD, 0x59);
@@ -13,13 +14,9 @@ pub fn tint_for(state: &BlockStateKey, tintindex: Option<i32>) -> Rgba {
         return WHITE;
     }
 
-    let path = state
-        .name
-        .split_once(':')
-        .map(|(_, path)| path)
-        .unwrap_or(&state.name);
+    let path = strip_namespace(&state.name);
 
-    if path == "water" || path == "bubble_column" {
+    if path == "water" || path == "flowing_water" || path == "bubble_column" {
         return WATER;
     }
     if path == "redstone_wire" {
@@ -43,16 +40,5 @@ fn redstone_tint(state: &BlockStateKey) -> Rgba {
         .unwrap_or(0)
         .min(15);
 
-    let low = [0x4C, 0x00, 0x00];
-    let high = [0xFF, 0x1A, 0x1A];
-    let factor = f32::from(power) / 15.0;
-    let channel = |low: u8, high: u8| {
-        (f32::from(low) + (f32::from(high) - f32::from(low)) * factor).round() as u8
-    };
-
-    Rgba::rgb(
-        channel(low[0], high[0]),
-        channel(low[1], high[1]),
-        channel(low[2], high[2]),
-    )
+    redstone_color(power)
 }

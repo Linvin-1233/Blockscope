@@ -16,6 +16,7 @@ pub const AO_LEVELS: [f32; 4] = [
 ];
 
 /// Decode a Q12 texture coordinate back to its float form.
+#[inline]
 pub fn decode_uv(uv: [i16; 2]) -> [f32; 2] {
     [f32::from(uv[0]) / UV_SCALE, f32::from(uv[1]) / UV_SCALE]
 }
@@ -32,25 +33,20 @@ fn encode_uv_component(value: f32) -> i16 {
 
 /// Decode an ambient-occlusion level. Values outside 0..=3 are treated as the
 /// fully lit level.
+#[inline]
 pub fn ambient_occlusion_level(level: u8) -> f32 {
     AO_LEVELS[usize::from(level).min(AO_LEVELS.len() - 1)]
 }
 
 /// A mesh vertex in page-local coordinates.
 ///
-/// Color, normal, texture, and shade are uniform across a quad. Texture
-/// coordinates use Q12 fixed point and ambient occlusion uses one of the four
-/// levels in [`AO_LEVELS`], which keeps the vertex compact while reconstructing
-/// the exact previous float values.
+/// Texture coordinates use Q12 fixed point. Quad-uniform attributes (normal,
+/// color, texture, layer, shade, and ambient-occlusion levels) are stored once
+/// on [`Quad`], keeping vertex storage tight at 16 bytes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Vertex {
     pub position: [f32; 3],
-    pub normal: [f32; 3],
-    pub color: [u8; 4],
     pub uv: [i16; 2],
-    pub texture: u16,
-    pub shade: bool,
-    pub ao: u8,
 }
 
 impl Vertex {
@@ -58,19 +54,25 @@ impl Vertex {
     pub fn texture_coords(&self) -> [f32; 2] {
         decode_uv(self.uv)
     }
-
-    /// Ambient-occlusion factor in the float domain.
-    pub fn ambient_occlusion(&self) -> f32 {
-        ambient_occlusion_level(self.ao)
-    }
 }
 
-/// A renderable quad with its material layer. The builder emits the same
-/// color, normal, texture, and shade on all four vertices.
+/// A renderable quad with its vertices and uniform material and lighting attributes.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Quad {
     pub vertices: [Vertex; 4],
+    pub normal: [f32; 3],
+    pub color: [u8; 4],
+    pub ao: [u8; 4],
+    pub texture: u16,
     pub layer: RenderLayer,
+    pub shade: bool,
+}
+
+impl Quad {
+    /// Ambient-occlusion factor for vertex `index` in the float domain.
+    pub fn ambient_occlusion(&self, index: usize) -> f32 {
+        ambient_occlusion_level(self.ao[index])
+    }
 }
 
 /// A 16x16x16 mesh page. Vertex positions are local to `origin`.
@@ -87,6 +89,17 @@ pub struct Mesh {
     pub statistics: MeshStatistics,
 }
 
+impl Mesh {
+    /// Estimated heap bytes held by page vectors and quad storage.
+    pub fn heap_bytes(&self) -> u64 {
+        let mut total = self.pages.capacity() as u64 * std::mem::size_of::<MeshPage>() as u64;
+        for page in &self.pages {
+            total += page.quads.capacity() as u64 * std::mem::size_of::<Quad>() as u64;
+        }
+        total
+    }
+}
+
 /// Mesh counters used by the CLI and golden tests.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -100,6 +113,20 @@ pub struct MeshStatistics {
     pub opaque_quads: u64,
     pub cutout_quads: u64,
     pub translucent_quads: u64,
+}
+
+/// Optional mesh construction behavior.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct MeshBuildOptions {
+    /// Merge coplanar unit faces with identical material, lighting, and UV
+    /// mapping into larger quads. Disabled by default because it only pays off
+    /// on builds with contiguous surfaces.
+    pub greedy: bool,
+}
+
+impl MeshBuildOptions {
+    /// Enable conservative greedy merging.
+    pub const GREEDY: Self = Self { greedy: true };
 }
 
 /// Hard limits for a single mesh build.

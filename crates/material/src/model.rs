@@ -6,6 +6,7 @@ use crate::tint::tint_for;
 use litematic_mesh::{BlockModel, FaceDirection, ModelQuad, NO_TEXTURE, RenderLayer, face_uv};
 use litematic_scene::BlockStateKey;
 use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 
 const MAX_PARENT_DEPTH: usize = 64;
 
@@ -28,9 +29,9 @@ pub struct ResolvedTexture {
 pub fn resolve_model(
     source: &AssetSource,
     path: &str,
-    cache: &mut HashMap<String, Option<ModelChain>>,
+    cache: &mut HashMap<String, Option<Arc<ModelChain>>>,
     stack: &mut Vec<String>,
-) -> Option<ModelChain> {
+) -> Option<Arc<ModelChain>> {
     let path = normalize_model_path(path);
     if let Some(cached) = cache.get(&path) {
         return cached.clone();
@@ -53,10 +54,12 @@ pub fn resolve_model(
 
     stack.push(path.clone());
     let mut chain = if let Some(parent) = &file.parent {
-        resolve_model(source, parent, cache, stack).unwrap_or_else(|| ModelChain {
-            ambient_occlusion: true,
-            ..Default::default()
-        })
+        resolve_model(source, parent, cache, stack)
+            .map(|parent| (*parent).clone())
+            .unwrap_or_else(|| ModelChain {
+                ambient_occlusion: true,
+                ..Default::default()
+            })
     } else {
         ModelChain {
             ambient_occlusion: true,
@@ -75,7 +78,8 @@ pub fn resolve_model(
         chain.ambient_occlusion = ambient_occlusion;
     }
 
-    cache.insert(path, Some(chain.clone()));
+    let chain = Arc::new(chain);
+    cache.insert(path, Some(Arc::clone(&chain)));
     Some(chain)
 }
 
@@ -109,6 +113,11 @@ pub fn build_model(
     if elements.is_empty() {
         return None;
     }
+
+    // Normalize before negating. `-i32::MIN` would panic in debug builds, and
+    // Minecraft only meaningfully rotates blockstate models by 0/90/180/270.
+    let x_rotation = x_rotation.rem_euclid(360);
+    let y_rotation = y_rotation.rem_euclid(360);
 
     let mut quads = Vec::new();
     for element in elements {

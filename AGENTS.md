@@ -47,6 +47,7 @@ All languages:
 
 ## Commands
 
+- Just runner: `just` (list recipes), `just check` (full gate), `just fmt`, `just test`
 - Build: `cargo build --workspace`
 - Test: `cargo test --workspace`
 - Format check: `cargo fmt --all --check`
@@ -54,7 +55,6 @@ All languages:
 - Full check: `pwsh ./scripts/check.ps1` (PowerShell 7+) or
   `powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/check.ps1`
   (Windows PowerShell), or `bash ./scripts/check.sh` (Linux)
-
 ## Boundaries
 
 - Do not commit Minecraft assets, resource packs, or private `.litematic`

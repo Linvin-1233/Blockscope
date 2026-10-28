@@ -6,3 +6,6 @@ edition.workspace = true
 [dependencies]
 litematic-nbt = { path = "../nbt" }
 litematic-scene = { path = "../scene" }
+
+[dev-dependencies]
+flate2.workspace = true

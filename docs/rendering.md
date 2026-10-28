@@ -57,6 +57,45 @@ The rasterizer consumes the Phase 2 mesh:
 - render layer and shade flag,
 - per-vertex ambient occlusion.
 
+### Fluid and redstone surfaces
+
+Water and lava use a surface built from the neighboring fluid columns rather
+than the cached per-state box. The mesher computes four top corner heights with
+vanilla's weighted averaging, hides faces shared with the same fluid, and
+promotes a column to a full block when the same fluid sits above it. A flowing
+channel therefore becomes one continuous slope, and internal translucent faces
+no longer introduce seams. The resting heights are `8/9` for source and falling
+levels and `(8-level)/9` for levels 1-7.
+
+Waterlogged blocks keep their own model and add the same shaped water layer.
+This covers stairs, slabs, walls, leaves, signs, coral, and the always-water
+kelp/seagrass blocks; waterlogged full opaque blocks skip the layer because it
+would be hidden. Bubble columns use the fluid surface directly.
+
+Redstone wire resolves to a flat dust plane. Textured renders tint it through
+the pack model's `tintindex`; the built-in color catalog uses the same
+`power=0..15` gradient, so redstone remains readable without a resource pack.
+The gradient spreads the low-power steps apart so power 0 and 1 are visibly
+different.
+
+### Greedy merging
+
+`--greedy-mesh` runs a conservative merge pass after face culling. It only
+combines axis-aligned unit faces that share the same normal direction, plane,
+texture, color, render layer, shade flag, uniform ambient-occlusion value, and
+UV mapping. Translucent faces are never merged because their draw order matters.
+
+Textured merges are capped at seven blocks per axis so Q12 UVs stay inside
+`i16`; untextured faces can merge across a whole 16-block page. Plane merging is
+page-local, so a flat surface is split at 16-block boundaries.
+
+The pass is opt-in: random-palette stress scenes see less than 1% fewer quads
+and pay extra mesh time, while large flat or repetitive builds can drop quads
+by about 28x on a full textured 16x16 page (up to 49x for a 7x7 rectangle) and
+up to 256x for untextured pages. Merged quads may change a small number of edge
+pixels because rasterization and UV rounding differ from the original
+per-block quads.
+
 Backface culling uses the camera forward vector:
 
 ```text
@@ -68,7 +107,9 @@ cull.
 
 ## Rasterizer
 
-- The image is split into square tiles; default 64x64.
+- The image is split into square tiles, at most 64x64. The target is about
+  1024 tiles, so small outputs use smaller tiles (32px at a 1024x1024 internal
+  image, 8px at 256x256); `tiles` therefore stays independent of worker count.
 - Each tile owns an RGBA f32 color buffer and an f64 depth buffer.
 - Triangles are rasterized with edge functions and barycentric weights.
 - Depth is interpolated linearly, which is correct for orthographic projection.
@@ -82,6 +123,23 @@ cull.
   start at `[0, 0, 0, 0]`.
 - Final RGBA8 conversion clamps and rounds; fully transparent pixels are written
   as zero RGB.
+
+### Row spans
+
+Each edge function is affine in screen x on a fixed scanline, so the rasterizer
+solves the three zero crossings to bound the row, then walks the two endpoints
+in with the exact per-pixel edge test. A row only visits the pixels inside the
+triangle instead of the whole bounding box. Barycentric weights, depth, and
+color interpolation still use the same expressions in the same order, so
+accepted fragments are bit-identical while most rejected pixels are never
+visited. `pixelsTested` counts the fragments that remain after this clipping.
+
+### Untextured triangles
+
+The triangle loop is monomorphized on whether the quad has a texture. The
+untextured specialization drops the per-pixel texture-sample branch and UV
+interpolation entirely. On the 77.6M-quad color-only fixture, the 1024x1024
+supersample-2 render dropped from 4.1 s to 3.9 s with identical output.
 
 ### Block entity NBT
 
@@ -104,8 +162,8 @@ expressions as before, so rendered output is bit-identical.
 
 | Structure | Before | After |
 |---|---|---|
-| `Vertex` | 44 B | 36 B |
-| `Quad` | 180 B | 148 B |
+| `Vertex` | 36 B | 16 B |
+| `Quad` | 148 B | 88 B |
 | projected quad table entry | 200 B | 128 B |
 | translucent triangle | 160 B | 112 B |
 
@@ -130,7 +188,17 @@ pages, bins them to the tiles they touch, renders those tiles into buffers that
 stay resident for the whole image, and drops the chunk. Only one chunk of
 geometry is alive at a time. Output is byte-identical to the table path.
 
-Measured on the test host at 1024x1024 and supersample 2:
+Chunks are sized by projected quad count rather than page count, because page
+sizes differ by orders of magnitude between meshes; a page-count cap would spawn
+a worker scope per handful of fine-grained pages. Within a chunk, scoped workers
+project contiguous page slices and bin the result; the projection workers are
+joined, then the touched tiles are rasterized in parallel. Slice and part order
+follow page order, which keeps the draw order and therefore the output
+deterministic, and a projection panic propagates instead of leaving a barrier
+waiting forever.
+
+Historical full-mesh comparison, measured before the review fixes on the test
+host at 1024x1024 and supersample 2:
 
 | Scene | Peak working set | Wall | Render |
 |---|---|---|---|
@@ -140,6 +208,81 @@ Measured on the test host at 1024x1024 and supersample 2:
 Both used to need the full per-quad table (13.5 GB and roughly 45 GB
 respectively). A small-scene equality test forces streaming and compares RGBA
 and statistics against the table path.
+
+### Mesh page cache
+
+Culling and ambient occlusion used to resolve the same block and its neighbours
+through the region index and the material catalog for every model quad. The
+builder now resolves a 16x16x16 page plus its one-block border once, then serves
+culling and AO from an array. Each region palette is also resolved to an
+immutable material table up front, so the inner loop indexes by palette id
+instead of hashing a block-state key and cloning a model `Arc`.
+
+The grid also caches one occlusion bit per cell and converts culling and AO
+offsets to flat index deltas, so the inner loop does not re-check page bounds or
+chase the palette table. A full-cube block whose six neighbours all occlude is
+skipped without visiting its model quads. Equal states are assigned one
+canonical id across regions, so the existing same-state culling still works
+across region and page boundaries. Region order and y/z/x block order are
+unchanged; mesh statistics and PNG output stay byte-identical for dense scenes.
+
+Page discovery scans the packed block stream once and indexes only pages that
+contain a non-air block. Sparse structures therefore no longer scan empty pages
+or count them against `max_pages`; a scene with no air keeps the bounding-box
+fast path. `blocksVisited` now counts cells in indexed pages, so an all-air mesh
+reports zero visited blocks.
+
+Each worker estimates the next page's capacity from the median of the last
+eight quads-per-non-air-block ratios plus a 15% margin. Growth adds a quarter of
+the current capacity instead of doubling, and a page that still ends up far
+below its reservation is shrunk. On `000001` the mesh pass dropped from
+4.0-4.3 s to 3.1-3.2 s and the resident mesh from 10.7 GB to 7.9 GB; `000002`
+dropped from 310 MB to 261 MB while the mesh pass moved from 0.20-0.21 s to
+about 0.22 s.
+
+Measured on the test host with the color-only catalog, 1024x1024, supersample 2,
+12 threads:
+
+| Scene | Before mesh | After mesh | Before/after render | Peak working set |
+|---|---|---|---|---|
+| `000001` exact, 77.6M quads | 17.3-20.4 s | 5.7-5.9 s | 4.6 s / 4.0 s | 7.16 GB / 7.16 GB |
+| `000002` exact, 50.7M blocks | 11.7 s | 0.24-0.25 s | 0.21 s / 0.19 s | 471 MB / 497 MB |
+
+The page cache costs about 53 KB per worker and does not change the mesh
+representation, so peak memory is still dominated by the resident `Mesh`. The
+PNG SHA-256 values for both exact fixtures and the `000001` LOD 4 render were
+unchanged.
+
+### Streaming mesh construction
+
+`--stream-mesh` builds 32-page chunks, renders them into the resident tile
+buffers, and drops the chunk before building the next one. The full `Mesh` is
+never materialized. The default is `auto`: fixed-LOD renders stream, while
+`--lod auto` keeps the full mesh because choosing a factor needs a complete
+mesh. `--stream-mesh=off` opts back into the full mesh, and `--stream-mesh` or
+`--stream-mesh=on` forces streaming. Multiple views rebuild the streamed mesh
+once per view.
+
+Translucent triangles stay in memory below 262,144 entries. Above that, the
+streamed renderer writes exact 76-byte records to temporary bucket files and
+processes one bucket at a time, so the tile sort still produces the same image
+without retaining every triangle. The temporary directory is deleted at the end
+of the render.
+
+Measured end to end on the test host (parse + mesh + render + PNG, 1024x1024,
+supersample 2, 12 threads, color-only materials). Both columns were re-measured
+after the review fixes on 2026-10-28:
+
+| Scene | Peak working set (full mesh / streamed) | Wall (full mesh / streamed) |
+|---|---|---|
+| `000001` exact | 7.68 GB / **433-435 MB** | 11.94 s / **11.1-11.4 s** |
+| `000002` exact | 461 MB / **182 MB** | 0.78 s / **1.39 s** |
+
+The `000001` color stream was measured three times; the variation is host noise,
+not a review regression (the pre-review binary measured 11.65-11.75 s). The
+streamed and full-mesh PNG SHA-256 values are identical for both fixtures; for
+`000001` the streamed hash is
+`0D7F4FE90A6EA7637890EBE786109C98C1420DC8EDA9C9F238B13B1072B6610A`.
 
 ### Triangle binning
 
@@ -154,7 +297,41 @@ spawns up to `threads` scoped workers; each worker owns its tile color and depth
 buffers and returns a finished tile. Results are sorted by tile index before
 assembly, so pixel output and statistics do not depend on scheduling order.
 
+The tiling is an implementation detail: every pixel sees the same candidate
+quads in the same order, so shrinking tiles does not change the image. The
+rasterizer therefore targets about 1024 tiles instead of always using 64x64. A
+fixed 64px tile leaves only 16 tiles at 256x256 and 64 at 512x512; with 12
+workers the slowest runs two tiles while the rest idle, and small previews came
+out slower than 1024x1024. At a 1024x1024 internal image this yields 32px tiles,
+which measured faster than 64px; at 2048x2048 it keeps 64px, which measured
+faster than 32px. Measured on the 77.6M-quad fixture at 12 threads:
+
+| Output | Tiles before/after | Render before/after |
+|---|---|---|
+| 256x256, ss1 | 16 / 1024 | 5.7-6.4 s / **3.1-3.2 s** |
+| 512x512, ss1 | 64 / 1024 | 4.5-4.6 s / **3.1-3.2 s** |
+| 512x512, ss2 | 256 / 1024 | 3.8 s / **3.2 s** |
+| 1024x1024, ss1 | 256 / 1024 | 3.7 s / **3.2 s** |
+| 1024x1024, ss2 | 1024 / 1024 | 4.1 s / **3.9 s** |
+
+The 1024x1024/ss2 row keeps the same tiling; its difference comes from the
+textured/untextured triangle specialization described below.
+
+The `tiles` statistic reports the effective tiling. It stays independent of the
+worker count because the target is fixed.
+
 `threads = 0` chooses `available_parallelism()`. The default is 0.
+
+### Parallel views
+
+When a complete mesh is available and a request has multiple yaw angles, views
+render concurrently. The `threads` budget is split across the views in a batch,
+so `12` threads and two views means about six threads per view. Outputs keep the
+requested view order. Batches are also capped by a 256 MiB output-byte budget,
+and each view is written and released before the next batch. At 1024x1024 and
+2048x2048 the thread budget still decides the batch size, so normal parallelism
+is unchanged; very large outputs trade concurrent views for bounded memory.
+Streaming mesh mode remains sequential and rebuilds the mesh per view.
 
 ### Supersampling
 
@@ -197,7 +374,7 @@ shadows, or biome tinting. It is stable and deterministic.
 | elevation | 30° |
 | background | transparent |
 | lighting | simple-ao-v1 |
-| tile size | 64 |
+| tile size (maximum; targets ~1024 tiles) | 64 |
 | padding | 16 px |
 | supersample | 2 |
 | threads | 0 (auto) |
@@ -205,37 +382,13 @@ shadows, or biome tinting. It is stable and deterministic.
 | max pixels | 16,777,216 |
 | max supersampled pixels | 33,554,432 |
 
-Validation rejects zero dimensions, elevation beyond ±89.9°, non-finite values,
-padding that leaves no drawable area, and outputs above the pixel limit.
+Validation rejects zero dimensions, dimensions above 4096, elevation beyond
+±89.9°, non-finite values, padding that leaves no drawable area, and outputs
+above the pixel limit.
 
-Parser, mesh, and render caps can be disabled per invocation with
-`--force-limits`. The CLI prints `WARNING: resource limits are disabled` to
-stderr and otherwise proceeds, which is intended for offline renders of
-oversized schematics on a machine with enough memory.
-
-## CLI
-
-```powershell
-cargo run -p blockscope-cli -- render path\to\model.litematic --output out.png
-cargo run -p blockscope-cli -- render path\to\model.litematic --output out.png --width 2048 --height 2048
-cargo run -p blockscope-cli -- render path\to\model.litematic --output out.png --views 45,225
-cargo run -p blockscope-cli -- render path\to\model.litematic --output out.png --yaw 225 --elevation 35
-cargo run -p blockscope-cli -- render path\to\model.litematic --output out.png --supersample 4
-cargo run -p blockscope-cli -- render path\to\model.litematic --output out.png --threads 4
-cargo run -p blockscope-cli -- render path\to\model.litematic --output out.png --background "#202830" --lighting flat-v1
-cargo run -p blockscope-cli -- render path\to\model.litematic --output out.png `
-  --client-jar "D:\hmcl\.minecraft\versions\26.2-Fabric\26.2-Fabric.jar"
-cargo run -p blockscope-cli -- render path\to\model.litematic --output out.png --texture-filter linear
-cargo run -p blockscope-cli -- render path\to\model.litematic --output out.png --json
-```
-
-`--views` accepts comma-separated yaw angles. With one view the output path is
-used as-is; with multiple views the renderer writes `out-45.png`,
-`out-225.png`, and so on. `--background` accepts `transparent`, `#RRGGBB`, or
-`#RRGGBBAA`. `--json` prints render statistics instead of the human-readable
-summary.
-
-The human-readable output includes parse, mesh, render, PNG, and total timings.
+For CLI rendering flags, multi-view output naming, and options reference, see
+[CLI Reference - render](./user/en/cli.md). Resource limits and
+`--force-limits` behavior are detailed in [Limits and Security](./user/en/limits.md).
 
 ## Benchmark
 
@@ -246,8 +399,11 @@ cargo run -p blockscope-cli --release -- bench path\to\model.litematic --width 2
 
 `blockscope bench` parses and meshes once, then renders and PNG-encodes
 `--iterations` times. It reports min/median/mean/max for render, PNG, and their
-sum, plus mesh and render counters, buffer sizes, and peak RSS on Linux
-(`null` on other platforms).
+sum, plus mesh and render counters, buffer sizes, and peak RSS on Linux and
+macOS (`null` on Windows and other platforms).
+
+Allocation-peak baselines and the streamed-versus-full-mesh diagnostic live in
+[Performance Baselines](./performance.md).
 
 For rasterizer-only scaling, use the synthetic example:
 
@@ -263,6 +419,16 @@ quads, 1024x1024 output, supersample 2, median of 3): 1 thread 300 ms, 2 threads
 174 ms, auto threads 81 ms. Treat these as a scaling sanity check, not a CI
 threshold.
 
+Measured and rejected on the same host:
+
+- Replacing `chunks_mut(..).skip(row_start)` with a pre-sliced row iterator:
+  within run-to-run noise.
+- Greedy merging on the 77.6M-quad stress fixture: 77.58M to 77.45M quads
+  (-0.16%) for about 1 s more mesh time, so it stays opt-in.
+- Front-to-back opaque ordering: pixel writes are about 12% of render time
+  (supersample 1 vs 2 on the same scene), so sorting cost is unlikely to pay
+  back.
+
 ## Render Statistics
 
 `RenderStatistics` records:
@@ -272,7 +438,7 @@ threshold.
 - total triangles and culled backfaces;
 - opaque/cutout/translucent triangle counts;
 - textured triangle count;
-- pixels tested and pixels written.
+- pixels tested (fragments inside the clipped row spans) and pixels written.
 
 Golden PNGs for cube, partial shapes, water, negative coordinates, AO, textured
 cube, stairs, cutout, glass, and chest live in `fixtures/golden/render/`.
@@ -309,8 +475,18 @@ detail at a large memory cost.
 `--lod auto` starts with an exact mesh and falls back to 2, 4, 8, or 16 only
 when the quad budget does not fit. The budget is 80 percent of available memory
 divided by roughly 400 bytes per quad, so a file that can be rendered exactly
-is never degraded. On the 48 GB test host, `000003` (solid, 67M blocks) renders
-exactly in 7.5 s, while the porous `000001` falls back to LOD 2 in 16.4 s.
+is never degraded.
+
+Before building a factor, auto samples 128 evenly spaced pages and estimates
+the quad count. Only when the estimate is clearly above the budget does it run
+an exact count, which uses the same page cache and culling as the builder but
+allocates no vertices or ambient occlusion. The exact count decides the
+fallback, so a scene that fits is still built exactly. On the color-only
+fixture (`000001`, 1024x1024, supersample 2, 12 threads) the auto mesh pass
+drops from 5.0-5.2 s to 3.6-3.7 s. `000002` fits exactly and pays about 30 ms
+for the sample. On the 48 GB test host, `000003` (solid, 67M blocks) renders
+exactly in 7.5 s; the earlier client-jar run of `000001` fell back to LOD 2 in
+16.4 s.
 
 ## Known Limitations
 
@@ -318,6 +494,10 @@ exactly in 7.5 s, while the porous `000001` falls back to LOD 2 in 16.4 s.
 - Textures require a user-provided resource pack or client jar.
 - No mipmaps; nearest or bilinear sampling only.
 - No shadows, full light propagation, or emissive bloom.
+- Fluid surfaces use the still texture; flow animation and the water overlay are
+  not reproduced.
+- The built-in redstone dust model does not fold connection directions into its
+  flat plane; textured renders use the pack model for that.
 - Translucent sorting is per tile and approximate.
 - CPU-only; tiles are parallel and mesh pages are built in parallel, but PNG
   encoding runs on the calling thread.

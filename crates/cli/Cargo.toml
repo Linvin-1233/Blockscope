@@ -8,7 +8,11 @@ name = "blockscope"
 path = "src/main.rs"
 
 [dependencies]
+anstream.workspace = true
+anstyle.workspace = true
 clap.workspace = true
+console.workspace = true
+indicatif.workspace = true
 litematic-core = { path = "../litematic" }
 litematic-material = { path = "../material" }
 litematic-mesh = { path = "../mesh" }
@@ -20,3 +24,6 @@ serde.workspace = true
 [dev-dependencies]
 png.workspace = true
 tempfile.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true

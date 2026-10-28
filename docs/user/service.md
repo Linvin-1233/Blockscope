@@ -10,7 +10,11 @@ blockscope serve --client-jar client.jar --threads 4 --cache 2
 ```
 
 - `--threads`：请求未指定 `threads` 时使用的默认线程数；最多 256
-- `--cache`：缓存的 scene/mesh 数量
+- `--cache`：缓存的 scene/mesh 条数上限
+- `--cache-bytes`：缓存预算（估算字节）；`0` 使用可用内存的一半。超出预算时
+  按最旧优先淘汰，单个超大条目仍允许单独保留。由 `supervise` 启动时，若未显式
+  指定，supervisor 会按每个 worker 的内存上限派生并传入该值
+- `--greedy-mesh`：合并同材质、同光照的共面单位面；默认关闭
 - `--force-limits`：提高资源上限；只应对可信输入使用
 - `--ignore-block-entity-nbt`：跳过容器 NBT
 
@@ -35,9 +39,13 @@ worker 在资源包准备完成后输出一行 `hello`，之后才接受 job。
 
 - `input.path` 和 `outputDir` 必须是绝对路径
 - 输入必须是普通文件
-- `input.hash` 可选，用于校验 SHA-256
-- `views` 为空时默认 `[45]`
-- 输出文件为 `{id}.png` 或 `{id}-{yaw}.png`
+- `input.hash` 可选，是调用方声明的 SHA-256 身份；命中缓存时 worker 信任该值并
+  不再读取文件，未命中时才重新计算并校验
+- `supervise` 会把为路由计算出的 hash 注入请求，因此经 supervisor 的重复输入
+  也能走免读缓存路径
+- `views` 为空时默认 `[45]`，最多 64 个角度；有完整 mesh 时多视角并行渲染
+- 输出文件为 `{id}.png` 或 `{id}-{yaw}.png`；调用方必须保证 `id` 和
+  `outputDir` 在并发任务中唯一，重复 `id` 或重复视角会覆盖同一路径
 - 完整字段、结果和错误码见 [引擎协议 v1](../engine-protocol.md)
 
 ## Supervisor
@@ -57,12 +65,14 @@ blockscope supervise \
 
 | 选项 | 说明 |
 |---|---|
-| `--workers` | worker 进程数；`0` 使用 `capacity` 建议值 |
+| `--workers` | worker 进程数，最多 256；`0` 使用 `capacity` 建议值 |
 | `--threads` | 每个 worker 的线程数；`0` 使用 `capacity` 建议值 |
 | `--timeout` | 每个 job 的超时秒数；`0` 关闭 |
 | `--memory` | 每个 worker 的内存上限（MiB）；`0` 根据可用内存推导 |
 | `--queue` | 等待队列长度；`0` 使用 `workers * 2` |
-| `--cache` | 每个 worker 缓存的 scene/mesh 数量 |
+| `--cache` | 每个 worker 缓存的 scene/mesh 条数上限 |
+| `--cache-bytes` | 每个 worker 的缓存预算（估算字节）；`0` 使用该 worker 内存上限的一半 |
+| `--greedy-mesh` | 在每个 worker 中启用贪心网格合并；默认关闭 |
 
 ## 安全边界
 
@@ -72,6 +82,6 @@ blockscope supervise \
 ## 相关文档
 
 - [引擎协议 v1](../engine-protocol.md)
-- [Docker](docker.md)
-- [故障排查](troubleshooting.md)
-- [English](en/service.md)
+- [Docker](./docker.md)
+- [故障排查](./troubleshooting.md)
+- [English](./en/service.md)

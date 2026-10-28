@@ -25,20 +25,20 @@ Download the installer or archive for your platform from
 | macOS aarch64 | `aarch64-apple-darwin` | `.tar.gz` |
 | macOS x86_64 | `x86_64-apple-darwin` | `.tar.gz` |
 
-Names look like `blockscope-v0.1.2-x86_64-unknown-linux-musl.tar.gz`, and each
+Names look like `blockscope-v0.4.0-x86_64-unknown-linux-musl.tar.gz`, and each
 file has a `.sha256` next to it with the extension removed
-(`blockscope-v0.1.2-x86_64-unknown-linux-musl.sha256`). Linux artifacts are
+(`blockscope-v0.4.0-x86_64-unknown-linux-musl.sha256`). Linux artifacts are
 linked statically against musl and the Windows artifact uses the static CRT, so
 the target machine needs no extra runtime libraries.
 
 ### Linux
 
 ```bash
-curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.1.2/blockscope-v0.1.2-x86_64-unknown-linux-musl.tar.gz
-curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.1.2/blockscope-v0.1.2-x86_64-unknown-linux-musl.sha256
-sha256sum -c blockscope-v0.1.2-x86_64-unknown-linux-musl.sha256
-tar -xzf blockscope-v0.1.2-x86_64-unknown-linux-musl.tar.gz
-./blockscope-v0.1.2-x86_64-unknown-linux-musl/blockscope --version
+curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.4.0/blockscope-v0.4.0-x86_64-unknown-linux-musl.tar.gz
+curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.4.0/blockscope-v0.4.0-x86_64-unknown-linux-musl.sha256
+sha256sum -c blockscope-v0.4.0-x86_64-unknown-linux-musl.sha256
+tar -xzf blockscope-v0.4.0-x86_64-unknown-linux-musl.tar.gz
+./blockscope-v0.4.0-x86_64-unknown-linux-musl/blockscope --version
 ```
 
 ### macOS
@@ -46,11 +46,11 @@ tar -xzf blockscope-v0.1.2-x86_64-unknown-linux-musl.tar.gz
 Use `aarch64-apple-darwin` for Apple Silicon (M-series) or `x86_64-apple-darwin` for Intel Macs:
 
 ```bash
-curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.1.2/blockscope-v0.1.2-aarch64-apple-darwin.tar.gz
-curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.1.2/blockscope-v0.1.2-aarch64-apple-darwin.sha256
-shasum -a 256 -c blockscope-v0.1.2-aarch64-apple-darwin.sha256
-tar -xzf blockscope-v0.1.2-aarch64-apple-darwin.tar.gz
-./blockscope-v0.1.2-aarch64-apple-darwin/blockscope --version
+curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.4.0/blockscope-v0.4.0-aarch64-apple-darwin.tar.gz
+curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.4.0/blockscope-v0.4.0-aarch64-apple-darwin.sha256
+shasum -a 256 -c blockscope-v0.4.0-aarch64-apple-darwin.sha256
+tar -xzf blockscope-v0.4.0-aarch64-apple-darwin.tar.gz
+./blockscope-v0.4.0-aarch64-apple-darwin/blockscope --version
 ```
 
 ### Windows: MSI installer (recommended)
@@ -58,7 +58,7 @@ tar -xzf blockscope-v0.1.2-aarch64-apple-darwin.tar.gz
 Installs per user, so no administrator rights are required:
 
 ```powershell
-$tag = "v0.1.2"
+$tag = "v0.4.0"
 $name = "blockscope-$tag-x86_64-pc-windows-msvc"
 Invoke-WebRequest "https://github.com/Linvin-1233/Blockscope/releases/download/$tag/$name.msi" -OutFile "$name.msi"
 Invoke-WebRequest "https://github.com/Linvin-1233/Blockscope/releases/download/$tag/$name.msi.sha256" -OutFile "$name.msi.sha256"
@@ -77,7 +77,7 @@ Uninstall from Settings > Apps, which also removes the `PATH` entry. Use
 Unpack it instead if you do not want an installed copy:
 
 ```powershell
-$tag = "v0.1.2"
+$tag = "v0.4.0"
 $name = "blockscope-$tag-x86_64-pc-windows-msvc"
 Invoke-WebRequest "https://github.com/Linvin-1233/Blockscope/releases/download/$tag/$name.zip" -OutFile "$name.zip"
 Invoke-WebRequest "https://github.com/Linvin-1233/Blockscope/releases/download/$tag/$name.sha256" -OutFile "$name.sha256"
@@ -104,27 +104,15 @@ cargo build --release -p blockscope-cli
 Artifacts:
 
 - Linux: `target/release/blockscope`
-- Windows: `../../../target/release/blockscope.exe`
+- Windows: `target/release/blockscope.exe`
+- macOS: `target/release/blockscope`
 
-Add `../../../target/release` to `PATH` or use the full path.
+Add `target/release` to `PATH` or use the full path.
 
 ## Test
 
 ```bash
 cargo test --workspace
-```
-
-Full quality gate:
-
-```bash
-# Linux
-bash ./scripts/check.sh
-
-# Windows PowerShell 7+
-pwsh ./scripts/check.ps1
-
-# Windows PowerShell 5.1
-powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/check.ps1
 ```
 
 ## First Render
@@ -159,8 +147,8 @@ blockscope render model.litematic --output out.png --assets /path/to/assets
 
 ## Next
 
-- [CLI Reference](cli.md)
-- [Materials and Resource Packs](materials.md)
-- [LOD and Large Structures](lod.md)
-- [Troubleshooting](troubleshooting.md)
+- [CLI Reference](./cli.md)
+- [Materials and Resource Packs](./materials.md)
+- [LOD and Large Structures](./lod.md)
+- [Troubleshooting](./troubleshooting.md)
 - [中文](../getting-started.md)
