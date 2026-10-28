@@ -8,8 +8,48 @@ User-facing changes are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The CLI now has a shared terminal style layer: `--color auto|always|never`,
+  `NO_COLOR` support, complete option lists, colored errors/warnings, and
+  tidier human-readable output. Running `blockscope` without arguments shows a
+  welcome screen with a text wordmark and exits `0`.
+- `render`, `bench`, `mesh`, and `materials` show stderr progress on a terminal:
+  mesh page counts and tile percentages for single-view rasterization, plus a
+  view counter for multi-view renders. Progress turns off for pipes, `--json`,
+  `CI`, or `--color never`, and never writes to stdout.
+- The welcome wordmark steps down with the terminal width and height at print
+  time, so narrow windows and split panes do not overflow; help text wraps to
+  the terminal as well.
+- Long-running progress bars reflow after a window resize instead of wrapping
+  and damaging the terminal output.
+
 ### Fixed
 
+- NBT lists, int arrays, and long arrays now check the remaining input before
+  reserving memory. A tiny truncated file can no longer declare a huge length
+  and force a multi-hundred-MiB allocation.
+- Resource-pack directory and zip assets are bounded while reading or
+  decompressing, so a zip bomb or oversized local file cannot be fully loaded
+  before the size check.
+- `Scene::new` rejects regions whose dimensions and packed state count disagree
+  or whose palette is empty, preventing malformed embedder scenes from panicking
+  in the mesh builder. `heap_bytes` now accounts for block entity NBT, so the
+  serve cache budget no longer underestimates container data. Regions whose
+  palette contains only air emit an `EMPTY_REGION` info diagnostic.
+- `supervise` now uses a bounded input channel and a 1 MiB protocol line limit,
+  providing real backpressure and rejecting overlong lines with
+  `INVALID_REQUEST`.
+- `supervise` derives its per-worker cache budget from the per-worker memory
+  ceiling when `--cache-bytes` is not set, instead of letting every worker use
+  half of the host's available memory.
+- `supervise` hashes inputs on a dedicated thread, so queue admission returns
+  `BUSY` before reading a file. A caller-supplied `input.hash` is reused for
+  routing instead of hashing the file again.
+- The streaming renderer no longer uses a barrier that could wait forever after
+  a worker panic; projection workers are joined normally.
+- Blockstate `x`/`y` rotations are normalized before negation, so `i32::MIN`
+  no longer overflows in debug builds.
 - Water and lava are no longer rendered as per-block staircase boxes. Meshing
   now reads the surrounding fluid columns and the cell above, computes the four
   top corner heights with vanilla's weighted averaging, hides internal faces
@@ -32,6 +72,13 @@ User-facing changes are recorded here. The format follows
 
 ### Changed
 
+- `serve` and `render --views` accept at most 64 angles. Multi-view batches are
+  bounded by an output-byte budget and each view is written and released before
+  the next batch, so memory no longer grows linearly with the view count.
+- `serve` validates size, views, lighting, background, texture filter, and the
+  output directory before parsing the input or building a mesh.
+- The protocol now documents `input.hash` as a caller-asserted cache identity:
+  cache hits trust it, cache misses re-read and verify the file.
 - `render` now defaults to `--stream-mesh=auto`: fixed-LOD renders stream mesh
   pages, while `--lod auto` keeps the full mesh because selecting a factor needs
   one. `--stream-mesh=off` restores the full-mesh path; `--stream-mesh` or `on`
@@ -48,6 +95,8 @@ User-facing changes are recorded here. The format follows
 
 ### Performance
 
+- Chest states resolve their block-entity model before the blockstate model, so
+  a resource-pack model that would be discarded is no longer parsed.
 - Material snapshots no longer build fallback geometry for states that a
   resource-pack model replaces. `ColorBlockCatalog` gains `resolve_style`, which
   returns only color, layer, and coverage; pack models and chests use it and the

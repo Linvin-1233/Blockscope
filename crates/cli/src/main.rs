@@ -1,4 +1,4 @@
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand};
 use litematic_core::LitematicError;
 use litematic_mesh::{MeshBuildOptions, MeshError};
 use litematic_render::RenderError;
@@ -7,12 +7,15 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use crate::ui::{ACCENT, BOLD, MUTED};
+
 mod capacity;
 mod commands;
 mod file_io;
 mod runtime;
 mod serve;
 mod supervise;
+mod ui;
 
 pub(crate) use file_io::read_file_limited;
 pub(crate) use runtime::*;
@@ -23,11 +26,23 @@ pub(crate) use runtime::*;
     name = "blockscope",
     version,
     about = "Blockscope - headless Litematic image renderer",
-    after_help = "Default limits: input 64 MiB, decompressed 256 MiB, NBT depth 64, regions 1024, total volume 200M."
+    after_help = "Default limits: input 64 MiB, decompressed 256 MiB, NBT depth 64, regions 1024, total volume 200M.",
+    after_long_help = "\
+Examples:
+  blockscope render model.litematic --output out.png
+  blockscope render model.litematic --terminal --no-file
+  blockscope inspect model.litematic --json
+  blockscope serve
+
+Color: --color auto|always|never. NO_COLOR is honored in auto mode.
+Run `blockscope help <command>` for command-specific help."
 )]
 struct Cli {
+    /// When to use color in output: auto, always, or never.
+    #[arg(long, global = true, value_name = "WHEN", default_value = "auto")]
+    color: ui::ColorMode,
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -150,19 +165,31 @@ impl AssetArgs {
 }
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
+    let early_color = ui::color_mode_from_args();
+    let command = Cli::command()
+        .color(early_color.clap_choice())
+        .styles(ui::clap_styles());
+    let matches = command.get_matches();
+    let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|error| error.exit());
+    ui::init(cli.color);
+    let _console = ui::ConsoleGuard::enable_utf8();
 
     match run(cli) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("{error}");
+            ui::errln!("{}error:{:#} {}", ui::ERROR, ui::ERROR, error.message);
             ExitCode::from(error.exit_code)
         }
     }
 }
 
 fn run(cli: Cli) -> Result<(), CliError> {
-    match cli.command {
+    let Some(command) = cli.command else {
+        ui::banner::print();
+        return Ok(());
+    };
+
+    match command {
         Command::Inspect(args) => inspect(args),
         Command::Validate(args) => validate(args),
         Command::Stats(args) => stats(args),
@@ -208,23 +235,36 @@ fn validate(args: ValidateArgs) -> Result<(), CliError> {
         args.limits.ignore_block_entity_nbt,
     )?;
 
-    println!("OK: {}", args.file.display());
-    println!(
-        "  litematic: v{} (data {})",
-        scene.metadata.litematic_version, scene.metadata.minecraft_data_version
+    ui::outln!(
+        "{}OK:{:#} {}",
+        ui::SUCCESS,
+        ui::SUCCESS,
+        args.file.display()
     );
-    println!("  regions: {}", scene.regions.len());
-    println!("  bounds: {:?}", scene.bounds.size());
-    println!(
-        "  volume: {} (air {}, non-air {})",
-        scene.statistics.volume, scene.statistics.air, scene.statistics.non_air
+    ui::outln!(
+        "  {MUTED}litematic:{MUTED:#} v{} {MUTED}(data {}){MUTED:#}",
+        scene.metadata.litematic_version,
+        scene.metadata.minecraft_data_version
+    );
+    ui::outln!("  {MUTED}regions:{MUTED:#} {}", scene.regions.len());
+    ui::outln!("  {MUTED}bounds:{MUTED:#} {:?}", scene.bounds.size());
+    ui::outln!(
+        "  {MUTED}volume:{MUTED:#} {} {MUTED}(air {}, non-air {}){MUTED:#}",
+        scene.statistics.volume,
+        scene.statistics.air,
+        scene.statistics.non_air
     );
 
     if !scene.diagnostics.is_empty() {
-        println!("  diagnostics: {}", scene.diagnostics.len());
+        ui::outln!("  {MUTED}diagnostics:{MUTED:#} {}", scene.diagnostics.len());
         for diagnostic in &scene.diagnostics {
-            println!(
-                "    {} [{}] {}",
+            let style = match diagnostic.severity.as_str() {
+                "error" => ui::ERROR,
+                "warning" => ui::WARNING,
+                _ => ui::MUTED,
+            };
+            ui::outln!(
+                "    {style}{}{style:#} [{style}{}{style:#}] {}",
                 diagnostic.severity.as_str(),
                 diagnostic.code.as_str(),
                 diagnostic.message
@@ -252,12 +292,15 @@ fn stats(args: StatsArgs) -> Result<(), CliError> {
     }
 
     let statistics = &scene.statistics;
-    println!("volume: {}", statistics.volume);
-    println!("air: {}", statistics.air);
-    println!("non-air: {}", statistics.non_air);
-    println!("block entities: {}", statistics.block_entities);
-    println!("entities: {}", statistics.entities);
-    println!("blocks:");
+    ui::outln!("{MUTED}volume:{MUTED:#} {}", statistics.volume);
+    ui::outln!("{MUTED}air:{MUTED:#} {}", statistics.air);
+    ui::outln!("{MUTED}non-air:{MUTED:#} {}", statistics.non_air);
+    ui::outln!(
+        "{MUTED}block entities:{MUTED:#} {}",
+        statistics.block_entities
+    );
+    ui::outln!("{MUTED}entities:{MUTED:#} {}", statistics.entities);
+    ui::outln!("{MUTED}blocks:{MUTED:#}");
 
     let mut blocks: Vec<_> = statistics.blocks.iter().collect();
     blocks.sort_by(|left, right| {
@@ -267,41 +310,62 @@ fn stats(args: StatsArgs) -> Result<(), CliError> {
             .then_with(|| left.0.canonical().cmp(&right.0.canonical()))
     });
 
+    ui::outln!("{MUTED}{:>10}  BLOCK STATE{MUTED:#}", "COUNT");
     for (state, count) in blocks {
-        println!("{count:>10}  {}", state.canonical());
+        if state.is_air() {
+            continue;
+        }
+        ui::outln!("{MUTED}{count:>10}{MUTED:#}  {}", state.canonical());
     }
 
     Ok(())
 }
 
 fn print_summary(path: &Path, manifest: &Manifest) {
-    println!("file: {}", path.display());
-    println!(
-        "litematic: v{} (data {})",
-        manifest.parser.litematic_version, manifest.parser.minecraft_data_version
+    ui::outln!("{MUTED}file:{MUTED:#} {ACCENT}{}{ACCENT:#}", path.display());
+    ui::outln!(
+        "{MUTED}litematic:{MUTED:#} v{} {MUTED}(data {}){MUTED:#}",
+        manifest.parser.litematic_version,
+        manifest.parser.minecraft_data_version
     );
 
     if let Some(name) = &manifest.metadata.name {
-        println!("name: {name}");
+        ui::outln!("{MUTED}name:{MUTED:#} {BOLD}{name}{BOLD:#}");
     }
     if let Some(author) = &manifest.metadata.author {
-        println!("author: {author}");
+        ui::outln!("{MUTED}author:{MUTED:#} {author}");
     }
 
-    println!("regions: {}", manifest.regions.len());
-    println!(
-        "bounds: min {:?}, max {:?}, size {:?}",
-        manifest.bounds.min, manifest.bounds.max_exclusive, manifest.bounds.size
+    ui::outln!("{MUTED}regions:{MUTED:#} {}", manifest.regions.len());
+    ui::outln!(
+        "{MUTED}bounds:{MUTED:#} min {:?}, max {:?}, size {:?}",
+        manifest.bounds.min,
+        manifest.bounds.max_exclusive,
+        manifest.bounds.size
     );
-    println!(
-        "volume: {} (air {}, non-air {})",
-        manifest.statistics.volume, manifest.statistics.air, manifest.statistics.non_air
+    ui::outln!(
+        "{MUTED}volume:{MUTED:#} {} {MUTED}(air {}, non-air {}){MUTED:#}",
+        manifest.statistics.volume,
+        manifest.statistics.air,
+        manifest.statistics.non_air
     );
-    println!("block entities: {}", manifest.statistics.block_entities);
-    println!("entities: {}", manifest.statistics.entities);
-    println!("diagnostics: {}", manifest.diagnostics.len());
-    println!("input hash: {}", manifest.input_hash);
-    println!("scene hash: {}", manifest.scene_hash);
+    ui::outln!(
+        "{MUTED}block entities:{MUTED:#} {}",
+        manifest.statistics.block_entities
+    );
+    ui::outln!("{MUTED}entities:{MUTED:#} {}", manifest.statistics.entities);
+    ui::outln!(
+        "{MUTED}diagnostics:{MUTED:#} {}",
+        manifest.diagnostics.len()
+    );
+    ui::outln!(
+        "{MUTED}input hash:{MUTED:#} {MUTED}{}{MUTED:#}",
+        manifest.input_hash
+    );
+    ui::outln!(
+        "{MUTED}scene hash:{MUTED:#} {MUTED}{}{MUTED:#}",
+        manifest.scene_hash
+    );
 }
 
 #[derive(Debug)]

@@ -11,7 +11,7 @@ use litematic_scene::{Scene, sha256};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::fs::{self, File};
-use std::io::{BufRead, BufWriter, Write};
+use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
@@ -145,8 +145,40 @@ pub fn run(args: ServeArgs) -> Result<(), CliError> {
     write_line(&mut out, &hello(&capacity, cache_bytes))?;
 
     let stdin = std::io::stdin();
-    for line in stdin.lock().lines() {
-        let line = line.map_err(|error| CliError::input(format!("IO_ERROR: stdin: {error}")))?;
+    let mut input = stdin.lock();
+    loop {
+        let line = match crate::file_io::read_line_limited(
+            &mut input,
+            crate::file_io::MAX_REQUEST_LINE_BYTES,
+        ) {
+            Ok(crate::file_io::LineRead::Line(line)) => line,
+            Ok(crate::file_io::LineRead::Eof) => break,
+            Ok(crate::file_io::LineRead::TooLong) => {
+                write_line(
+                    &mut out,
+                    &error_result(
+                        "",
+                        "INVALID_REQUEST",
+                        &format!(
+                            "request line exceeds {} bytes",
+                            crate::file_io::MAX_REQUEST_LINE_BYTES
+                        ),
+                    ),
+                )?;
+                continue;
+            }
+            Ok(crate::file_io::LineRead::InvalidUtf8) => {
+                write_line(
+                    &mut out,
+                    &error_result("", "INVALID_REQUEST", "request line is not valid UTF-8"),
+                )?;
+                continue;
+            }
+            Err(error) => {
+                return Err(CliError::input(format!("IO_ERROR: stdin: {error}")));
+            }
+        };
+
         let line = line.trim();
         if line.is_empty() {
             continue;
@@ -209,7 +241,7 @@ fn handle(
             let code = error_code(&error.message);
             let retryable = matches!(
                 code.as_str(),
-                "PNG_ENCODE_FAILED" | "IO_ERROR" | "INTERNAL_ERROR"
+                "PNG_ENCODE_FAILED" | "TEMP_STORAGE_FAILED" | "IO_ERROR" | "INTERNAL_ERROR"
             );
             json!({
                 "type": "result",
@@ -245,6 +277,68 @@ fn process(
         return Err(CliError::input(
             "INVALID_REQUEST: only png output is supported",
         ));
+    }
+
+    let views = if request.views.is_empty() {
+        vec![DEFAULT_YAW]
+    } else {
+        request.views.clone()
+    };
+    if views.len() > crate::MAX_VIEWS {
+        return Err(CliError::input(format!(
+            "INVALID_RENDER_OPTIONS: views must contain at most {} angles",
+            crate::MAX_VIEWS
+        )));
+    }
+    for yaw in &views {
+        if !yaw.is_finite() || !(0.0..=360.0).contains(yaw) {
+            return Err(CliError::input(format!(
+                "INVALID_RENDER_OPTIONS: view angle '{yaw}' must be within 0..=360"
+            )));
+        }
+    }
+
+    let lighting = LightingProfile::parse(request.lighting.as_deref().unwrap_or("simple-ao-v1"))
+        .ok_or_else(|| {
+            CliError::input(format!(
+                "INVALID_RENDER_OPTIONS: unknown lighting profile '{}'",
+                request.lighting.as_deref().unwrap_or_default()
+            ))
+        })?;
+    let background = parse_background(request.background.as_deref().unwrap_or("transparent"))?;
+    let texture_filter =
+        parse_texture_filter(request.texture_filter.as_deref().unwrap_or("nearest"))?;
+
+    fs::create_dir_all(&request.output_dir).map_err(|error| {
+        CliError::input(format!(
+            "IO_ERROR: {}: {error}",
+            request.output_dir.display()
+        ))
+    })?;
+
+    let view_options: Vec<RenderOptions> = views
+        .iter()
+        .map(|&yaw| {
+            let mut options = RenderOptions {
+                width: request.width.unwrap_or(DEFAULT_SIZE),
+                height: request.height.unwrap_or(DEFAULT_SIZE),
+                yaw,
+                elevation: request.elevation.unwrap_or(DEFAULT_ELEVATION),
+                background,
+                lighting,
+                supersample: request.supersample.unwrap_or(DEFAULT_SUPERSAMPLE),
+                threads: request.threads.unwrap_or(context.default_threads),
+                texture_filter,
+                ..Default::default()
+            };
+            crate::apply_render_limits(context.force_limits, &mut options);
+            options
+        })
+        .collect();
+    // Validate before parsing or meshing so a bad size, elevation, or thread
+    // count cannot force a full expensive job.
+    for options in &view_options {
+        options.validate().map_err(CliError::from)?;
     }
 
     let limits = crate::decode_limits(context.force_limits, context.ignore_block_entity_nbt);
@@ -361,100 +455,57 @@ fn process(
             }
         };
 
-    let views = if request.views.is_empty() {
-        vec![DEFAULT_YAW]
-    } else {
-        request.views.clone()
-    };
-    for yaw in &views {
-        if !yaw.is_finite() || !(0.0..=360.0).contains(yaw) {
-            return Err(CliError::input(format!(
-                "INVALID_RENDER_OPTIONS: view angle '{yaw}' must be within 0..=360"
-            )));
-        }
-    }
-
-    let lighting = LightingProfile::parse(request.lighting.as_deref().unwrap_or("simple-ao-v1"))
-        .ok_or_else(|| {
-            CliError::input(format!(
-                "INVALID_RENDER_OPTIONS: unknown lighting profile '{}'",
-                request.lighting.as_deref().unwrap_or_default()
-            ))
-        })?;
-    let background = parse_background(request.background.as_deref().unwrap_or("transparent"))?;
-    let texture_filter =
-        parse_texture_filter(request.texture_filter.as_deref().unwrap_or("nearest"))?;
-
-    fs::create_dir_all(&request.output_dir).map_err(|error| {
-        CliError::input(format!(
-            "IO_ERROR: {}: {error}",
-            request.output_dir.display()
-        ))
-    })?;
-
-    let view_options: Vec<RenderOptions> = views
-        .iter()
-        .map(|&yaw| {
-            let mut options = RenderOptions {
-                width: request.width.unwrap_or(DEFAULT_SIZE),
-                height: request.height.unwrap_or(DEFAULT_SIZE),
-                yaw,
-                elevation: request.elevation.unwrap_or(DEFAULT_ELEVATION),
-                background,
-                lighting,
-                supersample: request.supersample.unwrap_or(DEFAULT_SUPERSAMPLE),
-                threads: request.threads.unwrap_or(context.default_threads),
-                texture_filter,
-                ..Default::default()
-            };
-            crate::apply_render_limits(context.force_limits, &mut options);
-            options
-        })
-        .collect();
-
     let view_count = view_options.len();
-    let (rendered, render_times, render_total) = crate::render_views(
+    let mut outputs = Vec::with_capacity(view_count);
+    let mut png_total = 0.0;
+    let mut last_statistics = None;
+
+    // Write each view as soon as it is rendered instead of retaining every RGBA
+    // buffer until the whole request finishes.
+    let (_, render_total) = crate::render_views_with(
         &scene,
         &mesh,
         snapshot.as_deref(),
         &view_options,
         request.threads.unwrap_or(context.default_threads),
+        None,
+        |output, render_ms, options| {
+            let name = if view_count == 1 {
+                format!("{}.png", request.id)
+            } else {
+                format!("{}-{}.png", request.id, options.yaw)
+            };
+            let path = request.output_dir.join(name);
+
+            let png_started = Instant::now();
+            let file = File::create(&path).map_err(|error| {
+                CliError::input(format!("IO_ERROR: {}: {error}", path.display()))
+            })?;
+            let mut writer = BufWriter::new(file);
+            write_png(&output, &mut writer).map_err(CliError::from)?;
+            writer.flush().map_err(|error| {
+                CliError::input(format!("IO_ERROR: {}: {error}", path.display()))
+            })?;
+            let png_ms = png_started.elapsed().as_secs_f64() * 1000.0;
+            png_total += png_ms;
+
+            let bytes = fs::metadata(&path).map(|meta| meta.len()).unwrap_or(0);
+            let width = output.width;
+            let height = output.height;
+            let statistics = output.statistics;
+            last_statistics = Some(statistics);
+            outputs.push(json!({
+                "path": path.display().to_string(),
+                "yaw": options.yaw,
+                "width": width,
+                "height": height,
+                "bytes": bytes,
+                "renderMs": render_ms,
+                "pngMs": png_ms,
+            }));
+            Ok(())
+        },
     )?;
-    let mut outputs = Vec::with_capacity(view_count);
-    let mut png_total = 0.0;
-    let mut last_statistics = None;
-
-    for ((output, render_ms), options) in rendered.into_iter().zip(render_times).zip(view_options) {
-        let name = if view_count == 1 {
-            format!("{}.png", request.id)
-        } else {
-            format!("{}-{}.png", request.id, options.yaw)
-        };
-        let path = request.output_dir.join(name);
-
-        let png_started = Instant::now();
-        let file = File::create(&path)
-            .map_err(|error| CliError::input(format!("IO_ERROR: {}: {error}", path.display())))?;
-        let mut writer = BufWriter::new(file);
-        write_png(&output, &mut writer).map_err(CliError::from)?;
-        writer
-            .flush()
-            .map_err(|error| CliError::input(format!("IO_ERROR: {}: {error}", path.display())))?;
-        let png_ms = png_started.elapsed().as_secs_f64() * 1000.0;
-        png_total += png_ms;
-
-        let bytes = fs::metadata(&path).map(|meta| meta.len()).unwrap_or(0);
-        last_statistics = Some(output.statistics);
-        outputs.push(json!({
-            "path": path.display().to_string(),
-            "yaw": options.yaw,
-            "width": output.width,
-            "height": output.height,
-            "bytes": bytes,
-            "renderMs": render_ms,
-            "pngMs": png_ms,
-        }));
-    }
 
     let statistics = last_statistics.expect("views are never empty");
     Ok(json!({

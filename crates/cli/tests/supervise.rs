@@ -244,6 +244,77 @@ fn supervisor_enforces_the_memory_ceiling() {
 }
 
 #[test]
+fn supervisor_reports_the_derived_cache_budget() {
+    let (mut child, mut stdin, mut lines) =
+        start_with(&["--workers", "1", "--threads", "1", "--memory", "512"]);
+    let hello = read_json(&mut lines);
+
+    assert_eq!(hello["memoryLimitPerWorkerBytes"], 512u64 * 1024 * 1024);
+    assert_eq!(hello["cacheBytes"], 256u64 * 1024 * 1024);
+
+    send(&mut stdin, &json!({ "type": "shutdown" }));
+    assert_eq!(read_json(&mut lines)["type"], "bye");
+    assert!(child.wait().unwrap().success());
+}
+
+#[test]
+fn supervisor_handles_unreadable_inputs_through_the_hash_worker() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join("missing.litematic");
+    let out_dir = dir.path().join("out");
+
+    let (mut child, mut stdin, mut lines) = start();
+    let _hello = read_json(&mut lines);
+    send(
+        &mut stdin,
+        &json!({
+            "type": "render",
+            "id": "missing",
+            "input": { "path": missing.display().to_string() },
+            "outputDir": out_dir.display().to_string(),
+        }),
+    );
+
+    let result = read_json(&mut lines);
+    assert_eq!(result["ok"], false, "{result}");
+    assert_eq!(result["error"]["code"], "IO_ERROR");
+
+    send(&mut stdin, &json!({ "type": "shutdown" }));
+    assert_eq!(read_json(&mut lines)["type"], "bye");
+    assert!(child.wait().unwrap().success());
+}
+
+#[test]
+fn supervisor_rejects_too_many_workers() {
+    let output = Command::new(env!("CARGO_BIN_EXE_blockscope"))
+        .args(["supervise", "--workers", "257"])
+        .output()
+        .unwrap();
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("workers must be at most 256"), "{stderr}");
+}
+
+#[test]
+fn supervisor_rejects_overlong_request_lines_without_exiting() {
+    let (mut child, mut stdin, mut lines) = start();
+    let _hello = read_json(&mut lines);
+
+    let overlong = "x".repeat(1024 * 1024 + 1);
+    writeln!(stdin, "{overlong}").unwrap();
+    stdin.flush().unwrap();
+
+    let result = read_json(&mut lines);
+    assert_eq!(result["ok"], false, "{result}");
+    assert_eq!(result["error"]["code"], "INVALID_REQUEST");
+
+    send(&mut stdin, &json!({ "type": "shutdown" }));
+    assert_eq!(read_json(&mut lines)["type"], "bye");
+    assert!(child.wait().unwrap().success());
+}
+
+#[test]
 fn supervisor_reports_bad_messages_without_exiting() {
     let (mut child, mut stdin, mut lines) = start();
     let _hello = read_json(&mut lines);

@@ -59,7 +59,7 @@ A single view writes `out.png`. Multiple views write `out-45.png`,
 `out-225.png`, and so on. In `serve` mode the names are `{id}.png` for one view
 or `{id}-{yaw}.png` for multiple views. When a complete mesh is available,
 multiple views render concurrently within the `--threads` budget; output order
-is preserved, while each concurrent view holds its own tile buffers.
+is preserved, and each view is written and released before the next batch.
 
 ## Common Options
 
@@ -71,7 +71,7 @@ is preserved, while each concurrent view holds its own tile buffers.
 | `--texture-filter nearest\|linear` | Texture sampling; default `nearest` |
 | `--width` / `--height` | Output size; default `1024x1024`, maximum 4096 per side |
 | `--supersample <1-4>` | Supersampling factor; default `2` |
-| `--views <LIST>` | Comma-separated yaw angles, e.g. `45,225` |
+| `--views <LIST>` | Comma-separated yaw angles, e.g. `45,225`; at most 64 |
 | `--yaw` / `--elevation` | Single-view horizontal/elevation angles |
 | `--background transparent\|#RRGGBB[AA]` | Background; default transparent |
 | `--lighting flat-v1\|simple-ao-v1` | Lighting profile; default `simple-ao-v1` |
@@ -85,10 +85,44 @@ is preserved, while each concurrent view holds its own tile buffers.
 | `--terminal-protocol <auto\|kitty\|iterm2\|sixel\|halfblocks>` | Specify terminal graphics protocol; defaults to auto-detection |
 | `--terminal-width <COLS>` / `--terminal-height <ROWS>` | Target display width in columns and height in rows |
 | `--no-file` | Render only to the terminal without writing an output PNG file |
+| `--color auto\|always\|never` | Color policy for help, errors, and human output; default `auto` |
 
 `inspect`, `validate`, and `stats` keep `TileEntities` by default. Geometry
 commands skip them by default to reduce parse time and memory for large
 containers.
+
+## Terminal Style and Progress
+
+Running `blockscope` without arguments prints the static welcome screen and
+exits immediately. The wordmark chooses its layout from the terminal width and
+height at print time; redirected output uses the compact mark. After the
+process exits, the terminal owns those characters and may reflow them on
+resize; the program can no longer control them.
+
+The wordmark steps down with the terminal width and height: an 82-column
+banner, a 59-column compact mark, a 47-column small mark, and finally a plain
+text title with only the most useful commands. Redirected output uses the
+compact mark.
+
+`--color` is accepted before or after the subcommand and controls help, errors,
+and human-readable results:
+
+| Value | Behavior |
+|---|---|
+| `auto` (default) | Color only on a terminal; `NO_COLOR` disables it |
+| `always` | Emit color even through a pipe |
+| `never` | Never emit color |
+
+`--json` output is always plain JSON and is never affected by `--color`.
+
+`render`, `bench`, `mesh`, and `materials` show progress on stderr when stderr
+is a terminal: parsing, materials, mesh page counts, and tile percentages for
+single-view rasterization. Multi-view renders show a view counter; streaming
+compositing and `--lod auto` use indeterminate stages. Progress turns off when
+stderr is not a terminal, with `--json`, when `CI` is set, with `NO_COLOR`, or
+with `--color never`. It never writes to stdout or changes piped output. Bars
+shrink or fall back to a bare counter on narrow terminals and reflow after a
+window resize.
 
 ## Exit Codes
 

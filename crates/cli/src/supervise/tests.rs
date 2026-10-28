@@ -37,6 +37,15 @@ fn unknown_memory_disables_the_limit() {
 }
 
 #[test]
+fn cache_budget_follows_the_per_worker_memory_limit() {
+    let limit = 4 * 1024 * MIB;
+    assert_eq!(cache_budget(0, Some(limit)), limit / 2);
+    assert_eq!(cache_budget(0, None), 0);
+    assert_eq!(cache_budget(123 * MIB, Some(limit)), 123 * MIB);
+    assert_eq!(cache_budget(0, Some(64 * MIB)), 32 * MIB);
+}
+
+#[test]
 fn route_key_hashes_regular_files_and_preserves_lod() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("input.litematic");

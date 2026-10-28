@@ -11,6 +11,8 @@ Windows, with a single job in flight per process.
 - Newline-delimited JSON over the worker's standard input and output.
 - One UTF-8 JSON object per line, terminated by a single `\n`. Readers must
   accept `\r\n` but writers emit `\n` only.
+- One line is limited to 1 MiB including its terminator. An overlong or invalid
+  UTF-8 line returns `INVALID_REQUEST`; the worker/supervisor keeps running.
 - No BOM, no pretty printing, no multi-line objects.
 - `stdout` carries protocol messages only. Logs and diagnostics go to `stderr`.
 - Standard input is read as raw bytes and decoded as UTF-8; do not route it
@@ -58,8 +60,10 @@ supervisor                          worker
 size its pool from `suggestedWorkers` and `suggestedThreads` instead of guessing
 from the host. Values come from cgroup limits on Linux and
 `GlobalMemoryStatusEx` on Windows; see `blockscope capacity --json` for the same
-data from the command line. `cacheBytes` is the estimated scene/mesh cache
-budget; `0` means the worker derives it from available memory.
+data from the command line. `cacheBytes` is the effective scene/mesh cache
+budget; `supervise` derives it from its per-worker memory ceiling and passes it
+to each child, while a standalone worker receiving `0` derives it from available
+memory.
 
 ## Render request
 
@@ -68,8 +72,8 @@ budget; `0` means the worker derives it from available memory.
 | `type` | string | required | `"render"` |
 | `id` | string | required | 1-64 characters of `[A-Za-z0-9_-]`, echoed in the result |
 | `input.path` | string | required | Absolute path to a `.litematic` |
-| `input.hash` | string | optional | Expected SHA-256 of the file; mismatch fails the job |
-| `views` | number[] | `[45]` | Yaw angles in degrees, finite, `0..=360` |
+| `input.hash` | string | optional | Caller-asserted SHA-256 identity; on a cache hit the worker trusts it and does not read the path, on a miss it verifies the file and fails on mismatch |
+| `views` | number[] | `[45]` | Yaw angles in degrees, finite, `0..=360`; at most 64 entries |
 | `width` | integer | `1024` | `1..=4096` |
 | `height` | integer | `1024` | `1..=4096` |
 | `supersample` | integer | `2` | `1..=4`; internal pixels must stay under the limit |
@@ -84,6 +88,8 @@ budget; `0` means the worker derives it from available memory.
 
 `width * height` must not exceed 16,777,216 output pixels. Supersampling
 multiplies both sides, so the internal image must not exceed 33,554,432 pixels.
+The worker validates all render options and creates `outputDir` before parsing
+the input or building a mesh.
 
 Paths must be absolute. The worker rejects relative paths with
 `INVALID_REQUEST`, so behaviour does not depend on the worker's working
@@ -150,7 +156,8 @@ rasterizer mid-tile.
 
 - `outputs` preserves `views` order, one entry per view.
 - Output files are `{id}.png` for a single view and `{id}-{yaw}.png` for
-  multiple views. The engine never overwrites a result from another job.
+  multiple views. Callers must use a unique `id` (and `outputDir`) per job;
+  duplicate ids or duplicate yaw values intentionally overwrite the same path.
 - `cacheHit` is `true` when the worker reused a parsed scene and mesh for the
   same `inputHash` **and** `lod`; `parseMs`, `lodMs`, and `meshMs` are then `0`.
   When the request includes `input.hash`, a cache hit is resolved before reading
@@ -191,7 +198,7 @@ rasterizer mid-tile.
 | `SHUTDOWN` | yes | Supervisor is draining and stopped accepting work |
 | `MEMORY_LIMIT` | yes | Worker exceeded its per-worker memory ceiling |
 | `PNG_ENCODE_FAILED` | maybe | Encoder failure; retry once |
-| `TEMP_STORAGE_FAILED` | maybe | Translucent spill could not create, write, or read its temporary bucket files |
+| `TEMP_STORAGE_FAILED` | yes | Translucent spill could not create, write, or read its temporary bucket files |
 | `IO_ERROR` | maybe | Input or output file access failed |
 | `INTERNAL_ERROR` | maybe | Bug; retry once, then report |
 | `TIMEOUT` | yes | Emitted by the supervisor, not the engine |
@@ -243,7 +250,7 @@ to a fresh directory or overwritten in place, and no state survives a job.
 | Graceful stop | stdin EOF or `shutdown` | stdin EOF or `shutdown` | stdin EOF or `shutdown` |
 | Kill policy | `SIGKILL` after a 10 s grace | `TerminateProcess` after a 10 s grace | `SIGKILL` after a 10 s grace |
 | Child cleanup | reaped by supervisor; exit on pipe close | reaped by supervisor; exit on pipe close | reaped by supervisor; exit on pipe close |
-| RSS source | `/proc/self/status` `VmHWM` | `K32GetProcessMemoryInfo` working set | `getrusage` `ru_maxrss` |
+| RSS source | `/proc/<pid>/status` `VmRSS` | `K32GetProcessMemoryInfo` working set | `proc_pidinfo` `pti_resident_size` |
 | Temp directory | `$TMPDIR` | `%TEMP%` | `$TMPDIR` |
 | Path separator | `/` | `/` or `\`; absolute drive paths required | `/` |
 | Non-UTF-8 paths | rejected | not possible; all paths are UTF-16, sent as UTF-8 | rejected |
@@ -274,8 +281,9 @@ prompts, no reading from a TTY.
 - `protocolVersion` is an integer, incremented for breaking changes.
 - New optional request fields and new response fields are not breaking.
 - Removing fields, renaming fields, or changing defaults is breaking.
-- A worker that receives an unknown `protocolVersion` exits with code 2 and a
-  `hello`-less stderr message.
+- Version v1 requests do not carry `protocolVersion`; clients compare the
+  value in `hello` before sending jobs. An unknown request `type` returns
+  `INVALID_REQUEST` and leaves the worker running.
 
 ## Non-goals for v1
 

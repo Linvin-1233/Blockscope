@@ -340,6 +340,97 @@ fn serve_accepts_auto_lod() {
 }
 
 #[test]
+fn serve_reports_the_effective_cache_budget() {
+    let (mut child, mut stdin, mut lines) = start_with(&["--cache", "1", "--cache-bytes", "12345"]);
+    let hello = read_json(&mut lines);
+
+    assert_eq!(hello["cacheBytes"], 12345);
+
+    send(&mut stdin, &json!({ "type": "shutdown" }));
+    assert_eq!(read_json(&mut lines)["type"], "bye");
+    assert!(child.wait().unwrap().success());
+}
+
+#[test]
+fn serve_rejects_overlong_request_lines_without_exiting() {
+    let (mut child, mut stdin, mut lines) = start();
+    let _hello = read_json(&mut lines);
+
+    let overlong = "x".repeat(1024 * 1024 + 1);
+    writeln!(stdin, "{overlong}").unwrap();
+    stdin.flush().unwrap();
+
+    let result = read_json(&mut lines);
+    assert_eq!(result["ok"], false, "{result}");
+    assert_eq!(result["error"]["code"], "INVALID_REQUEST");
+
+    send(&mut stdin, &json!({ "type": "shutdown" }));
+    assert_eq!(read_json(&mut lines)["type"], "bye");
+    assert!(child.wait().unwrap().success());
+}
+
+#[test]
+fn serve_rejects_too_many_views_before_reading_the_input() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("missing.litematic");
+    let out_dir = dir.path().join("out");
+
+    let (mut child, mut stdin, mut lines) = start();
+    let _hello = read_json(&mut lines);
+    send(
+        &mut stdin,
+        &json!({
+            "type": "render",
+            "id": "too-many-views",
+            "input": { "path": input.display().to_string() },
+            "views": vec![45.0; 65],
+            "width": 64,
+            "height": 64,
+            "supersample": 1,
+            "outputDir": out_dir.display().to_string(),
+        }),
+    );
+
+    let result = read_json(&mut lines);
+    assert_eq!(result["ok"], false, "{result}");
+    assert_eq!(result["error"]["code"], "INVALID_RENDER_OPTIONS");
+
+    send(&mut stdin, &json!({ "type": "shutdown" }));
+    assert_eq!(read_json(&mut lines)["type"], "bye");
+    assert!(child.wait().unwrap().success());
+}
+
+#[test]
+fn serve_rejects_invalid_render_options_before_reading_the_input() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("missing.litematic");
+    let out_dir = dir.path().join("out");
+
+    let (mut child, mut stdin, mut lines) = start();
+    let _hello = read_json(&mut lines);
+    send(
+        &mut stdin,
+        &json!({
+            "type": "render",
+            "id": "bad-size",
+            "input": { "path": input.display().to_string() },
+            "width": 0,
+            "height": 64,
+            "supersample": 1,
+            "outputDir": out_dir.display().to_string(),
+        }),
+    );
+
+    let result = read_json(&mut lines);
+    assert_eq!(result["ok"], false, "{result}");
+    assert_eq!(result["error"]["code"], "INVALID_RENDER_OPTIONS");
+
+    send(&mut stdin, &json!({ "type": "shutdown" }));
+    assert_eq!(read_json(&mut lines)["type"], "bye");
+    assert!(child.wait().unwrap().success());
+}
+
+#[test]
 fn serve_rejects_oversized_thread_requests() {
     let dir = tempfile::tempdir().unwrap();
     let input = fixture(dir.path());

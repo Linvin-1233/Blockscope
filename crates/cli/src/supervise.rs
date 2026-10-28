@@ -7,7 +7,7 @@ use std::collections::{HashMap, VecDeque};
 use std::ffi::OsString;
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::mpsc::{self, Sender};
+use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -17,6 +17,8 @@ use self::rss::process_rss_bytes;
 
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
 const MIB: u64 = 1024 * 1024;
+/// Upper bound for worker processes; each worker also owns threads and a cache.
+const MAX_SUPERVISOR_WORKERS: u32 = 256;
 /// The sticky map is only a cache-locality hint; cap it so a long-lived
 /// supervisor does not grow with every distinct input file.
 const MAX_STICKY_ENTRIES: usize = 4096;
@@ -82,6 +84,7 @@ struct Spec {
 
 enum Event {
     Request(Job),
+    RequestReady(Job),
     WorkerLine {
         index: usize,
         generation: u64,
@@ -108,6 +111,11 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
         args.workers
     }
     .max(1);
+    if workers > MAX_SUPERVISOR_WORKERS {
+        return Err(CliError::input(format!(
+            "INVALID_RENDER_OPTIONS: workers must be at most {MAX_SUPERVISOR_WORKERS}"
+        )));
+    }
     let threads = if args.threads == 0 {
         capacity.suggested_threads.min(crate::MAX_THREADS)
     } else {
@@ -121,7 +129,7 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
         )));
     }
     let queue_limit = if args.queue == 0 {
-        workers * 2
+        workers.saturating_mul(2)
     } else {
         args.queue
     } as usize;
@@ -132,11 +140,12 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
         Some(Duration::from_secs(args.timeout))
     };
     let memory_limit = memory_limit(&capacity, workers, args.memory);
+    let cache_bytes = cache_budget(args.cache_bytes, memory_limit);
 
     let spec = Spec {
         threads,
         cache: args.cache,
-        cache_bytes: args.cache_bytes,
+        cache_bytes,
         greedy_mesh: args.mesh.options().greedy,
         assets: args.assets.cli_args(),
         timeout,
@@ -152,9 +161,16 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
         );
     }
 
-    let (tx, rx) = mpsc::channel();
+    let channel_capacity = queue_limit
+        .saturating_add(workers as usize)
+        .saturating_add(16);
+    let (tx, rx) = mpsc::sync_channel(channel_capacity);
     let input = tx.clone();
     thread::spawn(move || read_stdin(input));
+
+    let (hash_tx, hash_rx) = mpsc::sync_channel::<Job>(channel_capacity);
+    let hasher_tx = tx.clone();
+    thread::spawn(move || hash_requests(hash_rx, hasher_tx));
 
     let mut generation = 0u64;
     let mut pool = Vec::with_capacity(workers as usize);
@@ -194,6 +210,7 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
 
     let mut queue: VecDeque<Job> = VecDeque::new();
     let mut sticky: HashMap<String, usize> = HashMap::new();
+    let mut pending_hashes = 0usize;
     let mut shutdown_at: Option<Instant> = None;
     let mut last_sample = Instant::now();
 
@@ -205,18 +222,42 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
         };
 
         match event {
-            Some(Event::Request(mut job)) => {
+            Some(Event::Request(job)) => {
                 if shutdown_at.is_some() {
                     write_error(&mut out, &job.id, "SHUTDOWN", "worker is shutting down")?;
                     continue;
                 }
-                let idle = pool.iter().any(|worker| worker.busy.is_none());
-                if !idle && queue.len() >= queue_limit {
+                let busy = pool.iter().filter(|worker| worker.busy.is_some()).count();
+                let outstanding = queue
+                    .len()
+                    .saturating_add(pending_hashes)
+                    .saturating_add(busy);
+                if outstanding >= queue_limit.saturating_add(pool.len()) {
                     write_error(&mut out, &job.id, "BUSY", "queue is full")?;
                     continue;
                 }
+
                 if job.hash.is_empty() {
-                    job.hash = route_key(&job.line);
+                    pending_hashes = pending_hashes.saturating_add(1);
+                    if let Err(error) = hash_tx.send(job) {
+                        pending_hashes = pending_hashes.saturating_sub(1);
+                        write_error(
+                            &mut out,
+                            &error.0.id,
+                            "INTERNAL_ERROR",
+                            "hash worker stopped",
+                        )?;
+                    }
+                } else {
+                    queue.push_back(job);
+                    dispatch(&mut pool, &mut queue, &mut sticky, &spec, &mut out)?;
+                }
+            }
+            Some(Event::RequestReady(job)) => {
+                pending_hashes = pending_hashes.saturating_sub(1);
+                if shutdown_at.is_some() {
+                    write_error(&mut out, &job.id, "SHUTDOWN", "worker is shutting down")?;
+                    continue;
                 }
                 queue.push_back(job);
                 dispatch(&mut pool, &mut queue, &mut sticky, &spec, &mut out)?;
@@ -359,7 +400,7 @@ fn enforce_limits(
     queue: &mut VecDeque<Job>,
     sticky: &mut HashMap<String, usize>,
     spec: &Spec,
-    tx: &Sender<Event>,
+    tx: &SyncSender<Event>,
     generation: &mut u64,
     out: &mut impl Write,
 ) -> Result<(), CliError> {
@@ -514,11 +555,22 @@ fn memory_limit(capacity: &Capacity, workers: u32, override_mib: u64) -> Option<
     Some((per_worker * 85 / 100).max(256 * MIB))
 }
 
+/// Derive a per-worker cache budget from the memory ceiling.
+///
+/// A worker that derives its own budget uses half of the *host* available
+/// memory, which is far above its share when several workers share the host.
+fn cache_budget(requested: u64, memory_limit: Option<u64>) -> u64 {
+    if requested > 0 {
+        return requested;
+    }
+    memory_limit.map(|limit| limit / 2).unwrap_or(0)
+}
+
 fn spawn_worker(
     index: usize,
     generation: u64,
     spec: &Spec,
-    tx: Sender<Event>,
+    tx: SyncSender<Event>,
 ) -> Result<Worker, CliError> {
     let exe = std::env::current_exe()
         .map_err(|error| CliError::internal(format!("current exe: {error}")))?;
@@ -596,10 +648,51 @@ fn spawn_worker(
     })
 }
 
-fn read_stdin(tx: Sender<Event>) {
+/// Hash requests off the supervisor's event loop.
+///
+/// The supervisor still validates the queue before accepting a job, so an
+/// overloaded pool rejects requests without reading their input files.
+fn hash_requests(rx: Receiver<Job>, tx: SyncSender<Event>) {
+    while let Ok(mut job) = rx.recv() {
+        if job.hash.is_empty() {
+            job.hash = route_key(&job.line);
+        }
+        if tx.send(Event::RequestReady(job)).is_err() {
+            break;
+        }
+    }
+}
+
+fn read_stdin(tx: SyncSender<Event>) {
     let stdin = std::io::stdin();
-    for line in stdin.lock().lines() {
-        let Ok(line) = line else { break };
+    let mut input = stdin.lock();
+    loop {
+        let line = match crate::file_io::read_line_limited(
+            &mut input,
+            crate::file_io::MAX_REQUEST_LINE_BYTES,
+        ) {
+            Ok(crate::file_io::LineRead::Line(line)) => line,
+            Ok(crate::file_io::LineRead::Eof) => break,
+            Ok(crate::file_io::LineRead::TooLong) => {
+                let _ = tx.send(Event::Invalid {
+                    id: String::new(),
+                    message: format!(
+                        "request line exceeds {} bytes",
+                        crate::file_io::MAX_REQUEST_LINE_BYTES
+                    ),
+                });
+                continue;
+            }
+            Ok(crate::file_io::LineRead::InvalidUtf8) => {
+                let _ = tx.send(Event::Invalid {
+                    id: String::new(),
+                    message: "request line is not valid UTF-8".to_string(),
+                });
+                continue;
+            }
+            Err(_) => break,
+        };
+
         let line = line.trim();
         if line.is_empty() {
             continue;
@@ -627,12 +720,24 @@ fn read_stdin(tx: Sender<Event>) {
                     .and_then(Value::as_str)
                     .unwrap_or_default()
                     .to_string();
-                let _ = tx.send(Event::Request(Job {
-                    id,
-                    hash: String::new(),
-                    line: line.to_string(),
-                    attempts: 0,
-                }));
+                let hash = value
+                    .pointer("/input/hash")
+                    .and_then(Value::as_str)
+                    .filter(|hash| !hash.is_empty())
+                    .map(|hash| hash.to_ascii_lowercase());
+                let lod = value.get("lod").and_then(Value::as_u64).unwrap_or(1);
+                let hash = hash.map(|hash| format!("{hash}:{lod}")).unwrap_or_default();
+                if tx
+                    .send(Event::Request(Job {
+                        id,
+                        hash,
+                        line: line.to_string(),
+                        attempts: 0,
+                    }))
+                    .is_err()
+                {
+                    return;
+                }
             }
             other => {
                 let id = value

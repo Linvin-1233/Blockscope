@@ -5,6 +5,20 @@
 Only unfinished work is listed here. Completed task details live in
 `CHANGELOG.md` and git history.
 
+## CLI presentation
+
+Plan: `tasks/cli-ux-plan.md`
+
+- [x] Slice 1: UI foundation, color mode, banner, help/error styling.
+- [x] Slice 2: human-readable output alignment and semantic color.
+- [x] Slice 3: page/tile progress callbacks and CLI wiring.
+- [x] Slice 4: docs, changelog, and full gate.
+- [x] Slice 5: static banner width tiers.
+- [x] Slice 6: live progress reflow on terminal resize.
+- [x] Manual check of the welcome banner and live progress in a real
+      Windows Terminal at 80 and 120 columns, plus 55/40/28/18-column tiers
+      via a PTY.
+
 ## Pending verification
 
 - [ ] Run the real-file smoke tests with

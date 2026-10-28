@@ -56,8 +56,8 @@ blockscope preview model.litematic -t
 
 多视角渲染时，单视角输出 `out.png`，多视角输出 `out-45.png`、`out-225.png`
 等。`serve` 模式的输出命名为 `{id}.png`（单视角）或 `{id}-{yaw}.png`（多视角）。
-有完整 mesh 时，多视角会按 `--threads` 预算并行渲染；输出顺序不变，但每个
-并发视角各自持有 tile buffer，内存会相应增加。
+有完整 mesh 时，多视角会按 `--threads` 预算并行渲染；输出顺序不变，并且每个
+视角会在下一批开始前写出并释放缓冲，内存不会随视角数量无限增长。
 
 ## 常用选项
 
@@ -69,7 +69,7 @@ blockscope preview model.litematic -t
 | `--texture-filter nearest\|linear` | 纹理采样方式，默认 `nearest` |
 | `--width` / `--height` | 输出尺寸，默认 `1024x1024`，单边最大 4096 |
 | `--supersample <1-4>` | 超采样倍数，默认 `2` |
-| `--views <LIST>` | 逗号分隔的 yaw 角度，例如 `45,225` |
+| `--views <LIST>` | 逗号分隔的 yaw 角度，例如 `45,225`，最多 64 个 |
 | `--yaw` / `--elevation` | 单视角水平/俯仰角 |
 | `--background transparent\|#RRGGBB[AA]` | 背景，默认透明 |
 | `--lighting flat-v1\|simple-ao-v1` | 光照配置，默认 `simple-ao-v1` |
@@ -83,9 +83,35 @@ blockscope preview model.litematic -t
 | `--terminal-protocol <auto\|kitty\|iterm2\|sixel\|halfblocks>` | 指定终端图像协议，默认自动检测 |
 | `--terminal-width <COLS>` / `--terminal-height <ROWS>` | 指定终端显示字符列数与行数 |
 | `--no-file` | 仅在终端显示图像，跳过生成磁盘 PNG 文件 |
+| `--color auto\|always\|never` | 终端颜色策略，默认 `auto`；对帮助、错误和结果输出生效 |
 
 `inspect`、`validate` 和 `stats` 默认保留 `TileEntities` 内容；几何命令默认跳过，
 以减少大容器文件的解析时间和内存。
+
+## 终端样式与进度
+
+在没有参数时，`blockscope` 打印静态欢迎屏并立即退出。字标会按启动时的终端宽度和
+高度选择布局；输出被重定向时使用紧凑字标。静态输出退出后由终端负责重排，程序无法
+继续控制已经打印的字符。
+
+字标会按终端宽度和高度逐级降级：82 列宽字标、59 列紧凑字标、47 列小字标，更窄时
+改用纯文字标题并只保留最有用的命令；输出被重定向时使用紧凑字标。
+
+`--color` 可放在子命令前后，控制帮助、错误和人类可读结果的颜色：
+
+| 值 | 行为 |
+|---|---|
+| `auto`（默认） | 仅在终端输出颜色；`NO_COLOR` 会关闭颜色 |
+| `always` | 即使通过管道也输出颜色 |
+| `never` | 不输出颜色 |
+
+`--json` 输出始终是纯 JSON，不受 `--color` 影响。
+
+`render`、`bench`、`mesh` 和 `materials` 在 stderr 是终端时显示进度：解析、材质、
+网格页数和单视角栅格化的 tile 百分比。多视角显示视角计数；流式渲染的最终合成和
+`--lod auto` 使用不定进度。以下情况自动关闭：stderr 不是终端、`--json`、设置了
+`CI` 环境变量、`NO_COLOR`，或 `--color never`。进度只写入 stderr，不会影响 stdout
+和管道输出；进度条会按终端宽度缩短或改为只显示计数，窗口缩放后会自动重排。
 
 ## 退出码
 

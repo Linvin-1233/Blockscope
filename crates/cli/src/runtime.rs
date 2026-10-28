@@ -6,11 +6,12 @@ use litematic_core::{DecodeLimits, LitematicFile, LitematicLimits};
 use litematic_material::{AssetSource, MaterialSet, MaterialSnapshot, TextureFilter};
 use litematic_mesh::{
     BlockCatalog, ColorBlockCatalog, Mesh, MeshBuildOptions, MeshLimits, MeshPage, MeshStatistics,
-    Rgba, build_mesh_parallel_with_options, build_mesh_streaming_with_options, count_mesh_quads,
-    estimate_mesh_quads,
+    PageProgress, Rgba, build_mesh_parallel_with_options_and_progress,
+    build_mesh_streaming_with_options_and_progress, count_mesh_quads, estimate_mesh_quads,
 };
 use litematic_render::{
-    Background, RenderOptions, RenderOutput, render_mesh, render_mesh_with_textures,
+    Background, RenderOptions, RenderOutput, TileProgress, render_mesh, render_mesh_with_progress,
+    render_mesh_with_textures, render_mesh_with_textures_and_progress,
 };
 use litematic_scene::{Scene, aggregate_with_threads};
 use std::path::Path;
@@ -19,21 +20,28 @@ use std::time::Instant;
 /// Upper bound for mesh, LOD, and rasterizer worker threads.
 pub(crate) const MAX_THREADS: u32 = 256;
 
+/// Upper bound for the number of yaw angles in one render request.
+pub(crate) const MAX_VIEWS: usize = 64;
+
+/// Keep one batch of rendered views under this much output memory.
+const MAX_VIEW_BATCH_BYTES: u64 = 256 * 1024 * 1024;
+
 /// Pages sampled to decide whether an exact quad count is worth running.
 const AUTO_LOD_SAMPLE_PAGES: usize = 128;
 
-fn build_scene_mesh(
+fn build_scene_mesh_with_progress(
     scene: &Scene,
     snapshot: Option<&MaterialSnapshot>,
     limits: &MeshLimits,
     threads: u32,
     options: MeshBuildOptions,
+    progress: Option<PageProgress<'_>>,
 ) -> Result<Mesh, CliError> {
     match snapshot {
-        Some(snapshot) => {
-            build_mesh_parallel_with_options(scene, snapshot, limits, threads, options)
-                .map_err(CliError::from)
-        }
+        Some(snapshot) => build_mesh_parallel_with_options_and_progress(
+            scene, snapshot, limits, threads, options, progress,
+        )
+        .map_err(CliError::from),
         None => {
             let catalog = ColorBlockCatalog::new().map_err(CliError::internal)?;
             let states = scene
@@ -41,8 +49,10 @@ fn build_scene_mesh(
                 .iter()
                 .flat_map(|region| region.palette.iter().cloned());
             let snapshot = catalog.snapshot(states);
-            build_mesh_parallel_with_options(scene, &snapshot, limits, threads, options)
-                .map_err(CliError::from)
+            build_mesh_parallel_with_options_and_progress(
+                scene, &snapshot, limits, threads, options, progress,
+            )
+            .map_err(CliError::from)
         }
     }
 }
@@ -57,6 +67,7 @@ fn count_and_build_mesh<C>(
     limits: &MeshLimits,
     threads: u32,
     options: MeshBuildOptions,
+    progress: Option<PageProgress<'_>>,
 ) -> Result<Option<Mesh>, CliError>
 where
     C: BlockCatalog + Sync,
@@ -81,9 +92,11 @@ where
         }
     }
 
-    build_mesh_parallel_with_options(scene, catalog, limits, threads, options)
-        .map(Some)
-        .map_err(CliError::from)
+    build_mesh_parallel_with_options_and_progress(
+        scene, catalog, limits, threads, options, progress,
+    )
+    .map(Some)
+    .map_err(CliError::from)
 }
 
 fn count_and_build_scene_mesh(
@@ -92,11 +105,12 @@ fn count_and_build_scene_mesh(
     limits: &MeshLimits,
     threads: u32,
     options: MeshBuildOptions,
+    progress: Option<PageProgress<'_>>,
 ) -> Result<(Option<Mesh>, Option<MaterialSnapshot>), CliError> {
     match materials {
         Some(materials) => {
             let snapshot = material_snapshot(scene, materials);
-            let mesh = count_and_build_mesh(scene, &snapshot, limits, threads, options)?;
+            let mesh = count_and_build_mesh(scene, &snapshot, limits, threads, options, progress)?;
             Ok((mesh, Some(snapshot)))
         }
         None => {
@@ -106,7 +120,7 @@ fn count_and_build_scene_mesh(
                 .iter()
                 .flat_map(|region| region.palette.iter().cloned());
             let snapshot = catalog.snapshot(states);
-            let mesh = count_and_build_mesh(scene, &snapshot, limits, threads, options)?;
+            let mesh = count_and_build_mesh(scene, &snapshot, limits, threads, options, progress)?;
             Ok((mesh, None))
         }
     }
@@ -118,16 +132,17 @@ pub(crate) fn build_scene_mesh_streaming<F>(
     limits: &MeshLimits,
     threads: u32,
     options: MeshBuildOptions,
+    progress: Option<PageProgress<'_>>,
     sink: F,
 ) -> Result<MeshStatistics, CliError>
 where
     F: FnMut(&[MeshPage]),
 {
     match snapshot {
-        Some(snapshot) => {
-            build_mesh_streaming_with_options(scene, snapshot, limits, threads, options, sink)
-                .map_err(CliError::from)
-        }
+        Some(snapshot) => build_mesh_streaming_with_options_and_progress(
+            scene, snapshot, limits, threads, options, progress, sink,
+        )
+        .map_err(CliError::from),
         None => {
             let catalog = ColorBlockCatalog::new().map_err(CliError::internal)?;
             let states = scene
@@ -135,35 +150,56 @@ where
                 .iter()
                 .flat_map(|region| region.palette.iter().cloned());
             let snapshot = catalog.snapshot(states);
-            build_mesh_streaming_with_options(scene, &snapshot, limits, threads, options, sink)
-                .map_err(CliError::from)
+            build_mesh_streaming_with_options_and_progress(
+                scene, &snapshot, limits, threads, options, progress, sink,
+            )
+            .map_err(CliError::from)
         }
     }
 }
 
-/// Render independent views concurrently, splitting the thread budget.
+/// Render views in deterministic batches and hand each output to `sink`.
 ///
-/// Returns outputs and per-view render times in input order, plus the wall time
-/// for the whole batch.
-pub(crate) fn render_views(
+/// Batches are limited by both the thread budget and a fixed output-byte
+/// budget, so a multi-view request cannot retain an unbounded number of RGBA
+/// buffers. `sink` is called in input order, which lets callers write and drop
+/// each view before the next batch is rendered.
+pub(crate) fn render_views_with<F>(
     scene: &Scene,
     mesh: &Mesh,
     snapshot: Option<&MaterialSnapshot>,
     options: &[RenderOptions],
     total_threads: u32,
-) -> Result<(Vec<RenderOutput>, Vec<f64>, f64), CliError> {
+    progress: Option<TileProgress<'_>>,
+    mut sink: F,
+) -> Result<(Vec<f64>, f64), CliError>
+where
+    F: FnMut(RenderOutput, f64, &RenderOptions) -> Result<(), CliError>,
+{
     if options.is_empty() {
-        return Ok((Vec::new(), Vec::new(), 0.0));
+        return Ok((Vec::new(), 0.0));
     }
 
     let total_threads = effective_threads(total_threads);
-    let mut outputs = Vec::with_capacity(options.len());
+    let max_output_bytes = options
+        .iter()
+        .map(|options| {
+            u64::from(options.width)
+                .saturating_mul(u64::from(options.height))
+                .saturating_mul(4)
+        })
+        .max()
+        .unwrap_or(0);
+    let batch_budget = view_batch_budget(max_output_bytes, total_threads);
+
     let mut times = Vec::with_capacity(options.len());
     let wall_started = Instant::now();
+    let mut sink_ms = 0.0;
     let mut start = 0;
 
     while start < options.len() {
-        let end = (start + total_threads.min(options.len() - start)).min(options.len());
+        let batch_size = total_threads.min(options.len() - start).min(batch_budget);
+        let end = start + batch_size;
         let batch = &options[start..end];
         let per_view = (total_threads / batch.len()).max(1) as u32;
 
@@ -171,9 +207,12 @@ pub(crate) fn render_views(
             let mut options = batch[0].clone();
             options.threads = per_view;
             let render_started = Instant::now();
-            let output = render_one(scene, mesh, snapshot, &options)?;
-            outputs.push(output);
-            times.push(render_started.elapsed().as_secs_f64() * 1000.0);
+            let output = render_one(scene, mesh, snapshot, &options, progress)?;
+            let render_ms = render_started.elapsed().as_secs_f64() * 1000.0;
+            let sink_started = Instant::now();
+            sink(output, render_ms, &batch[0])?;
+            sink_ms += sink_started.elapsed().as_secs_f64() * 1000.0;
+            times.push(render_ms);
         } else {
             let batch_results: Vec<Result<(RenderOutput, f64), CliError>> =
                 std::thread::scope(|scope| {
@@ -184,7 +223,7 @@ pub(crate) fn render_views(
                             options.threads = per_view;
                             scope.spawn(move || {
                                 let render_started = Instant::now();
-                                let output = render_one(scene, mesh, snapshot, &options)?;
+                                let output = render_one(scene, mesh, snapshot, &options, progress)?;
                                 Ok((output, render_started.elapsed().as_secs_f64() * 1000.0))
                             })
                         })
@@ -195,9 +234,11 @@ pub(crate) fn render_views(
                         .collect()
                 });
 
-            for result in batch_results {
+            for (index, result) in batch_results.into_iter().enumerate() {
                 let (output, render_ms) = result?;
-                outputs.push(output);
+                let sink_started = Instant::now();
+                sink(output, render_ms, &batch[index])?;
+                sink_ms += sink_started.elapsed().as_secs_f64() * 1000.0;
                 times.push(render_ms);
             }
         }
@@ -205,11 +246,15 @@ pub(crate) fn render_views(
         start = end;
     }
 
-    Ok((
-        outputs,
-        times,
-        wall_started.elapsed().as_secs_f64() * 1000.0,
-    ))
+    let render_ms = (wall_started.elapsed().as_secs_f64() * 1000.0 - sink_ms).max(0.0);
+    Ok((times, render_ms))
+}
+
+fn view_batch_budget(max_output_bytes: u64, total_threads: usize) -> usize {
+    MAX_VIEW_BATCH_BYTES
+        .checked_div(max_output_bytes)
+        .map(|value| (value as usize).max(1))
+        .unwrap_or(total_threads)
 }
 
 fn render_one(
@@ -217,11 +262,28 @@ fn render_one(
     mesh: &Mesh,
     snapshot: Option<&MaterialSnapshot>,
     options: &RenderOptions,
+    progress: Option<TileProgress<'_>>,
 ) -> Result<RenderOutput, CliError> {
+    let progress = progress.filter(|_| !litematic_render::will_stream(mesh, options));
     match snapshot {
-        Some(snapshot) => render_mesh_with_textures(scene, mesh, options, snapshot.textures())
+        Some(snapshot) => match progress {
+            Some(progress) => render_mesh_with_textures_and_progress(
+                scene,
+                mesh,
+                options,
+                snapshot.textures(),
+                progress,
+            )
             .map_err(CliError::from),
-        None => render_mesh(scene, mesh, options).map_err(CliError::from),
+            None => render_mesh_with_textures(scene, mesh, options, snapshot.textures())
+                .map_err(CliError::from),
+        },
+        None => match progress {
+            Some(progress) => {
+                render_mesh_with_progress(scene, mesh, options, progress).map_err(CliError::from)
+            }
+            None => render_mesh(scene, mesh, options).map_err(CliError::from),
+        },
     }
 }
 
@@ -293,7 +355,11 @@ pub(crate) fn apply_render_limits(force: bool, options: &mut RenderOptions) {
 
 pub(crate) fn warn_forced(force: bool) {
     if force {
-        eprintln!("WARNING: resource limits are disabled; a large input can exhaust memory");
+        crate::ui::errln!(
+            "{}warning:{:#} resource limits are disabled; a large input can exhaust memory",
+            crate::ui::WARNING,
+            crate::ui::WARNING
+        );
     }
 }
 
@@ -391,6 +457,18 @@ pub(crate) fn prepare_scene(
     threads: u32,
     options: MeshBuildOptions,
 ) -> Result<PreparedScene, CliError> {
+    prepare_scene_with_progress(scene, materials, lod, limits, threads, options, None)
+}
+
+pub(crate) fn prepare_scene_with_progress(
+    scene: Scene,
+    materials: Option<&MaterialSet>,
+    lod: LodMode,
+    limits: &MeshLimits,
+    threads: u32,
+    options: MeshBuildOptions,
+    progress: Option<PageProgress<'_>>,
+) -> Result<PreparedScene, CliError> {
     if threads > MAX_THREADS {
         return Err(CliError::input(format!(
             "INVALID_RENDER_OPTIONS: threads must be at most {MAX_THREADS}"
@@ -405,7 +483,14 @@ pub(crate) fn prepare_scene(
 
             let mesh_started = Instant::now();
             let snapshot = materials.map(|materials| material_snapshot(&scene, materials));
-            let mesh = build_scene_mesh(&scene, snapshot.as_ref(), limits, threads, options)?;
+            let mesh = build_scene_mesh_with_progress(
+                &scene,
+                snapshot.as_ref(),
+                limits,
+                threads,
+                options,
+                progress,
+            )?;
             let mesh_ms = mesh_started.elapsed().as_secs_f64() * 1000.0;
 
             Ok(PreparedScene {
@@ -453,7 +538,7 @@ fn prepare_auto(
             let candidate = aggregated.as_ref().unwrap_or(&scene);
             let mesh_started = Instant::now();
             let result =
-                count_and_build_scene_mesh(candidate, materials, &limits, threads, options);
+                count_and_build_scene_mesh(candidate, materials, &limits, threads, options, None);
             mesh_total += mesh_started.elapsed().as_secs_f64() * 1000.0;
             result
         };
@@ -509,4 +594,23 @@ pub(crate) fn load_scene(
 
     let scene = file.into_scene().map_err(CliError::from)?;
     Ok((input, scene))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn view_batch_budget_keeps_default_resolutions_fully_parallel() {
+        // 1024x1024 RGBA and 2048x2048 RGBA both fit more than 12 view buffers.
+        assert!(view_batch_budget(4 * 1024 * 1024, 12) >= 12);
+        assert!(view_batch_budget(16 * 1024 * 1024, 12) >= 12);
+    }
+
+    #[test]
+    fn view_batch_budget_caps_large_outputs() {
+        // 4096x4096 RGBA is 64 MiB; the byte budget permits four at a time.
+        assert_eq!(view_batch_budget(64 * 1024 * 1024, 12), 4);
+        assert_eq!(view_batch_budget(0, 12), 12);
+    }
 }

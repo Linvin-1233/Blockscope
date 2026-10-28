@@ -16,6 +16,7 @@
 | Region coordinate range | ±30,000,000 |
 | Mesh | 5,000,000 quads / 20,000,000 vertices / 65,536 pages |
 | Render pixels | 16,777,216; 33,554,432 after supersampling; 4096 per side |
+| Views per request | At most 64 |
 | Threads | At most 256 |
 | Textures | 2048x2048, 256 MiB decoded, 8 MiB per asset |
 

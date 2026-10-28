@@ -58,6 +58,32 @@ fn stats_json_parses() {
 }
 
 #[test]
+fn stats_human_summary_omits_air_from_the_block_list() {
+    let file = write_fixture(&basic_fixture());
+    let path = file.path().to_str().unwrap();
+    let output = run(&["stats", path]);
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("air: 1"));
+    assert!(stdout.contains("minecraft:stone"));
+    assert!(!stdout.contains("minecraft:air"));
+}
+
+#[test]
+fn render_rejects_too_many_views_before_reading_the_file() {
+    let views = std::iter::repeat_n("45", 65).collect::<Vec<_>>().join(",");
+    let output = run(&["render", "missing.litematic", "--views", &views]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("INVALID_RENDER_OPTIONS: views must contain at most"),
+        "{stderr}"
+    );
+}
+
+#[test]
 fn mesh_stats_prints_counts() {
     let file = write_fixture(&basic_fixture());
     let path = file.path().to_str().unwrap();
@@ -660,7 +686,7 @@ fn force_limits_prints_a_warning() {
     assert!(forced.status.success());
     let stderr = String::from_utf8(forced.stderr).unwrap();
     assert!(
-        stderr.contains("WARNING: resource limits are disabled"),
+        stderr.contains("warning: resource limits are disabled"),
         "{stderr}"
     );
     let stats: MeshStatistics = serde_json::from_slice(&forced.stdout).unwrap();
