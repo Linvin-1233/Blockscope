@@ -9,6 +9,4 @@ litematic-mesh = { path = "../mesh" }
 litematic-scene = { path = "../scene" }
 png.workspace = true
 serde.workspace = true
-
-[dev-dependencies]
 tempfile.workspace = true

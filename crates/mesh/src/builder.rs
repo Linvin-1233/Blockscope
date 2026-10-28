@@ -13,6 +13,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::thread;
 
 mod count;
+mod fluid;
 mod stream;
 
 pub use count::{count_mesh_quads, estimate_mesh_quads};
@@ -387,6 +388,29 @@ fn build_page(
                         (y - base[1]) as f32,
                         (z - base[2]) as f32,
                     ];
+
+                    if let Some(fluid) = palette_block.fluid {
+                        let style = if palette_block.waterlogged {
+                            tables
+                                .water_style()
+                                .expect("waterlogged blocks require a water style")
+                        } else {
+                            &palette_block.block
+                        };
+                        fluid::emit_fluid_block(
+                            &mut page,
+                            &grid,
+                            tables,
+                            local_index,
+                            local_position,
+                            style,
+                            fluid,
+                            mode,
+                        );
+                        if !palette_block.waterlogged {
+                            continue;
+                        }
+                    }
 
                     for model_quad in &palette_block.block.model.quads {
                         if should_cull(&grid, tables, local_index, palette_block, model_quad) {

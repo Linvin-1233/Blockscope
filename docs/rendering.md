@@ -57,6 +57,27 @@ The rasterizer consumes the Phase 2 mesh:
 - render layer and shade flag,
 - per-vertex ambient occlusion.
 
+### Fluid and redstone surfaces
+
+Water and lava use a surface built from the neighboring fluid columns rather
+than the cached per-state box. The mesher computes four top corner heights with
+vanilla's weighted averaging, hides faces shared with the same fluid, and
+promotes a column to a full block when the same fluid sits above it. A flowing
+channel therefore becomes one continuous slope, and internal translucent faces
+no longer introduce seams. The resting heights are `8/9` for source and falling
+levels and `(8-level)/9` for levels 1-7.
+
+Waterlogged blocks keep their own model and add the same shaped water layer.
+This covers stairs, slabs, walls, leaves, signs, coral, and the always-water
+kelp/seagrass blocks; waterlogged full opaque blocks skip the layer because it
+would be hidden. Bubble columns use the fluid surface directly.
+
+Redstone wire resolves to a flat dust plane. Textured renders tint it through
+the pack model's `tintindex`; the built-in color catalog uses the same
+`power=0..15` gradient, so redstone remains readable without a resource pack.
+The gradient spreads the low-power steps apart so power 0 and 1 are visibly
+different.
+
 ### Greedy merging
 
 `--greedy-mesh` runs a conservative merge pass after face culling. It only
@@ -234,13 +255,22 @@ unchanged.
 
 `--stream-mesh` builds 32-page chunks, renders them into the resident tile
 buffers, and drops the chunk before building the next one. The full `Mesh` is
-never materialized. `--lod auto` is rejected because choosing a factor needs a
-complete mesh; multiple views rebuild the mesh once per view.
+never materialized. The default is `auto`: fixed-LOD renders stream, while
+`--lod auto` keeps the full mesh because choosing a factor needs a complete
+mesh. `--stream-mesh=off` opts back into the full mesh, and `--stream-mesh` or
+`--stream-mesh=on` forces streaming. Multiple views rebuild the streamed mesh
+once per view.
+
+Translucent triangles stay in memory below 262,144 entries. Above that, the
+streamed renderer writes exact 76-byte records to temporary bucket files and
+processes one bucket at a time, so the tile sort still produces the same image
+without retaining every triangle. The temporary directory is deleted at the end
+of the render.
 
 Measured end to end on the test host (parse + mesh + render + PNG, 1024x1024,
 supersample 2, 12 threads, color-only materials):
 
-| Scene | Peak working set (default / streamed) | Wall (default / streamed) |
+| Scene | Peak working set (full mesh / streamed) | Wall (full mesh / streamed) |
 |---|---|---|
 | `000001` exact | 7.16 GB / **425 MB** | 10.2 s / 10.3 s |
 | `000002` exact | 497 MB / **182 MB** | 0.9 s / 1.25 s |
@@ -363,6 +393,9 @@ cargo run -p blockscope-cli --release -- bench path\to\model.litematic --width 2
 sum, plus mesh and render counters, buffer sizes, and peak RSS on Linux and
 macOS (`null` on Windows and other platforms).
 
+Allocation-peak baselines and the streamed-versus-full-mesh diagnostic live in
+[Performance Baselines](./performance.md).
+
 For rasterizer-only scaling, use the synthetic example:
 
 ```powershell
@@ -452,6 +485,10 @@ exactly in 7.5 s; the earlier client-jar run of `000001` fell back to LOD 2 in
 - Textures require a user-provided resource pack or client jar.
 - No mipmaps; nearest or bilinear sampling only.
 - No shadows, full light propagation, or emissive bloom.
+- Fluid surfaces use the still texture; flow animation and the water overlay are
+  not reproduced.
+- The built-in redstone dust model does not fold connection directions into its
+  flat plane; textured renders use the pack model for that.
 - Translucent sorting is per tile and approximate.
 - CPU-only; tiles are parallel and mesh pages are built in parallel, but PNG
   encoding runs on the calling thread.

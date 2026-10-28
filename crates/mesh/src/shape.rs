@@ -1,14 +1,108 @@
 use crate::color::Rgba;
-use crate::model::{BlockModel, FaceDirection, ModelBox, ModelQuad, NO_TEXTURE};
+use crate::model::{BlockModel, FaceDirection, ModelBox, ModelQuad, NO_TEXTURE, face_uv};
 use crate::voxel::build_model;
 use litematic_scene::BlockStateKey;
+
+/// The two fluids the mesh builder shapes from neighbouring blocks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FluidKind {
+    Water,
+    Lava,
+}
+
+/// Fluid level in ninths of a block. `9` means a full block and is only
+/// produced when the cell above holds the same fluid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct FluidState {
+    pub kind: FluidKind,
+    pub height_ninths: u8,
+}
+
+/// Resolve a pure fluid block to its kind and resting height.
+///
+/// Water and lava levels 0-7 sit at `(8 - level) / 9` blocks. Falling fluid
+/// (level 8 and above) keeps the source height until the cell above fills the
+/// column; the mesh builder promotes it to a full block in that case.
+pub(crate) fn fluid_state(state: &BlockStateKey) -> Option<FluidState> {
+    let path = strip_namespace(&state.name);
+    let kind = match path {
+        "water" | "flowing_water" | "bubble_column" => FluidKind::Water,
+        "lava" | "flowing_lava" => FluidKind::Lava,
+        _ => return None,
+    };
+
+    let level = prop(state, "level")
+        .and_then(|value| value.parse::<u8>().ok())
+        .unwrap_or(0)
+        .min(15);
+    let height_ninths = if level == 0 || level >= 8 {
+        8
+    } else {
+        8 - level
+    };
+
+    Some(FluidState {
+        kind,
+        height_ninths,
+    })
+}
+
+/// True when a non-fluid block contains a water source.
+///
+/// Waterlogged partial blocks keep their own model and gain a shaped water
+/// layer. Kelp and seagrass are always water-filled even without the property.
+/// Bubble columns are pure fluid and are handled by [`fluid_state`].
+pub(crate) fn waterlogged(state: &BlockStateKey) -> bool {
+    if fluid_state(state).is_some() {
+        return false;
+    }
+
+    if matches!(
+        strip_namespace(&state.name),
+        "kelp" | "kelp_plant" | "seagrass" | "tall_seagrass"
+    ) {
+        return true;
+    }
+
+    prop(state, "waterlogged") == Some("true")
+}
+
+/// Water source state for a waterlogged block.
+pub(crate) fn waterlogged_fluid(state: &BlockStateKey) -> Option<FluidState> {
+    waterlogged(state).then_some(FluidState {
+        kind: FluidKind::Water,
+        height_ninths: 8,
+    })
+}
+
+/// Power level of a redstone dust state, if this is redstone dust.
+pub(crate) fn redstone_power(state: &BlockStateKey) -> Option<u8> {
+    if strip_namespace(&state.name) != "redstone_wire" {
+        return None;
+    }
+
+    Some(
+        prop(state, "power")
+            .and_then(|value| value.parse::<u8>().ok())
+            .unwrap_or(0)
+            .min(15),
+    )
+}
 
 /// Build a partial model for a known shape family. `None` means full cube.
 pub(crate) fn model_for(state: &BlockStateKey) -> Option<BlockModel> {
     let path = strip_namespace(&state.name);
 
-    if path == "water" || path == "lava" {
-        return Some(fluid(state));
+    if path == "water"
+        || path == "lava"
+        || path == "flowing_water"
+        || path == "flowing_lava"
+        || path == "bubble_column"
+    {
+        return Some(fluid());
+    }
+    if path == "redstone_wire" {
+        return Some(redstone_wire());
     }
     if path == "chest" || path == "trapped_chest" || path == "ender_chest" {
         return Some(single_box([1, 0, 1], [15, 14, 15]));
@@ -320,13 +414,45 @@ fn single_box(min: [u8; 3], max: [u8; 3]) -> BlockModel {
     build_model(&[ModelBox::new(min, max)], Vec::new())
 }
 
-fn fluid(state: &BlockStateKey) -> BlockModel {
-    let level = prop(state, "level")
-        .and_then(|value| value.parse::<u8>().ok())
-        .unwrap_or(0)
-        .min(15);
-    let height = 16u8.saturating_sub(level).max(1);
-    single_box([0, 0, 0], [16, height, 16])
+fn fluid() -> BlockModel {
+    // Template only: the mesh builder replaces this box with a surface whose
+    // four corners follow the neighbouring fluid columns.
+    single_box([0, 0, 0], [16, 14, 16])
+}
+
+fn redstone_wire() -> BlockModel {
+    let up_vertices = [
+        [0.0, 0.25, 0.0],
+        [0.0, 0.25, 16.0],
+        [16.0, 0.25, 16.0],
+        [16.0, 0.25, 0.0],
+    ];
+    let down_vertices = [
+        [0.0, 0.25, 16.0],
+        [0.0, 0.25, 0.0],
+        [16.0, 0.25, 0.0],
+        [16.0, 0.25, 16.0],
+    ];
+
+    let quad = |vertices: [[f32; 3]; 4], face: FaceDirection| ModelQuad {
+        vertices,
+        normal: face.normal(),
+        face,
+        cullface: None,
+        uv: face_uv(face, vertices),
+        texture: NO_TEXTURE,
+        tint: Rgba::WHITE,
+        layer: None,
+        shade: false,
+    };
+
+    build_model(
+        &[],
+        vec![
+            quad(up_vertices, FaceDirection::Up),
+            quad(down_vertices, FaceDirection::Down),
+        ],
+    )
 }
 
 fn lectern() -> BlockModel {

@@ -1,4 +1,4 @@
-use crate::color::{RenderLayer, Rgba};
+use crate::color::{RenderLayer, Rgba, redstone_color};
 use crate::model::{BlockModel, empty_model, full_cube_model};
 use crate::shape;
 use litematic_scene::BlockStateKey;
@@ -26,6 +26,14 @@ impl ResolvedBlock {
 /// Resolves a canonical block state to a renderable model.
 pub trait BlockCatalog {
     fn resolve(&self, state: &BlockStateKey) -> ResolvedBlock;
+}
+
+/// True when a state needs the shared water style for a waterlogged layer.
+pub fn needs_water_style(state: &BlockStateKey) -> bool {
+    match shape::fluid_state(state) {
+        Some(fluid) => fluid.kind == shape::FluidKind::Water,
+        None => shape::waterlogged(state),
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -151,6 +159,15 @@ impl BlockCatalog for ColorBlockCatalog {
             };
         }
 
+        if let Some(power) = shape::redstone_power(state) {
+            return ResolvedBlock {
+                color: redstone_color(power),
+                layer: RenderLayer::Cutout,
+                model: self.model_for(state),
+                known: true,
+            };
+        }
+
         if let Some(entry) = self.entries.get(&state.name) {
             return ResolvedBlock {
                 color: entry.color,
@@ -217,11 +234,22 @@ impl ColorBlockCatalog {
         I: IntoIterator<Item = BlockStateKey>,
     {
         let mut resolved = HashMap::new();
+        let mut needs_water = false;
         for state in states {
             if state.is_air() || resolved.contains_key(&state) {
                 continue;
             }
+            needs_water |= needs_water_style(&state);
             resolved.insert(state.clone(), BlockCatalog::resolve(self, &state));
+        }
+
+        // Waterlogged blocks need a water style even when the scene has no
+        // standalone water cell.
+        if needs_water {
+            let water = BlockStateKey::simple("minecraft:water");
+            resolved
+                .entry(water.clone())
+                .or_insert_with(|| BlockCatalog::resolve(self, &water));
         }
 
         ColorSnapshot {
@@ -348,10 +376,10 @@ fn family_color(name: &str, catalog: &ColorBlockCatalog) -> Option<Rgba> {
         return Some(Rgba::rgb(160, 208, 224));
     }
 
-    if path == "water" {
+    if path == "water" || path == "flowing_water" || path == "bubble_column" {
         return Some(Rgba::new(58, 111, 208, 180));
     }
-    if path == "lava" {
+    if path == "lava" || path == "flowing_lava" {
         return Some(Rgba::rgb(208, 90, 26));
     }
     if path == "ice" || path == "packed_ice" || path == "blue_ice" {
@@ -413,6 +441,8 @@ fn layer_for_name(name: &str) -> RenderLayer {
     }
 
     if path == "water"
+        || path == "flowing_water"
+        || path == "bubble_column"
         || path == "ice"
         || path == "packed_ice"
         || path == "blue_ice"

@@ -119,13 +119,8 @@ pub(super) fn render_tile(
             .iter()
             .map(|&index| &translucent_triangles[index as usize])
             .filter(|triangle| {
-                intersects(
-                    &bounds(&triangle.points),
-                    job.x0,
-                    job.y0,
-                    job.width,
-                    job.height,
-                )
+                let points = triangle.points_f64();
+                intersects(&bounds(&points), job.x0, job.y0, job.width, job.height)
             })
             .collect();
         translucent.sort_by(|left, right| right.depth_key.total_cmp(&left.depth_key));
@@ -133,21 +128,22 @@ pub(super) fn render_tile(
         for triangle in translucent {
             let colors = triangle.colors();
             let uvs = triangle.uvs();
+            let points = triangle.points_f64();
             if triangle.texture == NO_TEXTURE {
                 tile.rasterize_triangle::<false>(
-                    &triangle.points,
+                    &points,
                     &colors,
                     &uvs,
                     triangle.texture,
-                    triangle.layer,
+                    RenderLayer::Translucent,
                 );
             } else {
                 tile.rasterize_triangle::<true>(
-                    &triangle.points,
+                    &points,
                     &colors,
                     &uvs,
                     triangle.texture,
-                    triangle.layer,
+                    RenderLayer::Translucent,
                 );
             }
         }

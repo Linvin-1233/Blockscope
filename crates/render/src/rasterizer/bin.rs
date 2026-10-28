@@ -78,7 +78,8 @@ pub(super) fn bin_triangles(
     let max_tile_y = f64::from(tiles_y - 1);
 
     for (index, triangle) in triangles.iter().enumerate() {
-        let bbox = bounds(&triangle.points);
+        let points = triangle.points_f64();
+        let bbox = bounds(&points);
         let min_x = (bbox[0] / tile_size).floor().clamp(0.0, max_tile_x) as u32;
         let max_x = (bbox[2] / tile_size).floor().clamp(0.0, max_tile_x) as u32;
         let min_y = (bbox[1] / tile_size).floor().clamp(0.0, max_tile_y) as u32;

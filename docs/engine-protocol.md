@@ -191,6 +191,7 @@ rasterizer mid-tile.
 | `SHUTDOWN` | yes | Supervisor is draining and stopped accepting work |
 | `MEMORY_LIMIT` | yes | Worker exceeded its per-worker memory ceiling |
 | `PNG_ENCODE_FAILED` | maybe | Encoder failure; retry once |
+| `TEMP_STORAGE_FAILED` | maybe | Translucent spill could not create, write, or read its temporary bucket files |
 | `IO_ERROR` | maybe | Input or output file access failed |
 | `INTERNAL_ERROR` | maybe | Bug; retry once, then report |
 | `TIMEOUT` | yes | Emitted by the supervisor, not the engine |

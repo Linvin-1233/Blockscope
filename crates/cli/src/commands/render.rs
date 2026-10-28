@@ -13,6 +13,16 @@ use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum StreamMeshMode {
+    /// Stream fixed-LOD renders; keep the full mesh for --lod auto.
+    Auto,
+    /// Always stream the mesh. Requires a fixed LOD.
+    On,
+    /// Retain the full mesh.
+    Off,
+}
+
 #[derive(Debug, Args)]
 pub(crate) struct RenderArgs {
     file: PathBuf,
@@ -68,9 +78,16 @@ pub(crate) struct RenderArgs {
     /// Skip writing output image file (useful with --terminal).
     #[arg(long)]
     no_file: bool,
-    /// Build mesh in bounded page chunks instead of retaining the full mesh.
-    #[arg(long)]
-    stream_mesh: bool,
+    /// Mesh streaming: auto streams fixed-LOD renders, on forces it, off keeps
+    /// the full mesh. `--stream-mesh` without a value means on.
+    #[arg(
+        long,
+        value_enum,
+        num_args = 0..=1,
+        default_missing_value = "on",
+        default_value = "auto"
+    )]
+    stream_mesh: StreamMeshMode,
     #[command(flatten)]
     assets: AssetArgs,
     #[command(flatten)]
@@ -128,14 +145,19 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
     } else {
         None
     };
-    if args.stream_mesh && matches!(lod, LodMode::Auto) {
+    let stream_mesh = match args.stream_mesh {
+        StreamMeshMode::Auto => !matches!(lod, LodMode::Auto),
+        StreamMeshMode::On => true,
+        StreamMeshMode::Off => false,
+    };
+    if stream_mesh && matches!(lod, LodMode::Auto) {
         return Err(CliError::input(
             "INVALID_RENDER_OPTIONS: --stream-mesh cannot be combined with --lod auto",
         ));
     }
 
     let limits = mesh_limits(args.limits.force_limits);
-    let (scene, snapshot, mesh, factor, lod_ms, mut mesh_ms_total) = if args.stream_mesh {
+    let (scene, snapshot, mesh, factor, lod_ms, mut mesh_ms_total) = if stream_mesh {
         let factor = match lod {
             LodMode::Fixed(factor) => factor,
             LodMode::Auto => unreachable!("auto LOD was rejected above"),
@@ -201,6 +223,7 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
             )
             .map_err(CliError::from)?;
             let mut render_chunk_ms = 0.0;
+            let mut spill_error = None;
             let build_started = Instant::now();
             crate::build_scene_mesh_streaming(
                 &scene,
@@ -210,12 +233,19 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
                 args.mesh.options(),
                 |pages| {
                     let chunk_started = Instant::now();
-                    renderer.render_pages(pages);
+                    if spill_error.is_none()
+                        && let Err(error) = renderer.render_pages(pages)
+                    {
+                        spill_error = Some(error);
+                    }
                     render_chunk_ms += chunk_started.elapsed().as_secs_f64() * 1000.0;
                 },
             )?;
+            if let Some(error) = spill_error {
+                return Err(CliError::from(error));
+            }
             let finish_started = Instant::now();
-            let output = renderer.finish();
+            let output = renderer.finish().map_err(CliError::from)?;
             let finish_ms = finish_started.elapsed().as_secs_f64() * 1000.0;
             let total_stream_ms = build_started.elapsed().as_secs_f64() * 1000.0;
             let build_ms = (total_stream_ms - render_chunk_ms - finish_ms).max(0.0);

@@ -131,7 +131,7 @@ fn mesh_exports_obj_and_ply() {
 }
 
 #[test]
-fn streamed_mesh_matches_the_default_render() {
+fn streamed_mesh_matches_full_render() {
     let file = write_fixture(&basic_fixture());
     let path = file.path().to_str().unwrap();
     let dir = tempfile::tempdir().unwrap();
@@ -147,6 +147,7 @@ fn streamed_mesh_matches_the_default_render() {
         "64",
         "--height",
         "64",
+        "--stream-mesh=off",
     ]);
     let streamed = run(&[
         "render",
@@ -165,6 +166,44 @@ fn streamed_mesh_matches_the_default_render() {
     assert_eq!(
         fs::read(&normal_path).unwrap(),
         fs::read(&streamed_path).unwrap()
+    );
+}
+
+#[test]
+fn default_mesh_streaming_matches_full_render() {
+    let file = write_fixture(&basic_fixture());
+    let path = file.path().to_str().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let full_path = dir.path().join("full.png");
+    let default_path = dir.path().join("default.png");
+
+    let full = run(&[
+        "render",
+        path,
+        "--output",
+        full_path.to_str().unwrap(),
+        "--width",
+        "64",
+        "--height",
+        "64",
+        "--stream-mesh=off",
+    ]);
+    let default = run(&[
+        "render",
+        path,
+        "--output",
+        default_path.to_str().unwrap(),
+        "--width",
+        "64",
+        "--height",
+        "64",
+    ]);
+
+    assert!(full.status.success());
+    assert!(default.status.success());
+    assert_eq!(
+        fs::read(&full_path).unwrap(),
+        fs::read(&default_path).unwrap()
     );
 }
 

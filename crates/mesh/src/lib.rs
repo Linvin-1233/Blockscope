@@ -20,8 +20,9 @@ pub use builder::{
 };
 pub use catalog::{
     BlockCatalog, CatalogError, CatalogErrorCode, ColorBlockCatalog, ColorSnapshot, ResolvedBlock,
+    needs_water_style,
 };
-pub use color::{RenderLayer, Rgba};
+pub use color::{RenderLayer, Rgba, redstone_color};
 pub use error::{MeshError, MeshErrorCode};
 pub use export::{write_obj, write_ply};
 pub use mesh::{

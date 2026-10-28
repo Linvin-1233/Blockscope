@@ -90,6 +90,11 @@ The first version uses fixed plains colors:
 | water | `#3F76E4` |
 | redstone wire | dark red to bright red by `power` |
 
+The built-in color catalog uses the same redstone power gradient and a flat
+dust plane, so `power=0..15` stays visible even without a resource pack. The
+gradient is square-root shaped; power 0 and 1 are deliberately far apart so
+thin dust lines remain distinguishable.
+
 Biome colormaps, `tintindex` 1 behavior, and world-specific tint are later
 additive features.
 

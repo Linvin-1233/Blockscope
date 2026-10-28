@@ -5,7 +5,8 @@ use litematic_render::{
     Background, LightingProfile, RenderErrorCode, RenderOptions, RenderOutput, StreamingRenderer,
     render_mesh, write_png,
 };
-use litematic_scene::Scene;
+use litematic_scene::{BlockStateKey, Scene};
+use std::collections::BTreeMap;
 use support::*;
 
 fn build(scene: &Scene) -> Mesh {
@@ -156,6 +157,59 @@ fn translucent_water_keeps_partial_alpha() {
         .filter(|pixel| pixel[3] > 0 && pixel[3] < 255)
         .count();
     assert!(partial > 0);
+}
+
+#[test]
+fn color_only_redstone_uses_power_brightness() {
+    let low = render_redstone(0);
+    let one = render_redstone(1);
+    let high = render_redstone(15);
+    let low_red = max_red(&low);
+    let one_red = max_red(&one);
+    let high_red = max_red(&high);
+
+    assert!(
+        one_red > low_red + 20,
+        "power 1 should be clearly brighter than power 0: low={low_red} one={one_red}"
+    );
+    assert!(
+        high_red > one_red + 20,
+        "power 15 should be much brighter than power 1: one={one_red} high={high_red}"
+    );
+}
+
+fn render_redstone(power: u8) -> RenderOutput {
+    let mut state = BlockStateKey::simple("minecraft:redstone_wire");
+    state.properties = [
+        ("east".to_string(), "none".to_string()),
+        ("north".to_string(), "none".to_string()),
+        ("power".to_string(), power.to_string()),
+        ("south".to_string(), "none".to_string()),
+        ("west".to_string(), "none".to_string()),
+    ]
+    .into_iter()
+    .collect::<BTreeMap<_, _>>();
+
+    let scene = scene(vec![region_states(
+        "main",
+        [0, 0, 0],
+        [1, 1, 1],
+        &[BlockStateKey::simple("minecraft:air"), state],
+        &[1],
+    )]);
+    render(&scene, &options())
+}
+
+fn max_red(output: &RenderOutput) -> u8 {
+    output
+        .rgba
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .filter(|pixel| pixel[3] > 0)
+        .map(|pixel| pixel[0])
+        .max()
+        .unwrap_or(0)
 }
 
 #[test]
@@ -416,9 +470,43 @@ fn streaming_renderer_matches_the_table_path_page_by_page() {
     let table = render_mesh(&scene, &mesh, &options).unwrap();
     let mut renderer = StreamingRenderer::new(&scene, &options, None).unwrap();
     for page in &mesh.pages {
-        renderer.render_pages(std::slice::from_ref(page));
+        renderer.render_pages(std::slice::from_ref(page)).unwrap();
     }
-    let streamed = renderer.finish();
+    let streamed = renderer.finish().unwrap();
+
+    assert_eq!(table.rgba, streamed.rgba);
+    assert_eq!(table.statistics, streamed.statistics);
+}
+
+#[test]
+fn spilled_translucent_matches_the_table_path() {
+    let scene = scene(vec![region(
+        "main",
+        [0, 0, 0],
+        [3, 2, 1],
+        &["minecraft:air", "minecraft:stone", "minecraft:water"],
+        &[1, 2, 1, 0, 2, 1],
+    )]);
+    let mesh = build_mesh(
+        &scene,
+        &ColorBlockCatalog::default(),
+        &MeshLimits::default(),
+    )
+    .unwrap();
+    let options = RenderOptions {
+        width: 96,
+        height: 96,
+        supersample: 2,
+        ..Default::default()
+    };
+
+    let table = render_mesh(&scene, &mesh, &options).unwrap();
+    let mut renderer =
+        StreamingRenderer::with_translucent_budget(&scene, &options, None, 1).expect("renderer");
+    for page in &mesh.pages {
+        renderer.render_pages(std::slice::from_ref(page)).unwrap();
+    }
+    let streamed = renderer.finish().unwrap();
 
     assert_eq!(table.rgba, streamed.rgba);
     assert_eq!(table.statistics, streamed.statistics);

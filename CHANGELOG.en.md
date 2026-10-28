@@ -6,6 +6,54 @@ User-facing changes are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- Water and lava are no longer rendered as per-block staircase boxes. Meshing
+  now reads the surrounding fluid columns and the cell above, computes the four
+  top corner heights with vanilla's weighted averaging, hides internal faces
+  between the same fluid, and promotes a column to a full block when the same
+  fluid sits above it. Flowing surfaces are continuous slopes and no longer
+  show seams from internal translucent faces.
+- Waterlogged partial blocks now keep their own model and gain a matching water
+  layer, including stairs, slabs, walls, leaves, signs, coral, and the
+  always-water kelp/seagrass blocks. Waterlogged full opaque blocks skip the
+  layer because it would be hidden; bubble columns use the fluid surface
+  directly.
+- Redstone wire no longer falls back to a magenta full cube in the built-in
+  color catalog. It gets a flat 1/64-high dust plane and the same dark-red to
+  bright-red `power=0..15` gradient as the textured path. The gradient is now
+  square-root shaped so power 0 and 1 stay clearly distinct on thin dust lines.
+  Resource-pack tint behavior is updated the same way.
+- Regenerated the water golden PNG and added tests for fluid surfaces, shared
+  fluid face culling, waterlogged blocks, redstone power, and builder-path
+  consistency.
+
+### Changed
+
+- `render` now defaults to `--stream-mesh=auto`: fixed-LOD renders stream mesh
+  pages, while `--lod auto` keeps the full mesh because selecting a factor needs
+  one. `--stream-mesh=off` restores the full-mesh path; `--stream-mesh` or `on`
+  forces streaming. This avoids the full-mesh peak for large scenes by default.
+- Translucent `Triangle` projected points are now f32 and the always-translucent
+  layer tag is gone. The depth-sort key remains f64, shrinking the struct from
+  112 B to 72 B. On `000001` with the client jar and streamed meshing, peak
+  working set dropped from 2.28 GB to 1.52 GB; golden PNG tests are unchanged.
+- Streamed rendering now spills exact translucent records to temporary bucket
+  files above 262,144 triangles and renders one bucket at a time. `000001` with
+  the client jar drops from 1.52 GB to **618 MB** with an identical PNG SHA-256;
+  the temporary directory is removed when the render finishes. Adds the
+  `TEMP_STORAGE_FAILED` error code.
+
+### Performance
+
+- Waterlogged layers add translucent faces for every visible waterlogged block.
+  On the `000001` random stress fixture with about 3.2 million
+  `waterlogged=true` states, 512x512 at supersample 1 render time rose from
+  about 3.1 s to 5.2 s. Ordinary builds stay effectively unchanged; the
+  measured rectifier detail test is still about 0.2 s at 4096x4096.
+
 ## [0.3.0] - 2026-10-27
 
 ### Added

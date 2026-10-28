@@ -161,13 +161,14 @@ pub(super) fn push_page_quads(
             if layer == RenderLayer::Translucent {
                 let depth_key = (points[0][2] + points[1][2] + points[2][2]) / 3.0;
                 translucent.push(Triangle {
-                    points,
+                    // Screen coordinates are bounded by the output size, so f32
+                    // keeps subpixel precision while halving the point storage.
+                    points: points.map(|point| point.map(|value| value as f32)),
                     color,
                     shade,
                     ao: [ao[indices[0]], ao[indices[1]], ao[indices[2]]],
                     uvs: [uvs[indices[0]], uvs[indices[1]], uvs[indices[2]]],
                     texture,
-                    layer,
                     depth_key,
                 });
             }
@@ -205,13 +206,16 @@ pub(super) struct QuadRender {
 /// kept separate from the quad table.
 #[derive(Debug, Clone)]
 pub(super) struct Triangle {
-    pub(super) points: [[f64; 3]; 3],
+    /// Projected screen coordinates. Bounded by the output size, so f32 is
+    /// enough for subpixel precision and costs half of the f64 representation.
+    pub(super) points: [[f32; 3]; 3],
     color: [u8; 4],
     shade: f32,
     ao: [u8; 3],
     uvs: [[i16; 2]; 3],
     pub(super) texture: u16,
-    pub(super) layer: RenderLayer,
+    /// The average depth is kept as f64 so the sort order is independent of the
+    /// compact point representation.
     pub(super) depth_key: f64,
 }
 
@@ -228,6 +232,91 @@ pub(super) fn vertex_color(color: [u8; 4], shade: f32, ao: u8) -> [f32; 4] {
 }
 
 impl Triangle {
+    /// Fixed record size used by the translucent spill files.
+    pub(super) const RECORD_BYTES: usize = 76;
+
+    /// Serialize one spill record, including its destination tile.
+    pub(super) fn encode_record(&self, tile_index: u32) -> [u8; Self::RECORD_BYTES] {
+        let mut out = [0u8; Self::RECORD_BYTES];
+        out[0..4].copy_from_slice(&tile_index.to_le_bytes());
+        let mut offset = 4;
+        for point in &self.points {
+            for value in point {
+                out[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+                offset += 4;
+            }
+        }
+        out[offset..offset + 4].copy_from_slice(&self.color);
+        offset += 4;
+        out[offset..offset + 4].copy_from_slice(&self.shade.to_le_bytes());
+        offset += 4;
+        out[offset..offset + 3].copy_from_slice(&self.ao);
+        offset += 3;
+        for uv in &self.uvs {
+            for value in uv {
+                out[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+                offset += 2;
+            }
+        }
+        out[offset..offset + 2].copy_from_slice(&self.texture.to_le_bytes());
+        offset += 2;
+        out[offset..offset + 8].copy_from_slice(&self.depth_key.to_le_bytes());
+        offset += 8;
+        debug_assert_eq!(offset, 73);
+        out
+    }
+
+    /// Parse a spill record. The remaining bytes are padding.
+    pub(super) fn decode_record(bytes: &[u8]) -> (u32, Self) {
+        assert_eq!(bytes.len(), Self::RECORD_BYTES);
+        let tile_index = u32::from_le_bytes(bytes[0..4].try_into().expect("tile index"));
+        let mut offset = 4;
+        let mut points = [[0.0f32; 3]; 3];
+        for point in &mut points {
+            for value in point {
+                *value = f32::from_le_bytes(
+                    bytes[offset..offset + 4]
+                        .try_into()
+                        .expect("point component"),
+                );
+                offset += 4;
+            }
+        }
+        let color = bytes[offset..offset + 4].try_into().expect("color");
+        offset += 4;
+        let shade = f32::from_le_bytes(bytes[offset..offset + 4].try_into().expect("shade"));
+        offset += 4;
+        let ao = bytes[offset..offset + 3].try_into().expect("ao");
+        offset += 3;
+        let mut uvs = [[0i16; 2]; 3];
+        for uv in &mut uvs {
+            for value in uv {
+                *value = i16::from_le_bytes(bytes[offset..offset + 2].try_into().expect("uv"));
+                offset += 2;
+            }
+        }
+        let texture = u16::from_le_bytes(bytes[offset..offset + 2].try_into().expect("texture"));
+        offset += 2;
+        let depth_key = f64::from_le_bytes(bytes[offset..offset + 8].try_into().expect("depth"));
+        (
+            tile_index,
+            Self {
+                points,
+                color,
+                shade,
+                ao,
+                uvs,
+                texture,
+                depth_key,
+            },
+        )
+    }
+
+    /// Expand the compact screen points for binning and rasterization.
+    pub(super) fn points_f64(&self) -> [[f64; 3]; 3] {
+        self.points.map(|point| point.map(f64::from))
+    }
+
     pub(super) fn colors(&self) -> [[f32; 4]; 3] {
         [
             vertex_color(self.color, self.shade, self.ao[0]),
@@ -242,5 +331,17 @@ impl Triangle {
             decode_uv(self.uvs[1]),
             decode_uv(self.uvs[2]),
         ]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Triangle;
+
+    #[test]
+    fn translucent_triangle_stays_compact() {
+        // Twelve million retained triangles are the dominant textured path
+        // cost; keep a regression from silently widening this struct.
+        assert!(std::mem::size_of::<Triangle>() <= 72);
     }
 }

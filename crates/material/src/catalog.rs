@@ -7,7 +7,7 @@ use crate::tint::tint_for;
 use crate::{MaterialError, MaterialErrorCode};
 use litematic_mesh::{
     BlockCatalog, BlockModel, ColorBlockCatalog, FaceDirection, NO_TEXTURE, RenderLayer,
-    ResolvedBlock, Rgba,
+    ResolvedBlock, Rgba, needs_water_style,
 };
 use litematic_scene::{BlockStateKey, Scene};
 use serde::Serialize;
@@ -450,17 +450,28 @@ impl MaterialSet {
     {
         let mut resolved = HashMap::new();
         let mut info = HashMap::new();
+        let mut needs_water = false;
 
         for state in states {
             if state.is_air() || resolved.contains_key(&state) {
                 continue;
             }
 
+            needs_water |= needs_water_style(&state);
             let block = self.resolve(&state);
             if let Some(entry) = self.info_for(&state) {
                 info.insert(state.clone(), entry);
             }
             resolved.insert(state, block);
+        }
+
+        // Waterlogged blocks need a water style even when the scene has no
+        // standalone water cell.
+        if needs_water {
+            let water = BlockStateKey::simple("minecraft:water");
+            resolved
+                .entry(water.clone())
+                .or_insert_with(|| self.resolve(&water));
         }
 
         let textures = self.textures.borrow().clone();
@@ -508,8 +519,11 @@ fn fallback_texture_name(state: &BlockStateKey, face: FaceDirection) -> Option<S
         .map(|(_, path)| path)
         .unwrap_or(&state.name);
 
-    if path == "water" || path == "lava" {
-        return Some(format!("block/{path}_still"));
+    if path == "water" || path == "flowing_water" || path == "bubble_column" {
+        return Some("block/water_still".to_string());
+    }
+    if path == "lava" || path == "flowing_lava" {
+        return Some("block/lava_still".to_string());
     }
     if path == "grass_block" {
         return Some(match face {
@@ -632,7 +646,12 @@ fn fallback_tint(state: &BlockStateKey, face: FaceDirection) -> Rgba {
     if path == "grass_block" {
         return Rgba::WHITE;
     }
-    if path == "water" || path == "redstone_wire" || path.contains("leaves") {
+    if path == "water"
+        || path == "flowing_water"
+        || path == "bubble_column"
+        || path == "redstone_wire"
+        || path.contains("leaves")
+    {
         return tint_for(state, Some(0));
     }
     if path == "short_grass" || path == "tall_grass" || path == "fern" || path == "large_fern" {

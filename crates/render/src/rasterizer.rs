@@ -9,6 +9,7 @@ mod bin;
 mod downsample;
 mod geometry;
 mod project;
+mod spill;
 mod stream;
 mod tile;
 
@@ -80,9 +81,9 @@ fn render_mesh_internal(
     if streaming {
         let mut renderer = StreamingRenderer::with_camera(camera, options, textures);
         for range in chunk_ranges(&mesh.pages) {
-            renderer.render_pages(&mesh.pages[range]);
+            renderer.render_pages(&mesh.pages[range])?;
         }
-        return Ok(renderer.finish());
+        return renderer.finish();
     }
 
     let mut statistics = RenderStatistics {

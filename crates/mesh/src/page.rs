@@ -8,6 +8,7 @@
 
 use crate::catalog::{BlockCatalog, ResolvedBlock};
 use crate::model::FaceDirection;
+use crate::shape::{self, FluidState};
 use crate::view::{SceneBlockView, region_palette_id};
 use litematic_scene::{BlockStateKey, Scene};
 use std::collections::HashMap;
@@ -43,17 +44,23 @@ pub(crate) struct PaletteBlock {
     /// True when every model quad has a cullface, so an occluded neighbourhood
     /// removes the whole model without visiting its faces.
     pub(crate) all_quads_cullable: bool,
+    /// Fluid shape for a pure fluid or the water layer of a waterlogged block.
+    pub(crate) fluid: Option<FluidState>,
+    /// Waterlogged blocks keep their own model and add a shaped water layer.
+    pub(crate) waterlogged: bool,
 }
 
 /// Resolved palettes for every region in the scene.
 pub(crate) struct PaletteTables {
     regions: Vec<Vec<PaletteBlock>>,
+    water_style: Option<ResolvedBlock>,
 }
 
 impl PaletteTables {
     pub(crate) fn new<C: BlockCatalog + ?Sized>(scene: &Scene, catalog: &C) -> Self {
         let mut state_ids: HashMap<&BlockStateKey, u32> = HashMap::new();
         let mut regions = Vec::with_capacity(scene.regions.len());
+        let mut needs_water_style = false;
 
         for region in &scene.regions {
             let mut blocks = Vec::with_capacity(region.palette.len());
@@ -65,18 +72,40 @@ impl PaletteTables {
                 let occludes = block.occludes();
                 let all_quads_cullable = !block.model.quads.is_empty()
                     && block.model.quads.iter().all(|quad| quad.cullface.is_some());
+                let pure_fluid = shape::fluid_state(state);
+                let waterlogged = pure_fluid.is_none() && !occludes && shape::waterlogged(state);
+                let fluid = pure_fluid.or_else(|| {
+                    if waterlogged {
+                        shape::waterlogged_fluid(state)
+                    } else {
+                        None
+                    }
+                });
+                needs_water_style |= waterlogged;
+
                 blocks.push(PaletteBlock {
                     block,
                     state_id,
                     is_air,
                     occludes,
                     all_quads_cullable,
+                    fluid,
+                    waterlogged,
                 });
             }
             regions.push(blocks);
         }
 
-        Self { regions }
+        let water_style =
+            needs_water_style.then(|| catalog.resolve(&BlockStateKey::simple("minecraft:water")));
+        Self {
+            regions,
+            water_style,
+        }
+    }
+
+    pub(crate) fn water_style(&self) -> Option<&ResolvedBlock> {
+        self.water_style.as_ref()
     }
 
     pub(crate) fn block(&self, cell: Cell) -> Option<&PaletteBlock> {

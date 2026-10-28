@@ -1,5 +1,5 @@
 use litematic_material::{AssetSource, MaterialSet, MaterialSnapshot};
-use litematic_mesh::{BlockCatalog, MeshLimits, NO_TEXTURE, build_mesh};
+use litematic_mesh::{BlockCatalog, MeshLimits, NO_TEXTURE, RenderLayer, build_mesh};
 use litematic_scene::{BlockStateKey, PackedIndices, Region, Scene, SceneMetadata};
 use std::fs::{self, File};
 use std::io::BufWriter;
@@ -141,6 +141,25 @@ fn snapshot_matches_live_resolution() {
     }
 
     assert_eq!(snapshot.textures().len(), materials.textures().len());
+}
+
+#[test]
+fn snapshot_adds_a_water_style_for_waterlogged_blocks() {
+    let (_pack, materials) = fixture();
+    let mut slab = state("minecraft:oak_slab");
+    slab.properties
+        .insert("type".to_string(), "bottom".to_string());
+    slab.properties
+        .insert("waterlogged".to_string(), "true".to_string());
+
+    let snapshot = materials.snapshot([slab]);
+    let water = snapshot.resolve(&state("minecraft:water"));
+
+    assert_eq!(water.layer, RenderLayer::Translucent);
+    assert!(
+        !water.model.quads.is_empty(),
+        "waterlogged blocks need a shaped water style"
+    );
 }
 
 #[test]
