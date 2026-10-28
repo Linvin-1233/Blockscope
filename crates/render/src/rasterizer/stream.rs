@@ -595,7 +595,12 @@ fn render_translucent_bucket(
 }
 
 fn storage_error(error: std::io::Error) -> RenderError {
-    RenderError::temp_storage(format!("translucent spill: {error}"))
+    let message = format!("translucent spill: {error}");
+    if error.kind() == std::io::ErrorKind::Unsupported {
+        RenderError::translucent_budget(message)
+    } else {
+        RenderError::temp_storage(message)
+    }
 }
 
 fn run_parallel<F>(indices: &[usize], threads: usize, work: F)

@@ -134,14 +134,17 @@ dependencies = [
 name = "blockscope-worker"
 version = "0.4.0"
 dependencies = [
+ "futures-util",
  "litematic-core",
  "litematic-material",
  "litematic-mesh",
  "litematic-render",
  "litematic-scene",
+ "png",
  "serde",
  "serde_json",
  "worker",
+ "zip",
 ]
 
 [[package]]

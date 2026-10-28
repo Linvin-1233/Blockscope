@@ -7,6 +7,7 @@ pub enum RenderErrorCode {
     OutputTooLarge,
     PngEncodeFailed,
     TempStorageFailed,
+    TranslucentBudgetExceeded,
 }
 
 impl RenderErrorCode {
@@ -16,6 +17,7 @@ impl RenderErrorCode {
             Self::OutputTooLarge => "OUTPUT_TOO_LARGE",
             Self::PngEncodeFailed => "PNG_ENCODE_FAILED",
             Self::TempStorageFailed => "TEMP_STORAGE_FAILED",
+            Self::TranslucentBudgetExceeded => "TRANSLUCENT_BUDGET_EXCEEDED",
         }
     }
 }
@@ -48,6 +50,10 @@ impl RenderError {
 
     pub fn temp_storage(message: impl Into<String>) -> Self {
         Self::new(RenderErrorCode::TempStorageFailed, message)
+    }
+
+    pub fn translucent_budget(message: impl Into<String>) -> Self {
+        Self::new(RenderErrorCode::TranslucentBudgetExceeded, message)
     }
 }
 

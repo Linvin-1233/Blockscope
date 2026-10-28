@@ -28,12 +28,30 @@ cf deploy --prebuilt
 If the account has more than one account, set `CLOUDFLARE_ACCOUNT_ID` before
 deploying. `just worker` and `just worker-deploy` run the same commands.
 
+On Windows PowerShell, use the native script instead; `just worker` dispatches
+to it on Windows:
+
+```powershell
+rustup target add wasm32-unknown-unknown
+cargo install worker-build --version 0.8.7 --locked
+./scripts/build-worker.ps1
+cf deploy --prebuilt
+```
+
 ### Bundle a resource pack
 
 Put the pack at `pack.zip` in the repository root, or point at it explicitly:
 
 ```bash
 RESOURCE_PACK=~/packs/vanilla.zip ./scripts/build-worker.sh
+cf deploy --prebuilt
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:RESOURCE_PACK = "C:\packs\vanilla.zip"
+./scripts/build-worker.ps1
 cf deploy --prebuilt
 ```
 
@@ -124,7 +142,7 @@ Successful responses are `image/png`. Errors are JSON:
 {
   "code": "MESH_LIMIT_EXCEEDED",
   "message": "...",
-  "hint": "lower lod or request a smaller image"
+  "hint": "lower lod"
 }
 ```
 
@@ -133,8 +151,11 @@ Successful responses are `image/png`. Errors are JSON:
 textures are resolved from it; missing textures keep their fallback color.
 
 Limits: 8 MiB input, 32 MiB decompressed NBT, 64,000,000 blocks, 200,000 mesh
-quads, 24 MiB resource pack, and 1,048,576 output pixels. Decoding a pack and
-its textures costs CPU and memory; keep the mesh cap low on the Free plan.
+quads, 24 MiB resource pack, and 1,048,576 output pixels. The request body is
+read as a capped stream, so a chunked body or an under-declared `Content-Length`
+is rejected after 8 MiB instead of being buffered in full. Decoding a pack and
+its textures costs CPU and memory; the parsed material set is cached in the
+isolate, and a changed `RESOURCE_PACK_PATH` replaces that cache entry.
 
 ## Build a frontend
 

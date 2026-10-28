@@ -11,6 +11,9 @@
 
 - 新增 Cloudflare Workers 适配器（`blockscope-worker`），支持可配置 HTTP 端点和
   CORS，直接从 `.litematic` 请求体渲染 PNG，并可从 Workers 静态资源加载资源包。
+  请求先校验并解析，再读取资源包；请求体按 8 MiB 上限流式读取；解析后的材质集
+  按 isolate 缓存。Windows 使用 `scripts/build-worker.ps1` 构建，CI 会检查 wasm
+  目标。
 
 ### 修复
 

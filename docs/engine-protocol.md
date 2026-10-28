@@ -199,6 +199,7 @@ rasterizer mid-tile.
 | `MEMORY_LIMIT` | yes | Worker exceeded its per-worker memory ceiling |
 | `PNG_ENCODE_FAILED` | maybe | Encoder failure; retry once |
 | `TEMP_STORAGE_FAILED` | yes | Translucent spill could not create, write, or read its temporary bucket files |
+| `TRANSLUCENT_BUDGET_EXCEEDED` | no | Translucent geometry exceeded the in-memory budget on a target without spill storage; lower LOD |
 | `IO_ERROR` | maybe | Input or output file access failed |
 | `INTERNAL_ERROR` | maybe | Bug; retry once, then report |
 | `TIMEOUT` | yes | Emitted by the supervisor, not the engine |

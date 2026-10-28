@@ -17,6 +17,10 @@ fmt-check:
 clippy:
     cargo clippy --workspace --all-targets -- -D warnings
 
+# Check the Worker crate for the wasm runtime target
+check-wasm:
+    cargo clippy -p blockscope-worker --target wasm32-unknown-unknown -- -D warnings
+
 # Apply Clippy suggestions automatically where possible
 clippy-fix:
     cargo clippy --workspace --all-targets --fix --allow-dirty --allow-staged
@@ -75,13 +79,21 @@ check: fmt-check clippy test
 worker:
     ./scripts/build-worker.sh
 
+[windows]
+worker:
+    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-worker.ps1
+
 # Deploy the prebuilt Cloudflare Worker
 [unix]
 worker-deploy: worker
     cf deploy --prebuilt
 
-# Run all quality gates including the cross-target Linux clippy check
-check-all: check check-linux
+[windows]
+worker-deploy: worker
+    cf deploy --prebuilt
+
+# Run all quality gates including the cross-target Linux and wasm checks
+check-all: check check-linux check-wasm
 
 # Build all workspace crates in debug mode
 build:

@@ -6,6 +6,7 @@
 //! origin, and pack path are text bindings (`ENDPOINT`, `ALLOWED_ORIGIN`,
 //! `RESOURCE_PACK_PATH`) so deployments can change them without a rebuild.
 
+use futures_util::StreamExt;
 use litematic_core::{
     DecodeLimits, LitematicError, LitematicErrorCode, LitematicFile, LitematicLimits,
 };
@@ -19,6 +20,8 @@ use litematic_render::{
 };
 use litematic_scene::{Scene, aggregate_with_threads};
 use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
+use std::rc::Rc;
 use worker::{Context, Env, Method, Request, Response, Result, event};
 
 const DEFAULT_ENDPOINT: &str = "/render";
@@ -37,6 +40,23 @@ const MAX_MESH_QUADS: usize = 200_000;
 const MAX_MESH_VERTICES: usize = 800_000;
 const MAX_MESH_PAGES: usize = 8_000;
 const MAX_LOD: u32 = 16;
+
+/// Parsed pack state reused by every request in an isolate. Static assets are
+/// immutable for a deployment, so a path change replaces the entry.
+struct CachedMaterials {
+    path: String,
+    materials: Rc<MaterialSet>,
+}
+
+thread_local! {
+    static MATERIAL_CACHE: RefCell<Option<CachedMaterials>> = const { RefCell::new(None) };
+}
+
+struct PreparedRender {
+    scene: Scene,
+    options: RenderOptions,
+    mesh_limits: MeshLimits,
+}
 
 #[derive(Debug, Default, Deserialize)]
 struct QueryOptions {
@@ -113,7 +133,7 @@ impl ApiError {
             status: 422,
             code: error.code.as_str().to_string(),
             message: error.message,
-            hint: Some("lower lod or request a smaller image"),
+            hint: Some("lower lod"),
         }
     }
 
@@ -125,8 +145,9 @@ impl ApiError {
         };
         let hint = match error.code {
             litematic_render::RenderErrorCode::TempStorageFailed => {
-                Some("lower lod or request a smaller image")
+                Some("lower lod; check temporary storage")
             }
+            litematic_render::RenderErrorCode::TranslucentBudgetExceeded => Some("lower lod"),
             _ => None,
         };
         Self {
@@ -213,36 +234,6 @@ pub async fn fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Response
         return method_not_allowed(&origin, "POST");
     }
 
-    if let Some(length) = req.headers().get("content-length")?
-        && length
-            .parse::<usize>()
-            .is_ok_and(|length| length > MAX_INPUT_BYTES)
-    {
-        return error_response(
-            ApiError::payload_too_large("request body is too large"),
-            &origin,
-        );
-    }
-
-    let input = match req.bytes().await {
-        Ok(input) => input,
-        Err(error) => {
-            return error_response(
-                ApiError::bad_request(format!("could not read request body: {error}")),
-                &origin,
-            );
-        }
-    };
-    if input.len() > MAX_INPUT_BYTES {
-        return error_response(
-            ApiError::payload_too_large("request body is too large"),
-            &origin,
-        );
-    }
-    if input.is_empty() {
-        return error_response(ApiError::bad_request("request body is empty"), &origin);
-    }
-
     let query = match req.query::<QueryOptions>() {
         Ok(query) => query,
         Err(error) => {
@@ -253,29 +244,109 @@ pub async fn fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Response
         }
     };
 
-    let pack = match load_resource_pack(&env).await {
-        Ok(pack) => pack,
+    let input = match read_request_body(&mut req).await {
+        Ok(input) => input,
         Err(error) => return error_response(error, &origin),
     };
 
-    match render_png(&input, &query, pack) {
+    // Query validation and .litematic parsing do not need the pack, so they run
+    // before the asset fetch. A malformed or empty request never touches ASSETS.
+    let prepared = match prepare_render(&input, &query) {
+        Ok(prepared) => prepared,
+        Err(error) => return error_response(error, &origin),
+    };
+
+    let materials = match load_materials(&env).await {
+        Ok(materials) => materials,
+        Err(error) => return error_response(error, &origin),
+    };
+
+    match render_png(prepared, materials.as_deref()) {
         Ok(png) => png_response(png, &origin),
         Err(error) => error_response(error, &origin),
     }
 }
 
-async fn load_resource_pack(env: &Env) -> std::result::Result<Option<Vec<u8>>, ApiError> {
+async fn read_request_body(req: &mut Request) -> std::result::Result<Vec<u8>, ApiError> {
+    let declared = req
+        .headers()
+        .get("content-length")
+        .map_err(|error| ApiError::bad_request(format!("invalid content-length: {error}")))?;
+    if let Some(length) = declared.and_then(|value| value.parse::<usize>().ok())
+        && length > MAX_INPUT_BYTES
+    {
+        return Err(ApiError::payload_too_large("request body is too large"));
+    }
+
+    // Stream instead of req.bytes(): a chunked or under-declared body must not
+    // be buffered beyond the cap before it is rejected.
+    let mut stream = req
+        .stream()
+        .map_err(|error| ApiError::bad_request(format!("cannot read request body: {error}")))?;
+    let mut input = Vec::with_capacity(64 * 1024);
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk
+            .map_err(|error| ApiError::bad_request(format!("cannot read request body: {error}")))?;
+        if input.len().saturating_add(chunk.len()) > MAX_INPUT_BYTES {
+            return Err(ApiError::payload_too_large("request body is too large"));
+        }
+        input.extend_from_slice(&chunk);
+    }
+    if input.is_empty() {
+        return Err(ApiError::bad_request("request body is empty"));
+    }
+    Ok(input)
+}
+
+async fn load_materials(env: &Env) -> std::result::Result<Option<Rc<MaterialSet>>, ApiError> {
     let path = binding(env, "RESOURCE_PACK_PATH", DEFAULT_PACK_PATH);
     if path.is_empty() {
         return Ok(None);
     }
+    if let Some(materials) = cached_materials(&path) {
+        return Ok(Some(materials));
+    }
 
+    let pack = fetch_resource_pack(env, &path).await?;
+    let materials = Rc::new(materials_from_pack(pack)?);
+    cache_materials(&path, Rc::clone(&materials));
+    Ok(Some(materials))
+}
+
+fn cached_materials(path: &str) -> Option<Rc<MaterialSet>> {
+    MATERIAL_CACHE.with(|cache| {
+        cache
+            .borrow()
+            .as_ref()
+            .filter(|cached| cached.path == path)
+            .map(|cached| Rc::clone(&cached.materials))
+    })
+}
+
+fn cache_materials(path: &str, materials: Rc<MaterialSet>) {
+    MATERIAL_CACHE.with(|cache| {
+        *cache.borrow_mut() = Some(CachedMaterials {
+            path: path.to_string(),
+            materials,
+        });
+    });
+}
+
+fn materials_from_pack(pack: Vec<u8>) -> std::result::Result<MaterialSet, ApiError> {
+    let mut source = AssetSource::new();
+    source
+        .add_zip_bytes(pack)
+        .map_err(ApiError::from_material)?;
+    MaterialSet::open(source).map_err(ApiError::from_material)
+}
+
+async fn fetch_resource_pack(env: &Env, path: &str) -> std::result::Result<Vec<u8>, ApiError> {
     let assets = env.assets(ASSETS_BINDING).map_err(|error| {
         ApiError::resource_pack(format!("ASSETS binding is unavailable: {error}"))
     })?;
     // The assets binding ignores the host but still requires an absolute URL.
     let asset_path = if path.starts_with('/') {
-        path.clone()
+        path.to_string()
     } else {
         format!("/{path}")
     };
@@ -305,14 +376,13 @@ async fn load_resource_pack(env: &Env) -> std::result::Result<Option<Vec<u8>>, A
             hint: Some("use a resource pack under 24 MiB"),
         });
     }
-    Ok(Some(bytes))
+    Ok(bytes)
 }
 
-fn render_png(
+fn prepare_render(
     input: &[u8],
     query: &QueryOptions,
-    pack: Option<Vec<u8>>,
-) -> std::result::Result<Vec<u8>, ApiError> {
+) -> std::result::Result<PreparedRender, ApiError> {
     let width = query.width.unwrap_or(512);
     let height = query.height.unwrap_or(512);
     if width == 0 || height == 0 || width > MAX_DIMENSION || height > MAX_DIMENSION {
@@ -364,12 +434,11 @@ fn render_png(
     let file = LitematicFile::parse_bytes(input, &decode_limits, &scene_limits)
         .map_err(ApiError::from_litematic)?;
     let scene = file.into_scene().map_err(ApiError::from_litematic)?;
-    let aggregated = if lod > 1 {
-        Some(aggregate_with_threads(&scene, lod, 1).map_err(ApiError::from_scene)?)
+    let scene = if lod > 1 {
+        aggregate_with_threads(&scene, lod, 1).map_err(ApiError::from_scene)?
     } else {
-        None
+        scene
     };
-    let scene: &Scene = aggregated.as_ref().unwrap_or(&scene);
 
     let mesh_limits = MeshLimits {
         max_pages: MAX_MESH_PAGES,
@@ -394,26 +463,38 @@ fn render_png(
     };
     options.validate().map_err(ApiError::from_render)?;
 
-    let output = if let Some(pack) = pack {
-        let mut source = AssetSource::new();
-        source
-            .add_zip_bytes(pack)
-            .map_err(ApiError::from_material)?;
-        let materials = MaterialSet::open(source).map_err(ApiError::from_material)?;
+    Ok(PreparedRender {
+        scene,
+        options,
+        mesh_limits,
+    })
+}
+
+fn render_png(
+    prepared: PreparedRender,
+    materials: Option<&MaterialSet>,
+) -> std::result::Result<Vec<u8>, ApiError> {
+    let PreparedRender {
+        scene,
+        options,
+        mesh_limits,
+    } = prepared;
+
+    let output = if let Some(materials) = materials {
         let snapshot = materials.snapshot(scene.statistics.blocks.keys().cloned());
         let mesh =
-            build_mesh_with_options(scene, &snapshot, &mesh_limits, MeshBuildOptions::default())
+            build_mesh_with_options(&scene, &snapshot, &mesh_limits, MeshBuildOptions::default())
                 .map_err(ApiError::from_mesh)?;
-        render_mesh_with_textures(scene, &mesh, &options, snapshot.textures())
+        render_mesh_with_textures(&scene, &mesh, &options, snapshot.textures())
             .map_err(ApiError::from_render)?
     } else {
         let catalog = ColorBlockCatalog::new().map_err(|error| {
             ApiError::internal(format!("color catalog is unavailable: {error}"))
         })?;
         let mesh =
-            build_mesh_with_options(scene, &catalog, &mesh_limits, MeshBuildOptions::default())
+            build_mesh_with_options(&scene, &catalog, &mesh_limits, MeshBuildOptions::default())
                 .map_err(ApiError::from_mesh)?;
-        render_mesh(scene, &mesh, &options).map_err(ApiError::from_render)?
+        render_mesh(&scene, &mesh, &options).map_err(ApiError::from_render)?
     };
 
     let mut png = Vec::new();
@@ -488,4 +569,203 @@ fn png_response(png: Vec<u8>, origin: &str) -> Result<Response> {
     headers.set("access-control-allow-origin", origin)?;
     headers.set("cache-control", "no-store")?;
     Ok(response)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Cursor, Write};
+
+    fn named(tag: u8, name: &str, payload: &[u8]) -> Vec<u8> {
+        let mut out = vec![tag];
+        out.extend_from_slice(&(name.len() as u16).to_be_bytes());
+        out.extend_from_slice(name.as_bytes());
+        out.extend_from_slice(payload);
+        out
+    }
+
+    fn root(children: &[u8]) -> Vec<u8> {
+        let mut out = vec![10, 0, 0];
+        out.extend_from_slice(children);
+        out.push(0);
+        out
+    }
+
+    fn int(name: &str, value: i32) -> Vec<u8> {
+        named(3, name, &value.to_be_bytes())
+    }
+
+    fn string(name: &str, value: &str) -> Vec<u8> {
+        let mut payload = (value.len() as u16).to_be_bytes().to_vec();
+        payload.extend_from_slice(value.as_bytes());
+        named(8, name, &payload)
+    }
+
+    fn compound_payload(children: &[u8]) -> Vec<u8> {
+        let mut payload = children.to_vec();
+        payload.push(0);
+        payload
+    }
+
+    fn compound(name: &str, children: &[u8]) -> Vec<u8> {
+        named(10, name, &compound_payload(children))
+    }
+
+    fn list_of_compounds(name: &str, entries: &[Vec<u8>]) -> Vec<u8> {
+        let mut payload = vec![10];
+        payload.extend_from_slice(&(entries.len() as i32).to_be_bytes());
+        for entry in entries {
+            payload.extend_from_slice(entry);
+        }
+        named(9, name, &payload)
+    }
+
+    fn long_array(name: &str, values: &[i64]) -> Vec<u8> {
+        let mut payload = (values.len() as i32).to_be_bytes().to_vec();
+        for value in values {
+            payload.extend_from_slice(&value.to_be_bytes());
+        }
+        named(12, name, &payload)
+    }
+
+    fn vec3i(name: &str, x: i32, y: i32, z: i32) -> Vec<u8> {
+        let mut children = Vec::new();
+        children.extend(int("x", x));
+        children.extend(int("y", y));
+        children.extend(int("z", z));
+        compound(name, &children)
+    }
+
+    fn palette_entry(name: &str) -> Vec<u8> {
+        compound_payload(&string("Name", name))
+    }
+
+    /// Two stone blocks on a 2x1x1 region; enough geometry to render.
+    fn tiny_litematic() -> Vec<u8> {
+        let mut region = Vec::new();
+        region.extend(vec3i("Position", 0, 0, 0));
+        region.extend(vec3i("Size", 2, 1, 1));
+        region.extend(list_of_compounds(
+            "BlockStatePalette",
+            &[
+                palette_entry("minecraft:air"),
+                palette_entry("minecraft:stone"),
+            ],
+        ));
+        // Palette ids use 4-bit cells; 0x11 puts stone in both blocks.
+        region.extend(long_array("BlockStates", &[0x11]));
+
+        let mut children = Vec::new();
+        children.extend(int("Version", 7));
+        children.extend(int("MinecraftDataVersion", 3700));
+        children.extend(compound("Metadata", &string("Name", "worker-test")));
+        children.extend(compound("Regions", &compound("main", &region)));
+        root(&children)
+    }
+
+    fn stone_texture() -> Vec<u8> {
+        let mut bytes = Vec::new();
+        {
+            let mut encoder = png::Encoder::new(&mut bytes, 1, 1);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            let mut writer = encoder.write_header().unwrap();
+            writer.write_image_data(&[220, 40, 40, 255]).unwrap();
+            writer.finish().unwrap();
+        }
+        bytes
+    }
+
+    fn stone_pack() -> Vec<u8> {
+        let mut cursor = Cursor::new(Vec::new());
+        {
+            let mut writer = zip::ZipWriter::new(&mut cursor);
+            let options = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
+            writer.start_file("pack.mcmeta", options).unwrap();
+            writer
+                .write_all(br#"{"pack":{"pack_format":15,"description":"worker test"}}"#)
+                .unwrap();
+            writer
+                .start_file("assets/minecraft/blockstates/stone.json", options)
+                .unwrap();
+            writer
+                .write_all(br#"{"variants":{"":{"model":"minecraft:block/stone"}}}"#)
+                .unwrap();
+            writer
+                .start_file("assets/minecraft/models/block/stone.json", options)
+                .unwrap();
+            writer
+                .write_all(
+                    br##"{
+                        "textures":{"all":"block/stone"},
+                        "elements":[{
+                            "from":[0,0,0],
+                            "to":[16,16,16],
+                            "faces":{
+                                "down":{"texture":"#all","cullface":"down"},
+                                "up":{"texture":"#all","cullface":"up"},
+                                "north":{"texture":"#all","cullface":"north"},
+                                "south":{"texture":"#all","cullface":"south"},
+                                "west":{"texture":"#all","cullface":"west"},
+                                "east":{"texture":"#all","cullface":"east"}
+                            }
+                        }]
+                    }"##,
+                )
+                .unwrap();
+            writer
+                .start_file("assets/minecraft/textures/block/stone.png", options)
+                .unwrap();
+            writer.write_all(&stone_texture()).unwrap();
+            writer.finish().unwrap();
+        }
+        cursor.into_inner()
+    }
+
+    fn query() -> QueryOptions {
+        QueryOptions {
+            width: Some(64),
+            height: Some(64),
+            ..QueryOptions::default()
+        }
+    }
+
+    #[test]
+    fn renders_color_only_litematic() {
+        let litematic = tiny_litematic();
+        let png = render_png(prepare_render(&litematic, &query()).unwrap(), None).unwrap();
+        assert!(png.starts_with(b"\x89PNG\r\n\x1a\n"));
+    }
+
+    #[test]
+    fn renders_zipped_pack_litematic() {
+        let litematic = tiny_litematic();
+        let color = render_png(prepare_render(&litematic, &query()).unwrap(), None).unwrap();
+
+        let materials = materials_from_pack(stone_pack()).unwrap();
+        let textured = render_png(
+            prepare_render(&litematic, &query()).unwrap(),
+            Some(&materials),
+        )
+        .unwrap();
+
+        assert!(textured.starts_with(b"\x89PNG\r\n\x1a\n"));
+        assert_ne!(
+            textured, color,
+            "the bundled texture must change the render"
+        );
+    }
+
+    #[test]
+    fn caches_materials_by_path() {
+        let first = Rc::new(materials_from_pack(stone_pack()).unwrap());
+        cache_materials("/test-pack.zip", Rc::clone(&first));
+
+        assert!(Rc::ptr_eq(
+            &first,
+            &cached_materials("/test-pack.zip").unwrap()
+        ));
+        assert!(cached_materials("/other-pack.zip").is_none());
+    }
 }

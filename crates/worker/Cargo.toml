@@ -8,6 +8,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+futures-util = { workspace = true }
 litematic-core = { path = "../litematic" }
 litematic-material = { path = "../material" }
 litematic-mesh = { path = "../mesh" }
@@ -16,3 +17,7 @@ litematic-scene = { path = "../scene" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 worker = { workspace = true }
+
+[dev-dependencies]
+png = { workspace = true }
+zip = { workspace = true }
