@@ -6,6 +6,7 @@ use crate::{
     parse_lod, parse_texture_filter, prepare_scene, warn_forced,
 };
 use clap::Args;
+use litematic_render::terminal::enable_windows_virtual_terminal;
 use litematic_render::{
     Background, LightingProfile, RenderOptions, RenderOutput, RenderStatistics, StreamingRenderer,
     TerminalOptions, TerminalProtocol, detect_terminal_pixels, detect_terminal_protocol,
@@ -39,8 +40,9 @@ struct ViewResult {
     background: Background,
     render_ms: f64,
     png_ms: f64,
-    /// Encoded terminal graphics, emitted after the summary so the text cannot
-    /// scroll the image out of view.
+    /// Encoded terminal graphics. Every view is encoded before the first image
+    /// is written so all summaries stay together and the images remain
+    /// contiguous at the end instead of scrolling each other away.
     terminal: Option<Vec<u8>>,
 }
 
@@ -145,6 +147,9 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
         || args.terminal_height.is_some();
 
     let term_options = if show_terminal {
+        // The CLI writes encoded graphics directly instead of going through
+        // render_to_terminal, so enable Windows VT processing here.
+        enable_windows_virtual_terminal();
         if !std::io::stdout().is_terminal() {
             ui::errln!(
                 "{WARNING}warning:{WARNING:#} stdout is not a terminal; the image is emitted as raw escape sequences instead of being displayed"
