@@ -18,29 +18,29 @@ environment.
 
 ## Documentation
 
-Documentation is hosted under `docs/` as a [Mintlify](https://mintlify.com) site. Preview locally with `cd docs && mint dev`.
+Read the documentation at [blockscope.linvin.net](https://blockscope.linvin.net). The source lives under `docs/` as a [Mintlify](https://mintlify.com) site; preview locally with `cd docs && mint dev`.
 
 ### User Guide
 
-- [User documentation index](docs/user/index.md)
-- [Features and limitations](docs/user/features.md)
-- [Installation and quick start](docs/user/getting-started.md)
-- [CLI reference](docs/user/cli.md)
-- [Materials and resource packs](docs/user/materials.md)
-- [LOD and large structures](docs/user/lod.md)
-- [Service mode](docs/user/service.md)
-- [Limits and security](docs/user/limits.md)
-- [Docker](docs/user/docker.md)
-- [Troubleshooting](docs/user/troubleshooting.md)
+- [User documentation index](https://blockscope.linvin.net/user)
+- [Features and limitations](https://blockscope.linvin.net/user/features)
+- [Installation and quick start](https://blockscope.linvin.net/user/getting-started)
+- [CLI reference](https://blockscope.linvin.net/user/cli)
+- [Materials and resource packs](https://blockscope.linvin.net/user/materials)
+- [LOD and large structures](https://blockscope.linvin.net/user/lod)
+- [Service mode](https://blockscope.linvin.net/user/service)
+- [Limits and security](https://blockscope.linvin.net/user/limits)
+- [Docker](https://blockscope.linvin.net/user/docker)
+- [Troubleshooting](https://blockscope.linvin.net/user/troubleshooting)
 
 ### Technical Documentation
 
-- [Litematic format](docs/litematic-format.md)
-- [Color-block mesh](docs/mesh-geometry.md)
-- [CPU rendering](docs/rendering.md)
-- [Resource-pack materials](docs/textures.md)
-- [Engine protocol v1](docs/engine-protocol.md)
-- [Deployment](docs/deployment.md)
+- [Litematic format](https://blockscope.linvin.net/litematic-format)
+- [Color-block mesh](https://blockscope.linvin.net/mesh-geometry)
+- [CPU rendering](https://blockscope.linvin.net/rendering)
+- [Resource-pack materials](https://blockscope.linvin.net/textures)
+- [Engine protocol v1](https://blockscope.linvin.net/engine-protocol)
+- [Deployment](https://blockscope.linvin.net/deployment)
 
 ### Project
 
