@@ -1,5 +1,6 @@
 use crate::color::Rgba;
 use crate::model::{BlockModel, FaceDirection, ModelBox, ModelQuad, NO_TEXTURE, face_uv};
+use crate::util::strip_namespace;
 use crate::voxel::build_model;
 use litematic_scene::BlockStateKey;
 
@@ -562,10 +563,6 @@ fn prop<'a>(state: &'a BlockStateKey, key: &str) -> Option<&'a str> {
 
 fn bool_prop(state: &BlockStateKey, key: &str) -> bool {
     prop(state, key) == Some("true")
-}
-
-fn strip_namespace(name: &str) -> &str {
-    name.split_once(':').map(|(_, path)| path).unwrap_or(name)
 }
 
 struct ShapeBuilder {

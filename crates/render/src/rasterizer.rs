@@ -18,7 +18,10 @@ use downsample::downsample;
 use project::{QuadRender, Triangle, project_mesh_pages};
 pub use stream::StreamingRenderer;
 use stream::chunk_ranges;
-use tile::{render_tile, render_tiles_parallel};
+use tile::{TileProgressSink, render_tile, render_tiles_parallel};
+
+/// Receives `(completed_tiles, total_tiles)` from the rasterizer.
+pub type TileProgress<'a> = &'a (dyn Fn(u64, u64) + Sync);
 
 /// Render counters and effective output settings.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -55,7 +58,19 @@ pub fn render_mesh(
     mesh: &Mesh,
     options: &RenderOptions,
 ) -> Result<RenderOutput, RenderError> {
-    render_mesh_internal(scene, mesh, options, None)
+    render_mesh_internal(scene, mesh, options, None, None)
+}
+
+/// Render a color-only mesh and report rasterizer tile completion.
+///
+/// The callback is not invoked when [`will_stream`] is true.
+pub fn render_mesh_with_progress(
+    scene: &Scene,
+    mesh: &Mesh,
+    options: &RenderOptions,
+    progress: TileProgress<'_>,
+) -> Result<RenderOutput, RenderError> {
+    render_mesh_internal(scene, mesh, options, None, Some(progress))
 }
 
 /// Render a mesh and sample its texture ids from `textures`.
@@ -65,7 +80,28 @@ pub fn render_mesh_with_textures(
     options: &RenderOptions,
     textures: &TextureSet,
 ) -> Result<RenderOutput, RenderError> {
-    render_mesh_internal(scene, mesh, options, Some(textures))
+    render_mesh_internal(scene, mesh, options, Some(textures), None)
+}
+
+/// Render a textured mesh and report rasterizer tile completion.
+///
+/// The callback is not invoked when [`will_stream`] is true.
+pub fn render_mesh_with_textures_and_progress(
+    scene: &Scene,
+    mesh: &Mesh,
+    options: &RenderOptions,
+    textures: &TextureSet,
+    progress: TileProgress<'_>,
+) -> Result<RenderOutput, RenderError> {
+    render_mesh_internal(scene, mesh, options, Some(textures), Some(progress))
+}
+
+/// Whether rendering this mesh will use the page-streaming rasterizer.
+///
+/// Streaming revisits tiles across page chunks, so callers should show
+/// indeterminate progress instead of a tile percentage in that case.
+pub fn will_stream(mesh: &Mesh, options: &RenderOptions) -> bool {
+    options.force_streaming || table_bytes(mesh) > tile_buffer_bytes(options)
 }
 
 fn render_mesh_internal(
@@ -73,11 +109,12 @@ fn render_mesh_internal(
     mesh: &Mesh,
     options: &RenderOptions,
     textures: Option<&TextureSet>,
+    progress: Option<TileProgress<'_>>,
 ) -> Result<RenderOutput, RenderError> {
     options.validate()?;
     let camera = Camera::new(&scene.bounds, options)?;
 
-    let streaming = options.force_streaming || table_bytes(mesh) > tile_buffer_bytes(options);
+    let streaming = will_stream(mesh, options);
     if streaming {
         let mut renderer = StreamingRenderer::with_camera(camera, options, textures);
         for range in chunk_ranges(&mesh.pages) {
@@ -96,7 +133,14 @@ fn render_mesh_internal(
     };
     let threads = worker_count(options.threads, mesh.pages.len());
     let (quads, translucent) = project_mesh_pages(mesh, &camera, options, &mut statistics, threads);
-    let rgba = rasterize(&quads, &translucent, options, &mut statistics, textures);
+    let rgba = rasterize(
+        &quads,
+        &translucent,
+        options,
+        &mut statistics,
+        textures,
+        progress,
+    );
     Ok(RenderOutput {
         width: options.width,
         height: options.height,
@@ -111,6 +155,7 @@ fn rasterize(
     options: &RenderOptions,
     statistics: &mut RenderStatistics,
     textures: Option<&TextureSet>,
+    progress: Option<TileProgress<'_>>,
 ) -> Vec<u8> {
     let width = options.internal_width();
     let height = options.internal_height();
@@ -123,6 +168,11 @@ fn rasterize(
     let quad_bins = bin_quads(quads, width, height, tile_size);
     let triangle_bins = bin_triangles(translucent, width, height, tile_size);
     let threads = worker_count(options.threads, jobs.len());
+    let total_tiles = jobs.len() as u64;
+    let sink = progress.map(|callback| {
+        callback(0, total_tiles);
+        TileProgressSink::new(callback, total_tiles)
+    });
     let tiles = if threads > 1 {
         render_tiles_parallel(
             quads,
@@ -133,11 +183,12 @@ fn rasterize(
             &triangle_bins,
             threads,
             textures,
+            sink.as_ref(),
         )
     } else {
         jobs.iter()
             .map(|job| {
-                render_tile(
+                let tile = render_tile(
                     quads,
                     translucent,
                     options,
@@ -145,7 +196,11 @@ fn rasterize(
                     &quad_bins[job.index],
                     &triangle_bins[job.index],
                     textures,
-                )
+                );
+                if let Some(sink) = &sink {
+                    sink.advance();
+                }
+                tile
             })
             .collect()
     };

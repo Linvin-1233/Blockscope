@@ -99,6 +99,20 @@ fn reports_enclosing_size_mismatch() {
 }
 
 #[test]
+fn reports_empty_region() {
+    let empty = region("empty", [0, 0, 0], [2, 1, 1], None, &[0]);
+    let bytes = litematic(7, None, 3700, &metadata([2, 1, 1], 0), &[empty]);
+    let scene = parse(&bytes);
+
+    assert!(
+        scene
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == DiagnosticCode::EmptyRegion)
+    );
+}
+
+#[test]
 fn reports_region_overlap() {
     let first = region("a", [0, 0, 0], [2, 1, 1], None, &[0]);
     let second = region("b", [0, 0, 0], [2, 1, 1], None, &[0]);

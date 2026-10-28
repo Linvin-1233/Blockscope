@@ -1,6 +1,6 @@
 use super::{
-    PageBuild, PageCapacityHint, PageMode, accumulate_statistics, build_page, page_origin_of,
-    worker_count,
+    PageBuild, PageCapacityHint, PageMode, PageProgress, accumulate_statistics, build_page,
+    page_origin_of, worker_count,
 };
 use crate::catalog::BlockCatalog;
 use crate::page::PaletteTables;
@@ -45,6 +45,25 @@ pub fn build_mesh_streaming_with_options<C, F>(
     limits: &MeshLimits,
     threads: u32,
     options: MeshBuildOptions,
+    sink: F,
+) -> Result<MeshStatistics, MeshError>
+where
+    C: BlockCatalog + Sync,
+    F: FnMut(&[MeshPage]),
+{
+    build_mesh_streaming_with_options_and_progress(
+        scene, catalog, limits, threads, options, None, sink,
+    )
+}
+
+/// Build a streaming mesh and report page completion after each chunk.
+pub fn build_mesh_streaming_with_options_and_progress<C, F>(
+    scene: &Scene,
+    catalog: &C,
+    limits: &MeshLimits,
+    threads: u32,
+    options: MeshBuildOptions,
+    progress: Option<PageProgress<'_>>,
     mut sink: F,
 ) -> Result<MeshStatistics, MeshError>
 where
@@ -53,8 +72,13 @@ where
 {
     let view = SceneBlockView::new(scene, limits)?;
     let keys = view.page_keys().collect::<Vec<_>>();
+    let total_pages = keys.len() as u64;
+    if let Some(progress) = progress {
+        progress(0, total_pages);
+    }
     let tables = PaletteTables::new(scene, catalog);
     let mut statistics = MeshStatistics::default();
+    let mut completed_pages = 0u64;
 
     for chunk in keys.chunks(STREAM_PAGES_PER_CHUNK) {
         let pages = build_page_chunk(scene, &view, &tables, chunk, threads, options)?;
@@ -90,8 +114,14 @@ where
             });
         }
 
+        completed_pages += chunk.len() as u64;
+
         if !mesh_pages.is_empty() {
             sink(&mesh_pages);
+        }
+
+        if let Some(progress) = progress {
+            progress(completed_pages.min(total_pages), total_pages);
         }
     }
 

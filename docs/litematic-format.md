@@ -197,7 +197,8 @@ Phase 1 只计数，不执行、不渲染：
 - `pending_fluid_tick_count`
 
 非零时产出 `ENTITIES_IGNORED` / `PENDING_TICKS_IGNORED` 信息诊断。清单中保留
-计数，后续渲染阶段再决定是否支持实体或 tick 状态。
+计数，后续渲染阶段再决定是否支持实体或 tick 状态。region 的 palette 只包含
+空气状态时产出 `EMPTY_REGION` 信息诊断。
 
 ## 7. Region 顺序与重叠
 

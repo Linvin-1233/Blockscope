@@ -7,7 +7,7 @@ use crate::{
     Mesh, MeshBuildOptions, MeshError, MeshLimits, MeshPage, MeshStatistics, Quad, Vertex,
     encode_uv,
 };
-use litematic_scene::Scene;
+use litematic_scene::{Scene, worker_count};
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::thread;
@@ -17,9 +17,10 @@ mod fluid;
 mod stream;
 
 pub use count::{count_mesh_quads, estimate_mesh_quads};
-pub use stream::{build_mesh_streaming, build_mesh_streaming_with_options};
-
-const MAX_WORKERS: usize = 256;
+pub use stream::{
+    build_mesh_streaming, build_mesh_streaming_with_options,
+    build_mesh_streaming_with_options_and_progress,
+};
 
 /// Whether a page build emits geometry or only counts what it would emit.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -27,6 +28,11 @@ enum PageMode {
     Build,
     Count,
 }
+
+/// Reports `(completed_pages, total_pages)` during mesh construction.
+///
+/// Callbacks may run on worker threads, so the closure must be `Sync`.
+pub type PageProgress<'a> = &'a (dyn Fn(u64, u64) + Sync);
 
 /// Per-worker capacity estimate for the next page.
 ///
@@ -110,7 +116,7 @@ pub fn build_mesh_with_options(
 ) -> Result<Mesh, MeshError> {
     let view = SceneBlockView::new(scene, limits)?;
     let keys = view.page_keys().collect::<Vec<_>>();
-    build_mesh_with_view(scene, &view, catalog, &keys, limits, options)
+    build_mesh_with_view(scene, &view, catalog, &keys, limits, options, None)
 }
 
 fn build_mesh_with_view<C: BlockCatalog + ?Sized>(
@@ -120,13 +126,18 @@ fn build_mesh_with_view<C: BlockCatalog + ?Sized>(
     keys: &[[i32; 3]],
     limits: &MeshLimits,
     options: MeshBuildOptions,
+    progress: Option<PageProgress<'_>>,
 ) -> Result<Mesh, MeshError> {
     let tables = PaletteTables::new(scene, catalog);
     let mut pages: BTreeMap<[i32; 3], Vec<Quad>> = BTreeMap::new();
     let mut statistics = MeshStatistics::default();
     let mut hint = PageCapacityHint::default();
+    let total = keys.len() as u64;
+    if let Some(progress) = progress {
+        progress(0, total);
+    }
 
-    for &coord in keys {
+    for (index, &coord) in keys.iter().enumerate() {
         let origin = page_origin_of(coord)?;
         let page = build_page(
             scene,
@@ -138,6 +149,9 @@ fn build_mesh_with_view<C: BlockCatalog + ?Sized>(
             PageMode::Build,
         )?;
         add_page(&mut pages, &mut statistics, page, limits)?;
+        if let Some(progress) = progress {
+            progress(index as u64 + 1, total);
+        }
     }
 
     Ok(finish(pages, statistics))
@@ -172,16 +186,39 @@ pub fn build_mesh_parallel_with_options<C>(
 where
     C: BlockCatalog + Sync,
 {
+    build_mesh_parallel_with_options_and_progress(scene, catalog, limits, threads, options, None)
+}
+
+/// Build a mesh in parallel and report page completion.
+pub fn build_mesh_parallel_with_options_and_progress<C>(
+    scene: &Scene,
+    catalog: &C,
+    limits: &MeshLimits,
+    threads: u32,
+    options: MeshBuildOptions,
+    progress: Option<PageProgress<'_>>,
+) -> Result<Mesh, MeshError>
+where
+    C: BlockCatalog + Sync,
+{
     // Avoid building the page index twice when the request is effectively serial.
     if worker_count(threads, usize::MAX) <= 1 {
-        return build_mesh_with_options(scene, catalog, limits, options);
+        let view = SceneBlockView::new(scene, limits)?;
+        let keys = view.page_keys().collect::<Vec<_>>();
+        return build_mesh_with_view(scene, &view, catalog, &keys, limits, options, progress);
     }
 
     let view = SceneBlockView::new(scene, limits)?;
     let keys = view.page_keys().collect::<Vec<_>>();
     let workers = worker_count(threads, keys.len());
     if workers <= 1 {
-        return build_mesh_with_view(scene, &view, catalog, &keys, limits, options);
+        return build_mesh_with_view(scene, &view, catalog, &keys, limits, options, progress);
+    }
+
+    let total_pages = keys.len() as u64;
+    let completed_pages = AtomicU64::new(0);
+    if let Some(progress) = progress {
+        progress(0, total_pages);
     }
 
     let tables = PaletteTables::new(scene, catalog);
@@ -229,6 +266,11 @@ where
                                 return Err(error);
                             }
                         };
+
+                        if let Some(progress) = progress {
+                            let done = completed_pages.fetch_add(1, Ordering::Relaxed) + 1;
+                            progress(done, total_pages);
+                        }
 
                         accumulate_statistics(&mut local_stats, &page.statistics);
 
@@ -558,18 +600,6 @@ fn limit_error(quads: u64, vertices: u64, pages: u64, limits: &MeshLimits) -> Me
     }
 }
 
-fn worker_count(requested: u32, page_count: usize) -> usize {
-    let requested = if requested == 0 {
-        thread::available_parallelism()
-            .map(|value| value.get())
-            .unwrap_or(1)
-    } else {
-        requested as usize
-    };
-
-    requested.clamp(1, MAX_WORKERS.min(page_count.max(1)))
-}
-
 fn page_origin_of(coord: [i32; 3]) -> Result<[i32; 3], MeshError> {
     let mut origin = [0i32; 3];
     for (axis, value) in origin.iter_mut().enumerate() {
@@ -652,17 +682,4 @@ fn shifted(base: [i64; 3], axis: usize, delta: i64) -> [i32; 3] {
     let mut position = [base[0] as i32, base[1] as i32, base[2] as i32];
     position[axis] += delta as i32;
     position
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn worker_count_is_capped() {
-        assert_eq!(worker_count(u32::MAX, usize::MAX), MAX_WORKERS);
-        assert_eq!(worker_count(1, 100), 1);
-        assert_eq!(worker_count(0, 1), 1);
-        assert!(worker_count(0, usize::MAX) <= MAX_WORKERS);
-    }
 }

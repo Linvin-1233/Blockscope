@@ -94,19 +94,30 @@ impl Layer {
 
 fn read_dir(root: &Path, path: &str, max_bytes: usize) -> Result<Option<Vec<u8>>, MaterialError> {
     for candidate in dir_candidates(root, path) {
-        if !candidate.is_file() {
+        let metadata = match fs::metadata(&candidate) {
+            Ok(metadata) => metadata,
+            Err(_) => continue,
+        };
+        if !metadata.is_file() {
             continue;
         }
-        let bytes = fs::read(&candidate).map_err(|error| {
-            MaterialError::read(format!("cannot read {}: {error}", candidate.display()))
-        })?;
-        if bytes.len() > max_bytes {
+
+        // Check the size before opening so a large local asset cannot be read
+        // into memory just to be rejected afterwards.
+        if metadata.len() > max_bytes as u64 {
             return Err(MaterialError::limit(format!(
                 "{} is {} bytes, limit is {max_bytes}",
                 candidate.display(),
-                bytes.len()
+                metadata.len()
             )));
         }
+
+        // Keep the `take` guard for a file that grows between metadata and read.
+        let file = File::open(&candidate).map_err(|error| {
+            MaterialError::read(format!("cannot read {}: {error}", candidate.display()))
+        })?;
+        let label = candidate.display().to_string();
+        let bytes = read_reader_limited(file, max_bytes, &label, metadata.len() as usize)?;
         return Ok(Some(bytes));
     }
     Ok(None)
@@ -134,7 +145,7 @@ fn read_zip(
     let mut archive = archive.borrow_mut();
 
     for candidate in zip_candidates(path) {
-        let mut entry = match archive.by_name(&candidate) {
+        let entry = match archive.by_name(&candidate) {
             Ok(entry) => entry,
             Err(zip::result::ZipError::FileNotFound) => continue,
             Err(error) => {
@@ -151,19 +162,38 @@ fn read_zip(
             )));
         }
 
-        let mut bytes = Vec::with_capacity(entry.size() as usize);
-        entry
-            .read_to_end(&mut bytes)
-            .map_err(|error| MaterialError::read(format!("cannot read {candidate}: {error}")))?;
-        if bytes.len() > max_bytes {
-            return Err(MaterialError::limit(format!(
-                "zip entry {candidate} expands beyond {max_bytes} bytes"
-            )));
-        }
+        // The uncompressed size in the central directory is untrusted. Bound
+        // decompression itself so a crafted zip cannot expand without limit.
+        let capacity = entry.size() as usize;
+        let label = format!("zip entry {candidate}");
+        let bytes = read_reader_limited(entry, max_bytes, &label, capacity)?;
         return Ok(Some(bytes));
     }
 
     Ok(None)
+}
+
+/// Read a stream without buffering more than `max_bytes`.
+///
+/// The `take` guard is what bounds decompression; the caller's declared size
+/// is only used as a capacity hint.
+fn read_reader_limited<R: Read>(
+    reader: R,
+    max_bytes: usize,
+    label: &str,
+    capacity: usize,
+) -> Result<Vec<u8>, MaterialError> {
+    let mut bytes = Vec::with_capacity(capacity.min(max_bytes));
+    reader
+        .take(max_bytes.saturating_add(1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|error| MaterialError::read(format!("cannot read {label}: {error}")))?;
+    if bytes.len() > max_bytes {
+        return Err(MaterialError::limit(format!(
+            "{label} expands beyond {max_bytes} bytes"
+        )));
+    }
+    Ok(bytes)
 }
 
 fn zip_candidates(path: &str) -> Vec<String> {
@@ -209,6 +239,7 @@ pub fn asset_path(kind: &str, name: &str, extension: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
 
     #[test]
     fn rejects_unsafe_asset_paths() {
@@ -219,5 +250,77 @@ mod tests {
         assert!(source.read("assets/../secret").is_err());
         assert!(source.read("C:/secret").is_err());
         assert!(source.read("/absolute").is_err());
+    }
+
+    #[test]
+    fn rejects_oversized_directory_assets_before_reading() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("large.bin"), vec![0u8; 64]).unwrap();
+
+        let error = read_dir(dir.path(), "large.bin", 8).unwrap_err();
+        assert_eq!(error.code, MaterialErrorCode::AssetLimit);
+    }
+
+    struct CountingReader {
+        remaining: usize,
+        consumed: usize,
+    }
+
+    impl std::io::Read for CountingReader {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            let count = self.remaining.min(buffer.len());
+            buffer[..count].fill(b'x');
+            self.remaining -= count;
+            self.consumed += count;
+            Ok(count)
+        }
+    }
+
+    #[test]
+    fn bounds_reader_reads_to_the_limit_plus_one() {
+        let mut reader = CountingReader {
+            remaining: 64,
+            consumed: 0,
+        };
+
+        let error = read_reader_limited(&mut reader, 8, "test", 64).unwrap_err();
+        assert_eq!(error.code, MaterialErrorCode::AssetLimit);
+        assert_eq!(
+            reader.consumed, 9,
+            "the reader must stop after limit + 1 bytes"
+        );
+    }
+
+    #[test]
+    fn accepts_a_reader_at_the_exact_limit() {
+        let reader = CountingReader {
+            remaining: 8,
+            consumed: 0,
+        };
+
+        let bytes = read_reader_limited(reader, 8, "test", 8).unwrap();
+        assert_eq!(bytes.len(), 8);
+    }
+
+    #[test]
+    fn rejects_oversized_zip_assets_during_decompression() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("pack.zip");
+        {
+            let file = File::create(&path).unwrap();
+            let mut writer = zip::ZipWriter::new(file);
+            writer
+                .start_file(
+                    "assets/minecraft/blockstates/big.json",
+                    zip::write::SimpleFileOptions::default(),
+                )
+                .unwrap();
+            writer.write_all(&[b'x'; 64]).unwrap();
+            writer.finish().unwrap();
+        }
+
+        let archive = open_zip(&path).unwrap();
+        let error = read_zip(&archive, "assets/minecraft/blockstates/big.json", 8).unwrap_err();
+        assert_eq!(error.code, MaterialErrorCode::AssetLimit);
     }
 }

@@ -142,7 +142,7 @@ canonical key:
 | water / lava | `level=0..15` | vanilla corner-averaged surface; shared fluid faces are hidden |
 | waterlogged blocks | `waterlogged=true` | keeps its own model and adds a water layer |
 | redstone wire | `power=0..15` | flat dust plane, tinted from dark red to bright red |
-| chest / trapped / ender | none | 14x14x14 box |
+| chest / trapped / ender | none | 14x14x14 body plus a lock box reaching z=16 |
 | barrel / shulker box | none | 14x16x14 box |
 | sign / banner | `facing` ignored | 2x16x16 panel |
 | skull / head | none | 8x8x8 box |

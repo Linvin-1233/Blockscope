@@ -190,13 +190,15 @@ geometry is alive at a time. Output is byte-identical to the table path.
 
 Chunks are sized by projected quad count rather than page count, because page
 sizes differ by orders of magnitude between meshes; a page-count cap would spawn
-a worker scope per handful of fine-grained pages. Within a chunk the same
-scoped workers project contiguous page slices, bin the result, and rasterize the
-touched tiles, so projection no longer serializes the main thread while the
-workers wait. Slice and part order follow page order, which keeps the draw order
-and therefore the output deterministic.
+a worker scope per handful of fine-grained pages. Within a chunk, scoped workers
+project contiguous page slices and bin the result; the projection workers are
+joined, then the touched tiles are rasterized in parallel. Slice and part order
+follow page order, which keeps the draw order and therefore the output
+deterministic, and a projection panic propagates instead of leaving a barrier
+waiting forever.
 
-Measured on the test host at 1024x1024 and supersample 2:
+Historical full-mesh comparison, measured before the review fixes on the test
+host at 1024x1024 and supersample 2:
 
 | Scene | Peak working set | Wall | Render |
 |---|---|---|---|
@@ -268,14 +270,19 @@ without retaining every triangle. The temporary directory is deleted at the end
 of the render.
 
 Measured end to end on the test host (parse + mesh + render + PNG, 1024x1024,
-supersample 2, 12 threads, color-only materials):
+supersample 2, 12 threads, color-only materials). Both columns were re-measured
+after the review fixes on 2026-10-28:
 
 | Scene | Peak working set (full mesh / streamed) | Wall (full mesh / streamed) |
 |---|---|---|
-| `000001` exact | 7.16 GB / **425 MB** | 10.2 s / 10.3 s |
-| `000002` exact | 497 MB / **182 MB** | 0.9 s / 1.25 s |
+| `000001` exact | 7.68 GB / **433-435 MB** | 11.94 s / **11.1-11.4 s** |
+| `000002` exact | 461 MB / **182 MB** | 0.78 s / **1.39 s** |
 
-The streamed PNG SHA-256 values are identical for both fixtures.
+The `000001` color stream was measured three times; the variation is host noise,
+not a review regression (the pre-review binary measured 11.65-11.75 s). The
+streamed and full-mesh PNG SHA-256 values are identical for both fixtures; for
+`000001` the streamed hash is
+`0D7F4FE90A6EA7637890EBE786109C98C1420DC8EDA9C9F238B13B1072B6610A`.
 
 ### Triangle binning
 
@@ -320,9 +327,11 @@ worker count because the target is fixed.
 When a complete mesh is available and a request has multiple yaw angles, views
 render concurrently. The `threads` budget is split across the views in a batch,
 so `12` threads and two views means about six threads per view. Outputs keep the
-requested view order. Each active view owns its tile buffers, so peak memory
-grows with the number of concurrent views; streaming mesh mode remains
-sequential and rebuilds the mesh per view.
+requested view order. Batches are also capped by a 256 MiB output-byte budget,
+and each view is written and released before the next batch. At 1024x1024 and
+2048x2048 the thread budget still decides the batch size, so normal parallelism
+is unchanged; very large outputs trade concurrent views for bounded memory.
+Streaming mesh mode remains sequential and rebuilds the mesh per view.
 
 ### Supersampling
 

@@ -1,6 +1,7 @@
 use crate::color::{RenderLayer, Rgba, redstone_color};
 use crate::model::{BlockModel, empty_model, full_cube_model};
 use crate::shape;
+use crate::util::strip_namespace;
 use litematic_scene::BlockStateKey;
 use serde::Deserialize;
 use std::cell::RefCell;
@@ -482,10 +483,6 @@ fn layer_for_name(name: &str) -> RenderLayer {
     }
 
     RenderLayer::Opaque
-}
-
-fn strip_namespace(name: &str) -> &str {
-    name.split_once(':').map(|(_, path)| path).unwrap_or(name)
 }
 
 fn plant_color(path: &str) -> Option<Rgba> {

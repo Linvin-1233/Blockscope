@@ -225,6 +225,29 @@ fn uv_at_z(quad: &litematic_mesh::ModelQuad, z: f32) -> [f32; 2] {
 }
 
 #[test]
+fn extreme_blockstate_rotation_does_not_panic() {
+    let dir = tempfile::tempdir().unwrap();
+    write_pack(dir.path());
+    fs::write(
+        dir.path()
+            .join("assets/minecraft/blockstates/test_extreme.json"),
+        r#"{
+            "variants": {
+                "": { "model": "minecraft:block/test_cube", "x": -2147483648 }
+            }
+        }"#,
+    )
+    .unwrap();
+
+    let mut source = AssetSource::new();
+    source.add_dir(dir.path()).unwrap();
+    let materials = MaterialSet::open(source).unwrap();
+    let resolved = materials.resolve(&BlockStateKey::simple("minecraft:test_extreme"));
+
+    assert!(!resolved.model.quads.is_empty());
+}
+
+#[test]
 fn double_chest_front_texture_keeps_outer_border() {
     let (_dir, materials) = chest_material_set();
 

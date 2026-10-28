@@ -70,6 +70,16 @@ impl RawRegion {
         validate_indices(&states, palette.len(), size_abs, &name)?;
 
         let mut diagnostics = Vec::new();
+        if palette.iter().all(BlockStateKey::is_air) {
+            diagnostics.push(
+                Diagnostic::new(
+                    DiagnosticCode::EmptyRegion,
+                    DiagnosticSeverity::Info,
+                    "region palette contains only air",
+                )
+                .with_region(&name),
+            );
+        }
         let block_entities = parse_block_entities(
             format_version,
             block_entities,

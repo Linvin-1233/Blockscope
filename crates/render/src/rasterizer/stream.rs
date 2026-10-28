@@ -10,8 +10,8 @@ use litematic_material::TextureSet;
 use litematic_mesh::{MeshPage, NO_TEXTURE, RenderLayer};
 use litematic_scene::Scene;
 use std::collections::BTreeMap;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Barrier, Mutex, OnceLock};
 
 /// Chunk pages by projected geometry size rather than page count: page sizes
 /// vary by two orders of magnitude between meshes, and a fixed page count
@@ -128,42 +128,36 @@ impl<'a> StreamingRenderer<'a> {
 
         // Each worker projects a contiguous run of pages, so merging the parts
         // in worker order keeps the draw order identical to the serial path.
+        // Joining the projection workers before the tile pass avoids a barrier
+        // that would deadlock the main thread if a worker panicked.
         let slices = page_slices(pages, self.threads);
-        let parts: Vec<OnceLock<ChunkPart>> = (0..self.threads).map(|_| OnceLock::new()).collect();
-        let barrier = Barrier::new(self.threads);
-        let cursor = AtomicUsize::new(0);
-        {
-            let chunk = ChunkContext {
-                pages,
-                slices: &slices,
-                camera: &self.camera,
-                options: self.options,
-                textures: self.textures,
-                tiles: &self.tiles,
-                parts: &parts,
-                barrier: &barrier,
-                cursor: &cursor,
-                width: self.width,
-                height: self.height,
-                tile_size: self.tile_size,
-            };
+        let parts = project_slices(
+            pages,
+            &slices,
+            &self.camera,
+            self.options,
+            self.width,
+            self.height,
+            self.tile_size,
+        );
 
-            std::thread::scope(|scope| {
-                let mut handles = Vec::with_capacity(self.threads.saturating_sub(1));
-                for worker in 1..self.threads {
-                    let chunk = &chunk;
-                    handles.push(scope.spawn(move || render_chunk(chunk, worker)));
-                }
-                render_chunk(&chunk, 0);
-                for handle in handles {
-                    handle.join().expect("stream worker panicked");
-                }
+        for part in &parts {
+            merge_page_statistics(&mut self.statistics, &part.statistics);
+        }
+
+        let touched: Vec<usize> = (0..self.tiles.len())
+            .filter(|&index| parts.iter().any(|part| !part.bins[index].is_empty()))
+            .collect();
+        if !touched.is_empty() {
+            let tiles = &self.tiles;
+            let options = self.options;
+            let textures = self.textures;
+            run_parallel(&touched, self.threads, |tile_index| {
+                render_parts_tile(tiles, &parts, tile_index, options, textures);
             });
         }
 
         for part in parts {
-            let part = part.into_inner().expect("stream chunk part missing");
-            merge_page_statistics(&mut self.statistics, &part.statistics);
             self.translucent
                 .push_many(part.translucent)
                 .map_err(storage_error)?;
@@ -330,80 +324,99 @@ struct ChunkPart {
     statistics: RenderStatistics,
 }
 
-struct ChunkContext<'a> {
-    pages: &'a [MeshPage],
-    slices: &'a [(usize, usize)],
-    camera: &'a Camera,
-    options: &'a RenderOptions,
-    textures: Option<&'a TextureSet>,
-    tiles: &'a [Mutex<StreamTile>],
-    parts: &'a [OnceLock<ChunkPart>],
-    barrier: &'a Barrier,
-    cursor: &'a AtomicUsize,
+/// Project each contiguous page slice, preserving slice order.
+#[allow(clippy::too_many_arguments)]
+fn project_slices(
+    pages: &[MeshPage],
+    slices: &[(usize, usize)],
+    camera: &Camera,
+    options: &RenderOptions,
     width: u32,
     height: u32,
     tile_size: u32,
+) -> Vec<ChunkPart> {
+    if slices.len() <= 1 {
+        return slices
+            .iter()
+            .map(|&(start, end)| {
+                project_slice(
+                    &pages[start..end],
+                    camera,
+                    options,
+                    width,
+                    height,
+                    tile_size,
+                )
+            })
+            .collect();
+    }
+
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = slices
+            .iter()
+            .map(|&(start, end)| {
+                scope.spawn(move || {
+                    project_slice(
+                        &pages[start..end],
+                        camera,
+                        options,
+                        width,
+                        height,
+                        tile_size,
+                    )
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|handle| handle.join().expect("stream projection worker panicked"))
+            .collect()
+    })
 }
 
-/// Project and bin this worker's pages, then join the tile raster pass.
+/// Project and bin one worker's pages.
 ///
-/// The projection used to run on the main thread while the workers were idle;
-/// splitting it across the same threads keeps every core busy for the whole
-/// chunk and leaves the per-tile draw order unchanged.
-fn render_chunk(chunk: &ChunkContext<'_>, worker: usize) {
-    let (start, end) = chunk.slices[worker];
-    let pages = &chunk.pages[start..end];
-
-    // Reserving the page quad count avoids repeated growth copies; culling
-    // only ever makes this an upper bound.
+/// Reserving the page quad count avoids repeated growth copies; culling only
+/// ever makes this an upper bound.
+fn project_slice(
+    pages: &[MeshPage],
+    camera: &Camera,
+    options: &RenderOptions,
+    width: u32,
+    height: u32,
+    tile_size: u32,
+) -> ChunkPart {
     let mut quads = Vec::with_capacity(pages.iter().map(|page| page.quads.len()).sum());
     let mut translucent = Vec::new();
     let mut statistics = RenderStatistics::default();
     for page in pages {
         push_page_quads(
             page,
-            chunk.camera,
-            chunk.options,
+            camera,
+            options,
             &mut statistics,
             &mut quads,
             &mut translucent,
         );
     }
 
-    let bins = bin_quads(&quads, chunk.width, chunk.height, chunk.tile_size);
-    let part = ChunkPart {
+    let bins = bin_quads(&quads, width, height, tile_size);
+    ChunkPart {
         quads,
         bins,
         translucent,
         statistics,
-    };
-    assert!(
-        chunk.parts[worker].set(part).is_ok(),
-        "stream chunk part set twice"
-    );
-
-    chunk.barrier.wait();
-
-    let touched: Vec<usize> = (0..chunk.tiles.len())
-        .filter(|&index| {
-            chunk
-                .parts
-                .iter()
-                .any(|part| part.get().is_some_and(|part| !part.bins[index].is_empty()))
-        })
-        .collect();
-
-    loop {
-        let position = chunk.cursor.fetch_add(1, Ordering::Relaxed);
-        let Some(&tile_index) = touched.get(position) else {
-            break;
-        };
-        render_chunk_tile(chunk, tile_index);
     }
 }
 
-fn render_chunk_tile(chunk: &ChunkContext<'_>, tile_index: usize) {
-    let mut guard = chunk.tiles[tile_index]
+fn render_parts_tile(
+    tiles: &[Mutex<StreamTile>],
+    parts: &[ChunkPart],
+    tile_index: usize,
+    options: &RenderOptions,
+    textures: Option<&TextureSet>,
+) {
+    let mut guard = tiles[tile_index]
         .lock()
         .expect("stream tile mutex poisoned");
     let StreamTile {
@@ -421,14 +434,11 @@ fn render_chunk_tile(chunk: &ChunkContext<'_>, tile_index: usize) {
         colors,
         depths,
         counters,
-        textures: chunk.textures,
-        filter: chunk.options.texture_filter,
+        textures,
+        filter: options.texture_filter,
     };
 
-    for part in chunk.parts {
-        let Some(part) = part.get() else {
-            continue;
-        };
+    for part in parts {
         for &index in &part.bins[tile_index] {
             let quad = &part.quads[index as usize];
             if !intersects(

@@ -1,5 +1,6 @@
 use super::geometry::{bounds, quad_bounds};
 use super::project::{QuadRender, Triangle};
+pub(super) use litematic_scene::worker_count;
 #[derive(Clone, Copy, Debug)]
 pub(super) struct TileJob {
     pub(super) index: usize,
@@ -93,18 +94,6 @@ pub(super) fn bin_triangles(
     }
 
     bins
-}
-
-pub(super) fn worker_count(requested: u32, jobs: usize) -> usize {
-    let available = if requested == 0 {
-        std::thread::available_parallelism()
-            .map(std::num::NonZeroUsize::get)
-            .unwrap_or(1)
-    } else {
-        requested as usize
-    };
-
-    available.clamp(1, jobs.max(1))
 }
 
 /// Pick a tile size that leaves enough independent tiles to balance workers.

@@ -1,3 +1,4 @@
+use crate::util::strip_namespace;
 use litematic_mesh::{Rgba, redstone_color};
 use litematic_scene::BlockStateKey;
 
@@ -13,11 +14,7 @@ pub fn tint_for(state: &BlockStateKey, tintindex: Option<i32>) -> Rgba {
         return WHITE;
     }
 
-    let path = state
-        .name
-        .split_once(':')
-        .map(|(_, path)| path)
-        .unwrap_or(&state.name);
+    let path = strip_namespace(&state.name);
 
     if path == "water" || path == "flowing_water" || path == "bubble_column" {
         return WATER;

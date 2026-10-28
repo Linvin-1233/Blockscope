@@ -1,4 +1,4 @@
-use litematic_nbt::NbtCompound;
+use litematic_nbt::{NbtCompound, NbtValue};
 use litematic_scene::{
     BlockEntity, BlockStateKey, DiagnosticCode, PackedIndices, Region, Scene, SceneErrorCode,
     SceneMetadata,
@@ -120,6 +120,65 @@ fn empty_scene_is_rejected() {
     let error = Scene::new(metadata(), Vec::new(), Vec::new()).unwrap_err();
 
     assert_eq!(error.code, SceneErrorCode::EmptyScene);
+}
+
+#[test]
+fn rejects_region_size_and_volume_mismatch() {
+    let region = region(
+        "main",
+        [0, 0, 0],
+        [2, 1, 1],
+        vec![BlockStateKey::simple("minecraft:air")],
+        PackedIndices::new(2, vec![0], 1).unwrap(),
+    );
+
+    let error = Scene::new(metadata(), vec![region], Vec::new()).unwrap_err();
+    assert_eq!(error.code, SceneErrorCode::RegionLayoutMismatch);
+}
+
+#[test]
+fn rejects_empty_region_palette() {
+    let region = region(
+        "main",
+        [0, 0, 0],
+        [1, 1, 1],
+        Vec::new(),
+        PackedIndices::new(2, vec![0], 1).unwrap(),
+    );
+
+    let error = Scene::new(metadata(), vec![region], Vec::new()).unwrap_err();
+    assert_eq!(error.code, SceneErrorCode::RegionLayoutMismatch);
+}
+
+#[test]
+fn heap_bytes_include_block_entity_nbt() {
+    let base = region(
+        "main",
+        [0, 0, 0],
+        [1, 1, 1],
+        vec![BlockStateKey::simple("minecraft:air")],
+        PackedIndices::new(2, vec![0], 1).unwrap(),
+    );
+    let without = Scene::new(metadata(), vec![base.clone()], Vec::new())
+        .unwrap()
+        .heap_bytes();
+
+    let mut with_entity = base;
+    let mut data = NbtCompound::default();
+    data.insert("Items".to_string(), NbtValue::ByteArray(vec![0u8; 4096]));
+    with_entity.block_entities.push(BlockEntity {
+        local_pos: [0, 0, 0],
+        id: "minecraft:chest".to_string(),
+        data,
+    });
+    let with = Scene::new(metadata(), vec![with_entity], Vec::new())
+        .unwrap()
+        .heap_bytes();
+
+    assert!(
+        with >= without + 4096,
+        "entity NBT should be accounted: without={without}, with={with}"
+    );
 }
 
 #[test]

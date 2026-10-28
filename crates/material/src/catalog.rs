@@ -4,6 +4,7 @@ use crate::model::{ModelChain, ResolvedTexture, build_model, resolve_model, reso
 use crate::source::AssetSource;
 use crate::texture::TextureSet;
 use crate::tint::tint_for;
+use crate::util::strip_namespace;
 use crate::{MaterialError, MaterialErrorCode};
 use litematic_mesh::{
     BlockCatalog, BlockModel, ColorBlockCatalog, FaceDirection, NO_TEXTURE, RenderLayer,
@@ -179,8 +180,9 @@ impl MaterialSet {
         // Pack models and chests replace the fallback geometry, so resolve the
         // palette style first and only build the fallback model when it is used.
         let style = self.fallback.resolve_style(state);
-        let pack = self.pack_model(state);
 
+        // Chests use an entity model, so checking them before the blockstate
+        // model avoids resolving a pack model that would be discarded.
         if let Some(model) =
             crate::chest::build_chest_model(state, &self.source, &mut self.textures.borrow_mut())
         {
@@ -200,7 +202,7 @@ impl MaterialSet {
             };
         }
 
-        if let Some(pack) = pack {
+        if let Some(pack) = self.pack_model(state) {
             if let Some(mut model) = pack.model {
                 if style.layer == RenderLayer::Opaque {
                     let textures = self.textures.borrow();
@@ -516,11 +518,7 @@ struct PackResolution {
 }
 
 fn fallback_texture_name(state: &BlockStateKey, face: FaceDirection) -> Option<String> {
-    let path = state
-        .name
-        .split_once(':')
-        .map(|(_, path)| path)
-        .unwrap_or(&state.name);
+    let path = strip_namespace(&state.name);
 
     if path == "water" || path == "flowing_water" || path == "bubble_column" {
         return Some("block/water_still".to_string());
@@ -637,11 +635,7 @@ fn fallback_texture_name(state: &BlockStateKey, face: FaceDirection) -> Option<S
 }
 
 fn fallback_tint(state: &BlockStateKey, face: FaceDirection) -> Rgba {
-    let path = state
-        .name
-        .split_once(':')
-        .map(|(_, path)| path)
-        .unwrap_or(&state.name);
+    let path = strip_namespace(&state.name);
 
     if path == "grass_block" && face == FaceDirection::Up {
         return tint_for(state, Some(0));

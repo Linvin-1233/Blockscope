@@ -9,6 +9,7 @@ mod model;
 mod source;
 mod texture;
 mod tint;
+mod util;
 
 pub use catalog::{
     MaterialDiagnostics, MaterialEntry, MaterialInfo, MaterialKind, MaterialReport, MaterialSet,

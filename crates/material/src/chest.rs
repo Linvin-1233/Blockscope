@@ -1,6 +1,7 @@
 use crate::model::{box_quads, rotate_block, rotate_normal};
 use crate::source::AssetSource;
 use crate::texture::TextureSet;
+use crate::util::strip_namespace;
 use litematic_mesh::{BlockModel, ModelQuad};
 use litematic_scene::BlockStateKey;
 
@@ -10,11 +11,7 @@ pub fn build_chest_model(
     source: &AssetSource,
     textures: &mut TextureSet,
 ) -> Option<BlockModel> {
-    let path = state
-        .name
-        .split_once(':')
-        .map(|(_, path)| path)
-        .unwrap_or(&state.name);
+    let path = strip_namespace(&state.name);
     let base = chest_texture_base(path)?;
     let kind = state
         .properties

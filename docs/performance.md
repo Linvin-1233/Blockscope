@@ -29,6 +29,12 @@ Baseline on 2026-10-28, Windows x86_64, 48 GB host, `cargo test` debug profile:
 | sparse `512^3`, 1 stone | 134.2M volume | 100,668,611 B | 100,668,611 B |
 | dense `256^3` stone | 16.8M | 12,588,226 B | 12,588,226 B |
 
+Re-verified after the review fixes on 2026-10-28: all four rows are
+byte-identical. The new `crates/nbt/tests/memory.rs` also pins the decoder's
+pre-allocation guard: a truncated NBT document that declares a 64M-element int
+array or a 1M-element list must stay below 1 MiB of allocation instead of
+reserving the declared size.
+
 The sparse peak scales with bounding-box volume: `512^3` is 8x `256^3`, which
 is exactly the volume ratio. `parse+scene` adds no measurable peak because the
 packed array is moved into the scene rather than copied.
@@ -38,33 +44,71 @@ packed array is moved into the scene rather than copied.
 Measured with the release binary on the same host. `000001` is the 9.39M-block,
 `211^3` fixture. `render` used a color-only catalog, 1024x1024, supersample 2,
 12 threads, and `--force-limits` because the default 5M-quad cap rejects the
-exact mesh.
+exact mesh. The rows below were re-measured on 2026-10-28 after the review
+fixes; peak working set is sampled every 20 ms, so expect roughly 10-15%
+run-to-run variation on the short `validate` cases.
 
 | Command | Peak working set | Notes |
 |---|---:|---|
-| `validate 000001` | 108 MB | parse + scene |
-| `validate 000002 --force-limits` | 132 MB | 50.65M blocks |
-| `validate 000003 --force-limits` | 130 MB | 67.1M blocks |
-| `validate 000004 --force-limits` | 115 MB | 67.1M blocks |
-| `render 000001 --stream-mesh --force-limits` | 407 MB | color-only, 8.8 s wall, 77.6M quads |
-| `render 000001 --force-limits --client-jar` | 1.52 GB | in-memory translucent path, 117.1M triangles |
-| `render 000001 --force-limits --client-jar` | **618 MB** | exact translucent spill, same PNG hash |
-| `render 000002 --force-limits --client-jar` | 216 MB | default auto streaming |
-| `bench 000001 --force-limits` | 6.8 GB | full mesh, color-only, 4.2 s mesh |
-| `bench 000002 --force-limits --client-jar` | 3.8 GB | full mesh, 4.09 GB mesh bytes |
-| synthetic sparse `1024^3`, 1 block, `--force-limits` | 495 MB | `validate`; 1.07B volume |
+| `validate 000001` | 103 MB | parse + scene |
+| `validate 000002 --force-limits` | 176 MB | 50.65M blocks; 176-178 MB observed |
+| `validate 000003 --force-limits` | 145 MB | 67.1M blocks; 140-145 MB observed |
+| `validate 000004 --force-limits` | 140 MB | 67.1M blocks; 122-149 MB observed |
+| `render 000001 --stream-mesh --force-limits` | 433-435 MB | color-only, 11.1-11.4 s wall, 91.5M triangles |
+| `render 000001 --stream-mesh=off --force-limits` | 7.68 GB | color-only, 11.9 s wall, same PNG as streamed |
+| `render 000001 --force-limits --client-jar` | **591 MB** | exact translucent spill, 17.0 s wall, same PNG hash |
+| `render 000002 --force-limits --client-jar` | 216 MB | default auto streaming, 4.1 s wall |
+| `bench 000001 --force-limits` | 6.8 GB | historical full-mesh run; not re-measured |
+| `bench 000002 --force-limits --client-jar` | 3.8 GB | historical full-mesh run; not re-measured |
+| synthetic sparse `1024^3`, 1 block, `--force-limits` | 495 MB | historical `validate` run; not re-measured |
 
-The textured `000001` stream dropped from 2.28 GB to 1.52 GB after compacting
-translucent triangles. The material set itself is about 227 MB; most of the
-remaining difference is the mesh chunk, resident tiles, and 12.6M translucent
-triangles. On the previous build, 000001 differed from the f32-point build by
-2 pixels out of 1,048,576 (maximum channel delta 4); all golden fixtures remain
-byte-identical.
+The older table rows for `validate 000002`/`000003`/`000004` (132/130/115 MB)
+and the 407 MB / 8.8 s color stream were from an earlier build and host state.
+Both the current build and the pre-review `HEAD` binary measure 176-178 MB for
+`000002` and 11.6-11.8 s for the color stream on this host, so the differences
+are not review regressions.
+
+The textured `000001` stream is 591 MB after the spill path was enabled; the
+earlier in-memory path peaked at 1.52 GB before spilling. The material set
+itself is about 227 MB; most of the remaining difference is the mesh chunk,
+resident tiles, and translucent triangles. The client-jar PNG SHA-256 is
+identical between `HEAD` and the review build.
 
 The 18.9 GB figure in `docs/rendering.md` is the client-jar full-mesh path with
-more quads, not the streamed render path. The measured streamed path is about
-407 MB; the full color-only mesh is 6.8 GB. This is why the sparse parser is a
-conditional spike rather than a committed rewrite.
+more quads, not the streamed render path. The re-measured streamed color path is
+433-435 MB and the current full color-only path is 7.68 GB. This is why the
+sparse parser is a conditional spike rather than a committed rewrite.
+
+## Review-fix performance check (2026-10-28)
+
+The review fixes do not change the single-view render hot path. The pre-review
+`HEAD` binary (`6b5a680`) and the current build were compared on the same host
+with the same commands:
+
+| Case | `HEAD` | Current |
+|---|---:|---:|
+| `000001` color stream, 1024x1024 ss2, 12 threads | 11.65-11.75 s, 434-438 MB | 11.1-11.4 s, 432-435 MB |
+| `000001` client jar stream, same settings | 16.98 s, 591.0 MB | 17.00 s, 590.8 MB |
+| PNG SHA-256, client jar | `7D7E583F...C5D687` | `7D7E583F...C5D687` |
+| NBT allocation test rows | 76,406 / 12,588,227 / 100,668,611 / 12,588,226 B | identical |
+
+The color-stream difference is within host noise; no path regressed. The
+`000001` client-jar image is byte-identical. The current full-mesh color path
+measured 7.68 GB / 11.9 s and produced the same PNG SHA-256 as the streamed
+path; it was not re-run on `HEAD` because the full-mesh path is unchanged and
+costs about 8 GB per run.
+
+Multi-view rendering now batches by a 256 MiB output-byte budget and writes each
+view before starting the next batch. At 1024x1024 (4 MiB RGBA) and 2048x2048
+(16 MiB RGBA), the thread budget remains the limiting factor, so normal
+multi-view parallelism is unchanged. At 4096x4096 (64 MiB RGBA), a batch is
+capped at four views instead of retaining every output; this is the intended
+memory tradeoff and is covered by `view_batch_budget` unit tests.
+
+The supervisor hashes inputs on a dedicated thread instead of its event loop,
+and reuses a caller-supplied `input.hash` for routing. This is a latency
+improvement; no end-to-end render throughput table is claimed for it because the
+renderer remains the bottleneck.
 
 ## Textured render memory
 
@@ -78,14 +122,15 @@ Texture memory is not the dominant cost. For `000001` with the client jar:
 `Triangle` now stores projected screen points as f32 and no longer stores the
 always-translucent layer tag. The depth key stays f64, so the sort order is
 unchanged; the struct is 72 bytes and the regression test in
-`crates/render/src/rasterizer/project.rs` pins that ceiling. Streamed `000001`
-with the client jar dropped to 1.52 GB.
+`crates/render/src/rasterizer/project.rs` pins that ceiling. The in-memory
+translucent path measured 1.52 GB before spilling was implemented.
 
 Above 262,144 retained triangles, the streamed renderer spills exact records to
-temporary bucket files and processes one bucket at a time. `000001` with the
-client jar drops to **618 MB** with the same PNG SHA-256; the render adds about
-1.6 seconds of temporary-file I/O. The temporary directory is removed when the
-render finishes.
+temporary bucket files and processes one bucket at a time. Re-measured after the
+review fixes, `000001` with the client jar peaks at **591 MB** in 17.0 s with
+the same PNG SHA-256 as `HEAD` (the previous 618 MB / 16.2 s row was from an
+earlier host/build state). The temporary directory is removed when the render
+finishes.
 
 `render` now defaults to `--stream-mesh=auto`: fixed-LOD renders stream, and
 `--lod auto` keeps the full mesh because selecting a factor needs a complete

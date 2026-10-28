@@ -531,3 +531,50 @@ fn rejects_invalid_options() {
     let error = render_mesh(&scene, &build(&scene), &bad_elevation).unwrap_err();
     assert_eq!(error.code, RenderErrorCode::InvalidOptions);
 }
+
+#[test]
+fn progress_reports_every_rasterizer_tile() {
+    use litematic_render::{render_mesh_with_progress, will_stream};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    let scene = stone_scene();
+    let mesh = build(&scene);
+    let options = options();
+    assert!(!will_stream(&mesh, &options));
+
+    let calls = AtomicU64::new(0);
+    let highest = AtomicU64::new(0);
+    let total_seen = AtomicU64::new(0);
+    let output = render_mesh_with_progress(&scene, &mesh, &options, &|done, total| {
+        calls.fetch_add(1, Ordering::Relaxed);
+        highest.fetch_max(done, Ordering::Relaxed);
+        total_seen.store(total, Ordering::Relaxed);
+    })
+    .unwrap();
+
+    assert!(output.statistics.tiles > 0);
+    assert_eq!(total_seen.load(Ordering::Relaxed), output.statistics.tiles);
+    assert_eq!(highest.load(Ordering::Relaxed), output.statistics.tiles);
+    assert_eq!(calls.load(Ordering::Relaxed), output.statistics.tiles + 1);
+}
+
+#[test]
+fn progress_is_silent_when_the_rasterizer_streams() {
+    use litematic_render::{render_mesh_with_progress, will_stream};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    let scene = stone_scene();
+    let mesh = build(&scene);
+    let options = RenderOptions {
+        force_streaming: true,
+        ..options()
+    };
+    assert!(will_stream(&mesh, &options));
+
+    let calls = AtomicU64::new(0);
+    let _ = render_mesh_with_progress(&scene, &mesh, &options, &|_, _| {
+        calls.fetch_add(1, Ordering::Relaxed);
+    })
+    .unwrap();
+    assert_eq!(calls.load(Ordering::Relaxed), 0);
+}

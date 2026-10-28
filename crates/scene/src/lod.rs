@@ -1,9 +1,10 @@
-use crate::{BlockStateKey, PackedIndices, Region, Scene, SceneError, SceneErrorCode};
+use crate::{
+    BlockStateKey, PackedIndices, Region, Scene, SceneError, SceneErrorCode, worker_count,
+};
 use std::collections::HashMap;
 
 const MIN_FACTOR: u32 = 2;
 const MAX_FACTOR: u32 = 16;
-const MAX_WORKERS: usize = 256;
 const AIR: u32 = u32::MAX;
 
 /// Aggregate a scene into `factor`-sized cells for level-of-detail rendering.
@@ -262,18 +263,6 @@ fn resolve_id(scene: &Scene, table: &StateTable<'_>, world: [i64; 3]) -> Option<
     None
 }
 
-fn worker_count(requested: u32, cells: usize) -> usize {
-    let requested = if requested == 0 {
-        std::thread::available_parallelism()
-            .map(|value| value.get())
-            .unwrap_or(1)
-    } else {
-        requested as usize
-    };
-
-    requested.clamp(1, MAX_WORKERS.min(cells.max(1)))
-}
-
 fn ceil_div(value: i64, divisor: i64) -> i64 {
     let quotient = value.div_euclid(divisor);
     if value.rem_euclid(divisor) == 0 {
@@ -288,17 +277,4 @@ fn size_overflow<E: std::fmt::Display>(error: E) -> SceneError {
         SceneErrorCode::BoundsOverflow,
         format!("aggregated scene dimensions do not fit u32: {error}"),
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn worker_count_is_capped() {
-        assert_eq!(worker_count(u32::MAX, usize::MAX), MAX_WORKERS);
-        assert_eq!(worker_count(1, 100), 1);
-        assert_eq!(worker_count(0, 1), 1);
-        assert!(worker_count(0, usize::MAX) <= MAX_WORKERS);
-    }
 }

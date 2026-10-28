@@ -102,5 +102,12 @@
       "minecraft:stone": 1
     }
   },
-  "diagnostics": []
+  "diagnostics": [
+    {
+      "code": "EMPTY_REGION",
+      "severity": "info",
+      "message": "region palette contains only air",
+      "region": "east"
+    }
+  ]
 }

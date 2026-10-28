@@ -1,9 +1,34 @@
+use super::TileProgress;
 use super::bin::TileJob;
 use super::geometry::{bounds, edge, intersects, quad_bounds, to_u8};
 use super::project::{QuadRender, Triangle, vertex_color};
 use crate::{Background, RenderOptions};
 use litematic_material::{TextureFilter, TextureSet};
 use litematic_mesh::{NO_TEXTURE, RenderLayer, decode_uv};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// Shared tile counter handed to rasterizer workers.
+pub(super) struct TileProgressSink<'a> {
+    callback: TileProgress<'a>,
+    total: u64,
+    done: AtomicU64,
+}
+
+impl<'a> TileProgressSink<'a> {
+    pub(super) fn new(callback: TileProgress<'a>, total: u64) -> Self {
+        Self {
+            callback,
+            total,
+            done: AtomicU64::new(0),
+        }
+    }
+
+    pub(super) fn advance(&self) {
+        let done = self.done.fetch_add(1, Ordering::Relaxed) + 1;
+        (self.callback)(done, self.total);
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(super) fn render_tiles_parallel(
     quads: &[QuadRender],
@@ -14,6 +39,7 @@ pub(super) fn render_tiles_parallel(
     triangle_bins: &[Vec<u32>],
     threads: usize,
     textures: Option<&TextureSet>,
+    progress: Option<&TileProgressSink<'_>>,
 ) -> Vec<TileOutput> {
     let cursor = std::sync::atomic::AtomicUsize::new(0);
 
@@ -37,6 +63,9 @@ pub(super) fn render_tiles_parallel(
                         &triangle_bins[index],
                         textures,
                     ));
+                    if let Some(progress) = progress {
+                        progress.advance();
+                    }
                 }
                 local
             }));

@@ -114,6 +114,11 @@ pub fn build_model(
         return None;
     }
 
+    // Normalize before negating. `-i32::MIN` would panic in debug builds, and
+    // Minecraft only meaningfully rotates blockstate models by 0/90/180/270.
+    let x_rotation = x_rotation.rem_euclid(360);
+    let y_rotation = y_rotation.rem_euclid(360);
+
     let mut quads = Vec::new();
     for element in elements {
         for (face_name, face) in &element.faces {
