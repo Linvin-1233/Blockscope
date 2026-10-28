@@ -26,6 +26,8 @@ stdio service. It does not contain a chat-platform or bot adapter.
   surfaces
 - CPU orthographic camera, tiled rasterization, `flat-v1` / `simple-ao-v1`
   lighting, and PNG output
+- Optional offscreen `wgpu` rasterization (`--features gpu`, `--backend gpu`
+  or `auto`); the CPU path remains the default and the byte-exact reference
 - Supersampling 1-4, multi-view output, parallel tiles, and paged streaming
 - LOD with an explicit fixed `2..=16` factor; no automatic factor
 - `serve` worker and `supervise` process pool over newline-delimited JSON
@@ -40,6 +42,8 @@ stdio service. It does not contain a chat-platform or bot adapter.
   patterns, or skull skins
 - Tint is a fixed plains color; biome colormaps are not read
 - No shadows, full light propagation, emissive bloom, or mipmaps
+- GPU output varies by vendor and driver, is not byte-exact, and is not part
+  of the published release binaries
 - LOD drops block entities, entities, and pending ticks
 - Resource packs, client jars, and private `.litematic` files are not committed
 - No network listener; `serve`/`supervise` communicate over stdio only

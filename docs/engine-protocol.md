@@ -48,6 +48,7 @@ supervisor                          worker
  "cpuQuota":null,"memoryLimitBytes":51401564160,"memoryAvailableBytes":21526179840,
  "suggestedWorkers":4,"suggestedThreads":3,"suggestedMaxQuads":54313181,
  "cacheBytes":10763089920,
+ "backends":["cpu","auto"],
  "defaultTier":{"width":2048,"height":2048,"supersample":2}}
 {"type":"render","id":"...","input":{...},...}
 {"type":"result","id":"...","ok":true,...}
@@ -63,7 +64,9 @@ from the host. Values come from cgroup limits on Linux and
 data from the command line. `cacheBytes` is the effective scene/mesh cache
 budget; `supervise` derives it from its per-worker memory ceiling and passes it
 to each child, while a standalone worker receiving `0` derives it from available
-memory.
+memory. `backends` lists the rasterization backends this build can use; `gpu`
+appears only in binaries built with the `gpu` feature, and `auto` is always
+present.
 
 ## Render request
 
@@ -80,6 +83,7 @@ memory.
 | `lighting` | string | `simple-ao-v1` | `flat-v1` or `simple-ao-v1` |
 | `background` | string | `transparent` | `transparent`, `#RRGGBB`, or `#RRGGBBAA` |
 | `textureFilter` | string | `nearest` | `nearest` or `linear` |
+| `backend` | string | `cpu` | `cpu`, `gpu`, or `auto`; `gpu` requires a hardware adapter and the `gpu` build feature, `auto` falls back to the CPU |
 | `format` | string | `png` | `png` only in v2 |
 | `outputDir` | string | required | Absolute directory; created if missing |
 | `threads` | integer | `0` | Mesh and rasterizer threads; `0` uses all cores, capped at 256 |
@@ -89,7 +93,10 @@ memory.
 `width * height` must not exceed 16,777,216 output pixels. Supersampling
 multiplies both sides, so the internal image must not exceed 33,554,432 pixels.
 The worker validates all render options and creates `outputDir` before parsing
-the input or building a mesh.
+the input or building a mesh. `gpu` and `auto` need the full mesh, so the worker
+never uses the streaming rasterizer for them. The CPU backend remains the
+byte-exact reference; GPU output can differ by a channel value on a small number
+of pixels and varies by vendor and driver.
 
 Paths must be absolute. The worker rejects relative paths with
 `INVALID_REQUEST`, so behaviour does not depend on the worker's working
@@ -149,7 +156,8 @@ rasterizer mid-tile.
   "statistics": {
     "triangles": 359110,
     "culledBackfaces": 146996,
-    "textures": 206
+    "textures": 206,
+    "backendUsed": "cpu"
   }
 }
 ```
@@ -169,7 +177,8 @@ rasterizer mid-tile.
   detail-loss warning to stderr; the value itself is always explicit.
 - `timings` are wall-clock aggregates for the whole job.
 - `statistics` is advisory; consumers must not depend on fields beyond
-  `triangles`.
+  `triangles` and `backendUsed`. `backendUsed` is the backend that actually
+  produced the image (`auto` resolves to `cpu` or `gpu`).
 
 ## Errors
 
@@ -181,7 +190,7 @@ rasterizer mid-tile.
 | Code | Retryable | Cause |
 |---|---|---|
 | `INVALID_REQUEST` | no | Malformed JSON, missing field, relative path, non-regular input |
-| `INVALID_RENDER_OPTIONS` | no | Bad size, elevation, lighting, background, or thread count |
+| `INVALID_RENDER_OPTIONS` | no | Bad size, elevation, lighting, background, backend, or thread count |
 | `OUTPUT_TOO_LARGE` | no | Output pixel limit, supersampled limit, or 4096-per-side limit exceeded |
 | `INPUT_TOO_LARGE` | no | Raw input exceeds the parser input cap |
 | `INVALID_NBT` | no | NBT decode failure |
@@ -192,6 +201,8 @@ rasterizer mid-tile.
 | `ASSET_LIMIT` | no | Asset exceeds its size limit |
 | `ASSET_SOURCE_UNSUPPORTED` | no | Pack or jar format is unsupported |
 | `INPUT_HASH_MISMATCH` | no | `input.hash` does not match the file |
+| `BACKEND_UNAVAILABLE` | no | Explicit `gpu` requested but the build, host, or GPU limits cannot provide a usable hardware renderer |
+| `GPU_RENDER_FAILED` | no | The GPU device or driver failed during an offscreen render |
 | `MESH_LIMIT_EXCEEDED` | no | Mesh limits exceeded |
 | `PAGE_LIMIT_EXCEEDED` | no | Mesh page limit exceeded |
 | `BUSY` | yes | Supervisor queue is full |
@@ -221,6 +232,7 @@ to a fresh directory or overwritten in place, and no state survives a job.
  "cores":4,"memoryLimitBytes":8589934592,"workers":2,"threadsPerWorker":2,
  "queueLimit":4,"cacheEntries":1,"timeoutSeconds":60,
  "memoryLimitPerWorkerBytes":3650722201,"suggestedMaxQuads":17000000,
+ "backends":["cpu","auto"],
  "defaultLod":1,
  "defaultTier":{"width":2048,"height":2048,"supersample":2}}
 ```

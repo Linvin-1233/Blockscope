@@ -82,7 +82,8 @@ blockscope preview model.litematic -t
 | `--lighting flat-v1\|simple-ao-v1` | 光照配置，默认 `simple-ao-v1` |
 | `--threads <N>` | mesh/rasterizer 线程数，`0` 使用可用并行度，最多 256 |
 | `--lod 1\|2-16` | LOD 因子，默认 `1`（关闭）；大于 1 时会打印细节损失警告 |
-| `--stream-mesh [auto\|on\|off]` | 按页构建并渲染网格，不保留完整 Mesh；默认 `auto`，`off` 保留完整 Mesh |
+| `--stream-mesh [auto\|on\|off]` | 按页构建并渲染网格，不保留完整 Mesh；默认 `auto`，`off` 保留完整 Mesh；`on` 不能与 GPU 后端同用 |
+| `--backend cpu\|gpu\|auto` | 光栅化后端，默认 `cpu`；`gpu` 需要以 `--features gpu` 构建并具备硬件适配器；`auto` 对大网格使用 GPU，失败时回退 CPU |
 | `--greedy-mesh` | 合并同材质、同光照的共面单位面；适合大平面和重复结构，默认关闭 |
 | `--force-limits` | 提高输入、场景、网格和像素上限；可能耗尽内存 |
 | `--ignore-block-entity-nbt` | 跳过容器 NBT；`mesh`/`render`/`bench` 默认开启 |
@@ -94,6 +95,11 @@ blockscope preview model.litematic -t
 
 `inspect`、`validate` 和 `stats` 默认保留 `TileEntities` 内容；几何命令默认跳过，
 以减少大容器文件的解析时间和内存。
+
+GPU 后端需要完整 Mesh，不能与 `--stream-mesh on` 同用。若二进制未启用 `gpu`
+特性或没有可用硬件适配器，显式 `gpu` 会以 `BACKEND_UNAVAILABLE` 失败；`auto`
+则回退到 CPU。GPU 输出与 CPU 参考视觉接近，但跨驱动不保证逐字节一致，因此
+golden PNG 和确定性保证仍以 `cpu` 为准。
 
 ## 终端样式与进度
 
@@ -115,7 +121,8 @@ blockscope preview model.litematic -t
 `--json` 输出始终是纯 JSON，不受 `--color` 影响。
 
 `render`、`bench`、`mesh` 和 `materials` 在 stderr 是终端时显示进度：解析、材质、
-网格页数和单视角栅格化的 tile 百分比。多视角显示视角计数；流式渲染的最终合成使用不定进度。以下情况自动关闭：stderr 不是终端、`--json`、设置了
+网格页数和单视角栅格化的 tile 百分比。多视角显示视角计数；GPU 渲染和流式渲染的
+最终合成使用不定进度，tile 百分比仅在 CPU 后端有效。以下情况自动关闭：stderr 不是终端、`--json`、设置了
 `CI` 环境变量、`NO_COLOR`，或 `--color never`。进度只写入 stderr，不会影响 stdout
 和管道输出；进度条会按终端宽度缩短或改为只显示计数，窗口缩放后会自动重排。
 

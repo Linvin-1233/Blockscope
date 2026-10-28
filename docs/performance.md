@@ -195,3 +195,36 @@ a production parser: the next step is a scoped implementation plan for
 `occupied_nonzero` counter is not the same as `non_air` when the palette has a
 non-zero default entry; the production path must use the palette default and
 preserve diagnostics.
+
+## GPU rasterizer (2026-10-28)
+
+`tile_bench` synthetic scene: 26,848 blocks, 96,882 quads, 48,441 submitted
+after backface culling, supersample 1. Apple M4 Max (16 logical cores), macOS
+27, Metal, Rust 1.96, release build. Median of 5 iterations; the GPU context
+(device and pipelines) is cached after the first render.
+
+| Internal resolution | CPU 1 thread | CPU 2 threads | CPU 16 threads | GPU |
+|---:|---:|---:|---:|---:|
+| 1024x1024 | 37.3 ms | 19.6 ms | 4.7 ms | 6.3 ms |
+| 2048x2048 | 97.5 ms | 50.0 ms | 10.3 ms | 13.0 ms |
+| 4096x4096 | 344.3 ms | 173.7 ms | 36.6 ms | 43.4 ms |
+
+The first GPU render in a process additionally pays about 15 ms for adapter,
+device, and pipeline setup; it is not included in the table. `--supersample 2`
+at `1024x1024` uses the 2048x2048 row.
+
+On this host the parallel CPU rasterizer remains faster than the integrated
+GPU, and the GPU sits between the 2-thread and 16-thread CPU results. The GPU
+is roughly 3-8x faster than one or two CPU threads, which is the target case
+for weak servers. It is not a universal speedup, and `auto` therefore leaves
+small meshes on the CPU.
+
+GPU time includes atlas upload, the draw pass, readback, and the
+premultiplied resolve. Mesh building, projection, vertex upload, and PNG
+encoding remain on the CPU. End-to-end gains are therefore smaller than the
+rasterizer-only numbers; see [Rendering and PNG Output](./rendering.md#gpu-backend)
+for the backend contract and parity limits.
+
+The static Linux musl release artifacts do not enable the `gpu` feature. A GPU
+build needs a platform with a working driver and, on Linux, a dynamically
+loadable Vulkan loader; use a glibc build for GPU deployments.

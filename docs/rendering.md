@@ -1,8 +1,9 @@
-# CPU Rendering and PNG Output
+# Rendering and PNG Output
 
-Phase 3 renders the Phase 2 mesh to an RGBA PNG on the CPU. It uses an
-orthographic camera and a tile rasterizer. No GPU or Minecraft client is
-required.
+Blockscope renders the mesh to an RGBA PNG with an orthographic camera. The
+default and reference path is a CPU tile rasterizer; builds can opt into an
+offscreen `wgpu` backend. No Minecraft client or window is required on either
+path.
 
 Textures are optional: without a resource pack the renderer uses flat block
 colors; with one it samples the pack textures. See `docs/textures.md`.
@@ -13,11 +14,60 @@ colors; with one it samples the pack textures. See `docs/textures.md`.
 Scene + Mesh
   -> Camera (orthographic fit, internal supersampled size)
   -> triangle build (page origin, lighting, AO, UV)
-  -> tile rasterizer (depth, culling, alpha, texture sampling)
+  -> backend
+       CPU: tile rasterizer (depth, culling, alpha, texture sampling)
+       GPU: wgpu render pass (depth, alpha, atlas texture sampling)
   -> RGBA8 buffer (supersampled)
   -> box-filter downsample
   -> PNG
 ```
+
+## GPU Backend
+
+GPU rendering is an opt-in build feature:
+
+```bash
+cargo build --release -p blockscope-cli --features gpu
+cargo run --release -p blockscope-cli --features gpu -- render model.litematic --backend gpu
+```
+
+The default remains `--backend cpu`, and `--backend auto` uses the GPU only for
+meshes with at least 50,000 quads. `auto` falls back to the CPU when the build
+or host cannot provide a hardware adapter. The service protocol accepts the
+same `backend` value (`cpu`, `gpu`, or `auto`; default `cpu`) and advertises
+`backends` in its `hello` message.
+
+The backend is offscreen: it creates an instance, a high-performance adapter,
+a device, a color target, and a depth target, then reads the RGBA pixels back.
+It rejects software adapters (`DeviceType::Cpu`), so explicit `gpu` fails with
+`BACKEND_UNAVAILABLE` instead of silently using a slow fallback. The device and
+both render pipelines are cached for the process lifetime; the first GPU render
+pays adapter and shader-compilation setup, later renders do not.
+
+Implementation notes:
+
+- Opaque and cutout geometry is projected on the CPU with the same `f64`
+  camera and backface culling as the CPU path, then uploaded in the existing
+  page chunks (at most 600,000 quads per chunk).
+- Translucent triangles are sorted far-to-near across the whole mesh and drawn
+  in batches without depth writes. This is a global ordering; the CPU path sorts
+  per tile. The two can differ on intersecting translucent surfaces.
+- Textures are shelf-packed into one RGBA8 atlas. Nearest and bilinear sampling
+  are implemented in WGSL with the CPU's wrap and half-texel rules, which keeps
+  atlas neighbors from bleeding.
+- The color target stores premultiplied alpha. Source-over blending matches the
+  CPU accumulator, and the resolve pass box-filters supersamples before
+  dividing by alpha, the same order as the CPU downsampler.
+- Solid backgrounds are cleared premultiplied; transparent backgrounds clear to
+  zero.
+- GPU rendering requires a complete mesh. `--stream-mesh` is rejected with
+  `--backend gpu`; `auto` keeps the full mesh so it can choose a backend.
+
+Parity with the CPU reference is visual, not byte-exact. On Metal (Apple M4
+Max), the opaque/cutout/translucent and textured parity tests differ on at most
+0.08% of pixels with a maximum channel delta of 1. Other vendors and drivers
+may move edge pixels further. GPU output therefore does not participate in the
+byte-exact golden PNG suite; the CPU backend remains the reference for goldens.
 
 ## Camera
 
@@ -378,6 +428,7 @@ shadows, or biome tinting. It is stable and deterministic.
 | supersample | 2 |
 | threads | 0 (auto) |
 | texture filter | nearest |
+| backend | cpu |
 | max pixels | 16,777,216 |
 | max supersampled pixels | 33,554,432 |
 
@@ -409,9 +460,13 @@ For rasterizer-only scaling, use the synthetic example:
 ```powershell
 cargo run --release -p litematic-render --example tile_bench -- --iterations 5
 cargo run --release -p litematic-render --example tile_bench -- --width 2048 --height 2048 --supersample 1
+cargo run --release -p litematic-render --features gpu --example tile_bench -- --backend gpu --iterations 5
 ```
 
-It prints single-thread, two-thread, and auto-thread timings.
+It prints single-thread, two-thread, and auto-thread timings. With
+`--features gpu`, `--backend gpu` measures the offscreen path including readback
+and resolve. See [Performance Baselines](./performance.md) for measured GPU and
+CPU comparisons.
 
 Reference run on a 12-core Windows host (`tile_bench` synthetic scene, 96,882
 quads, 1024x1024 output, supersample 2, median of 3): 1 thread 300 ms, 2 threads
@@ -433,11 +488,16 @@ Measured and rejected on the same host:
 `RenderStatistics` records:
 
 - output width/height, supersample factor, and internal dimensions;
+- the backend that produced the image (`backendUsed`);
 - tile count;
 - total triangles and culled backfaces;
 - opaque/cutout/translucent triangle counts;
 - textured triangle count;
 - pixels tested (fragments inside the clipped row spans) and pixels written.
+
+`tiles`, `pixelsTested`, and `pixelsWritten` are CPU rasterizer counters. The GPU
+backend reports zero for them; use `triangles`, the layer counts, and timings
+instead.
 
 Golden PNGs for cube, partial shapes, water, negative coordinates, AO, textured
 cube, stairs, cutout, glass, and chest live in `fixtures/golden/render/`.
@@ -486,9 +546,13 @@ pruning instead of aggregation.
   not reproduced.
 - The built-in redstone dust model does not fold connection directions into its
   flat plane; textured renders use the pack model for that.
-- Translucent sorting is per tile and approximate.
-- CPU-only; tiles are parallel and mesh pages are built in parallel, but PNG
-  encoding runs on the calling thread.
+- Translucent sorting is per tile and approximate on the CPU; the GPU path uses
+  one global order, so the two backends can differ on intersecting translucent
+  surfaces.
+- The GPU backend is opt-in and offscreen; there is no windowing or surface
+  support. It needs a hardware adapter, and `--stream-mesh` is CPU-only.
+- GPU output is vendor-dependent and not byte-exact against the CPU goldens.
+- PNG encoding runs on the calling thread on both backends.
 - Texture coordinates are Q12 fixed point; UVs outside [-8, 8) are clamped.
 - Color management is approximate; output is treated as sRGB.
 - Golden PNGs cover small synthetic scenes, not large real structures.
@@ -496,7 +560,11 @@ pruning instead of aggregation.
 
 ## Determinism
 
-Given the same Scene, Mesh, options, and renderer build, the RGBA buffer and PNG
-bytes are deterministic. Triangle order follows page/quad order, translucent
-sorting is stable, and the worker count does not change the output. Statistics
-are accumulated in tile order after workers join.
+On the CPU backend, given the same Scene, Mesh, options, and renderer build, the
+RGBA buffer and PNG bytes are deterministic. Triangle order follows page/quad
+order, translucent sorting is stable, and the worker count does not change the
+output. Statistics are accumulated in tile order after workers join.
+
+GPU output is repeatable on one adapter and driver, but it is not guaranteed to
+be bit-identical across vendors, drivers, or adapter generations. Use
+`--backend cpu` when byte-exact output or golden comparison matters.

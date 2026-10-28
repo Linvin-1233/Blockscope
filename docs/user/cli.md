@@ -87,7 +87,8 @@ is printed because the escape sequences cannot be displayed.
 | `--lighting flat-v1\|simple-ao-v1` | Lighting profile; default `simple-ao-v1` |
 | `--threads <N>` | Mesh/rasterizer threads; `0` uses available parallelism, capped at 256 |
 | `--lod 1\|2-16` | LOD factor; default `1` (disabled); values above 1 print a detail-loss warning |
-| `--stream-mesh [auto\|on\|off]` | Build and render mesh in page chunks without retaining the full mesh; default `auto`; `off` retains the full mesh |
+| `--stream-mesh [auto\|on\|off]` | Build and render mesh in page chunks without retaining the full mesh; default `auto`; `off` retains the full mesh; `on` cannot be combined with a GPU backend |
+| `--backend cpu\|gpu\|auto` | Rasterization backend; default `cpu`. `gpu` requires a build made with `--features gpu` and a hardware adapter; `auto` uses the GPU for large meshes and falls back to the CPU |
 | `--greedy-mesh` | Merge coplanar unit faces with identical material and lighting; useful for large flat or repetitive surfaces, disabled by default |
 | `--force-limits` | Raises input, scene, mesh, and pixel caps; can exhaust memory |
 | `--ignore-block-entity-nbt` | Skip container NBT; always on for `mesh`/`render`/`bench` |
@@ -100,6 +101,13 @@ is printed because the escape sequences cannot be displayed.
 `inspect`, `validate`, and `stats` keep `TileEntities` by default. Geometry
 commands skip them by default to reduce parse time and memory for large
 containers.
+
+The GPU backend needs the complete mesh and cannot be combined with
+`--stream-mesh on`. If the binary was not built with `--features gpu` or no
+hardware adapter is available, an explicit `gpu` request fails with
+`BACKEND_UNAVAILABLE`; `auto` falls back to the CPU instead. GPU output is
+visually close to the CPU reference but is not byte-exact across drivers, so
+golden PNGs and determinism guarantees remain on `cpu`.
 
 ## Terminal Style and Progress
 
@@ -127,8 +135,9 @@ and human-readable results:
 
 `render`, `bench`, `mesh`, and `materials` show progress on stderr when stderr
 is a terminal: parsing, materials, mesh page counts, and tile percentages for
-single-view rasterization. Multi-view renders show a view counter; streaming
-compositing uses indeterminate stages. Progress turns off when
+single-view rasterization. Multi-view renders show a view counter; GPU
+rendering and streaming compositing use indeterminate stages, and tile
+percentages are CPU-only. Progress turns off when
 stderr is not a terminal, with `--json`, when `CI` is set, with `NO_COLOR`, or
 with `--color never`. It never writes to stdout or changes piped output. Bars
 shrink or fall back to a bare counter on narrow terminals and reflow after a

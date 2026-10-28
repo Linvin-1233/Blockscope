@@ -10,6 +10,12 @@ and Windows (using musl on Linux and static CRT on Windows). For binary download
 checksum verification, and desktop installer guides, see
 [Installation and Quick Start](./user/getting-started.md).
 
+Release artifacts are CPU-only. GPU support is an optional source-build feature
+(`--features gpu`) and needs a hardware adapter plus platform drivers. Static
+musl binaries cannot load the Vulkan loader at runtime, so GPU deployments
+should use a glibc build; containers additionally need the GPU device passthrough
+and driver packages. See [Rendering and PNG Output](./rendering.md#gpu-backend).
+
 ## Cutting a Release
 
 1. Write the user-facing notes under `## [Unreleased]` in `CHANGELOG.md` and
