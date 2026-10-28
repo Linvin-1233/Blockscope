@@ -44,7 +44,7 @@ supervisor                          worker
 ### Messages
 
 ```json
-{"type":"hello","protocolVersion":1,"engineVersion":"0.3.0","platform":"windows","cores":12,
+{"type":"hello","protocolVersion":1,"engineVersion":"0.4.0","platform":"windows","cores":12,
  "cpuQuota":null,"memoryLimitBytes":51401564160,"memoryAvailableBytes":21526179840,
  "suggestedWorkers":4,"suggestedThreads":3,"suggestedMaxQuads":54313181,
  "cacheBytes":10763089920,
@@ -216,7 +216,7 @@ to a fresh directory or overwritten in place, and no state survives a job.
 `blockscope serve` children:
 
 ```json
-{"type":"hello","protocolVersion":1,"engineVersion":"0.3.0","platform":"linux",
+{"type":"hello","protocolVersion":1,"engineVersion":"0.4.0","platform":"linux",
  "cores":4,"memoryLimitBytes":8589934592,"workers":2,"threadsPerWorker":2,
  "queueLimit":4,"cacheEntries":1,"timeoutSeconds":60,
  "memoryLimitPerWorkerBytes":3650722201,"suggestedMaxQuads":17000000,

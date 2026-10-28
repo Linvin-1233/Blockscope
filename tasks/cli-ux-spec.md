@@ -144,7 +144,7 @@ ui::outln!("{}", ui::success("OK"));
 ### Welcome screen (`blockscope` with no subcommand)
 
 - Exit code `0` instead of clap's "subcommand required" error.
-- Prints the logo, `Blockscope 0.3.0`, a one-line description, quick-start
+- Prints the logo, `Blockscope 0.4.0`, a one-line description, quick-start
   commands, and a pointer to `blockscope help`.
 - Adapts to the detected terminal width at print time: wide logo and full body
   at 84+ columns, compact logo and short body at 62+, small logo and short

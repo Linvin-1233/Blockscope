@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-28
+
 ### Added
 
 - CLI 增加统一的终端样式层：`--color auto|always|never`、`NO_COLOR` 支持、完整

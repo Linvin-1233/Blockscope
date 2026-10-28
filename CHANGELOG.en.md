@@ -8,6 +8,8 @@ User-facing changes are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-28
+
 ### Added
 
 - The CLI now has a shared terminal style layer: `--color auto|always|never`,

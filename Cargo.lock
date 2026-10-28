@@ -115,7 +115,7 @@ dependencies = [
 
 [[package]]
 name = "blockscope-cli"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "anstream",
  "anstyle",
@@ -495,7 +495,7 @@ checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 
 [[package]]
 name = "litematic-core"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "flate2",
  "litematic-nbt",
@@ -504,7 +504,7 @@ dependencies = [
 
 [[package]]
 name = "litematic-material"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "litematic-mesh",
  "litematic-scene",
@@ -517,7 +517,7 @@ dependencies = [
 
 [[package]]
 name = "litematic-mesh"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "litematic-scene",
  "serde",
@@ -526,7 +526,7 @@ dependencies = [
 
 [[package]]
 name = "litematic-nbt"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "flate2",
  "proptest",
@@ -534,7 +534,7 @@ dependencies = [
 
 [[package]]
 name = "litematic-render"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "litematic-material",
  "litematic-mesh",
@@ -546,7 +546,7 @@ dependencies = [
 
 [[package]]
 name = "litematic-scene"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "litematic-nbt",
  "proptest",

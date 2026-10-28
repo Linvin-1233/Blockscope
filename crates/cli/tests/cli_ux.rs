@@ -8,7 +8,10 @@ fn no_args_prints_welcome_and_exits_zero() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.contains("Blockscope v0.3.0"), "{stdout}");
+    assert!(
+        stdout.contains(&format!("Blockscope v{}", env!("CARGO_PKG_VERSION"))),
+        "{stdout}"
+    );
     assert!(stdout.contains("Quick start"), "{stdout}");
     assert!(stdout.contains("blockscope render"), "{stdout}");
     assert!(stdout.contains("blockscope help"), "{stdout}");
