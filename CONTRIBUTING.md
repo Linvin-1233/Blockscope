@@ -95,7 +95,7 @@ CI 的 test matrix 会在 Ubuntu、Windows 和 macOS 上运行同样的检查；
 - 错误使用稳定的错误码；不要只返回字符串
 - 公共协议变更要同步更新 `docs/engine-protocol.md` 和 `MANIFEST_SCHEMA_VERSION`
   或 `PROTOCOL_VERSION`
-- CLI 行为变更要同步更新 `docs/user`、`CHANGELOG.md` 和相关帮助文本
+- CLI 行为变更要同步更新 `docs/zh/user`、`docs/user`、`CHANGELOG.md` 和相关帮助文本
 - 不要提交 `target/`、`renders/`、`cache/`、日志或 IDE 本地配置
 
 项目内还有 `AGENTS.md`，其中包含针对编码代理的额外约定。使用 AI 工具时请一并
@@ -182,9 +182,9 @@ Remove-Item Env:UPDATE_GOLDEN
 - 使用仓库现有的提交前缀：`feat:`、`fix:`、`perf:`、`refactor:`、`test:`、
   `docs:`、`chore:`
 - 提交信息说明“改了什么”和“为什么”，不要只写 `fix bug`
-- 新功能或行为变更同步更新 `docs/user`、`CHANGELOG.md`、协议文档和测试
+- 新功能或行为变更同步更新 `docs/zh/user`、`docs/user`、`CHANGELOG.md`、协议文档和测试
 - PR 描述包含：背景、改动、验证命令、已知限制
-- 用户可见行为变更同步更新 `docs/user` 与根 README 的导航
+- 用户可见行为变更同步更新 `docs/zh/user`、`docs/user` 与根 README 的导航
 - 如果改动影响输出，附上前后对比或黄金文件差异说明
 - 保持 PR 可审查；过大改动请拆分为多个小 PR
 
@@ -226,7 +226,7 @@ git diff --check
 - manifest 变更需要评估 `MANIFEST_SCHEMA_VERSION`
 - 错误码是稳定 API，不要随意重命名
 - 新增协议字段优先保持向后兼容；删除或改变语义需要提升 `PROTOCOL_VERSION`
-- 修改 CLI 默认值或限制时，同步更新 `docs/user`、帮助文本和测试
+- 修改 CLI 默认值或限制时，同步更新 `docs/zh/user`、`docs/user`、帮助文本和测试
 
 ## 行为准则
 

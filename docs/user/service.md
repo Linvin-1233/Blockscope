@@ -1,26 +1,32 @@
-# 服务模式
+---
+title: "Service Mode"
+---
 
-`serve` 在 stdin/stdout 上使用 newline-delimited JSON，不监听网络端口。它适合
-由受信任的上层服务、批处理工具或自动化管线作为子进程启动。
+`serve` speaks newline-delimited JSON over stdin/stdout. It does not listen on a
+network port. It is designed to be spawned as a child process by a trusted
+upper-layer service, batch tool, or automation pipeline.
 
-## 启动 worker
+## Start a Worker
 
 ```bash
 blockscope serve --client-jar client.jar --threads 4 --cache 2
 ```
 
-- `--threads`：请求未指定 `threads` 时使用的默认线程数；最多 256
-- `--cache`：缓存的 scene/mesh 条数上限
-- `--cache-bytes`：缓存预算（估算字节）；`0` 使用可用内存的一半。超出预算时
-  按最旧优先淘汰，单个超大条目仍允许单独保留。由 `supervise` 启动时，若未显式
-  指定，supervisor 会按每个 worker 的内存上限派生并传入该值
-- `--greedy-mesh`：合并同材质、同光照的共面单位面；默认关闭
-- `--force-limits`：提高资源上限；只应对可信输入使用
-- `--ignore-block-entity-nbt`：跳过容器 NBT
+- `--threads`: default thread count for requests that omit `threads`; capped at
+  256
+- `--cache`: maximum number of parsed scenes/meshes to keep
+- `--cache-bytes`: estimated cache budget in bytes; `0` uses half of available
+  memory. The oldest entries are evicted first; one oversized entry is still
+  allowed to remain. When started by `supervise` without an explicit value, the
+  supervisor derives it from the per-worker memory ceiling
+- `--greedy-mesh`: merge coplanar unit faces with identical material and
+  lighting; disabled by default
+- `--force-limits`: raise resource caps; trusted input only
+- `--ignore-block-entity-nbt`: skip container NBT
 
-worker 在资源包准备完成后输出一行 `hello`，之后才接受 job。
+The worker prints one `hello` line after materials are ready, then accepts jobs.
 
-## 请求示例
+## Request Example
 
 ```json
 {
@@ -37,20 +43,24 @@ worker 在资源包准备完成后输出一行 `hello`，之后才接受 job。
 }
 ```
 
-- `input.path` 和 `outputDir` 必须是绝对路径
-- 输入必须是普通文件
-- `input.hash` 可选，是调用方声明的 SHA-256 身份；命中缓存时 worker 信任该值并
-  不再读取文件，未命中时才重新计算并校验
-- `supervise` 会把为路由计算出的 hash 注入请求，因此经 supervisor 的重复输入
-  也能走免读缓存路径
-- `views` 为空时默认 `[45]`，最多 64 个角度；有完整 mesh 时多视角并行渲染
-- 输出文件为 `{id}.png` 或 `{id}-{yaw}.png`；调用方必须保证 `id` 和
-  `outputDir` 在并发任务中唯一，重复 `id` 或重复视角会覆盖同一路径
-- 完整字段、结果和错误码见 [引擎协议 v1](../engine-protocol.md)
+- `input.path` and `outputDir` must be absolute
+- The input must be a regular file
+- `input.hash` is optional and is a caller-asserted SHA-256 identity; on a cache
+  hit the worker trusts it and does not read the file, on a miss it recomputes
+  and verifies the digest
+- `supervise` injects the hash it computed for routing, so repeated inputs also
+  take the no-read cache path
+- An empty `views` array defaults to `[45]`; at most 64 angles are accepted;
+  multiple views render concurrently when a complete mesh is available
+- Output files are `{id}.png` or `{id}-{yaw}.png`; callers must keep `id` and
+  `outputDir` unique across concurrent jobs. Duplicate ids or yaw values
+  overwrite the same path
+- Full fields, results, and error codes are in
+  [Engine protocol v1](/engine-protocol)
 
 ## Supervisor
 
-`supervise` 管理 worker 池、队列、超时和内存上限：
+`supervise` manages a worker pool, queue, timeouts, and memory ceilings:
 
 ```bash
 blockscope supervise \
@@ -63,25 +73,26 @@ blockscope supervise \
   --cache 2
 ```
 
-| 选项 | 说明 |
+| Option | Description |
 |---|---|
-| `--workers` | worker 进程数，最多 256；`0` 使用 `capacity` 建议值 |
-| `--threads` | 每个 worker 的线程数；`0` 使用 `capacity` 建议值 |
-| `--timeout` | 每个 job 的超时秒数；`0` 关闭 |
-| `--memory` | 每个 worker 的内存上限（MiB）；`0` 根据可用内存推导 |
-| `--queue` | 等待队列长度；`0` 使用 `workers * 2` |
-| `--cache` | 每个 worker 缓存的 scene/mesh 条数上限 |
-| `--cache-bytes` | 每个 worker 的缓存预算（估算字节）；`0` 使用该 worker 内存上限的一半 |
-| `--greedy-mesh` | 在每个 worker 中启用贪心网格合并；默认关闭 |
+| `--workers` | Worker process count, at most 256; `0` uses the `capacity` suggestion |
+| `--threads` | Threads per worker; `0` uses the `capacity` suggestion |
+| `--timeout` | Per-job timeout in seconds; `0` disables |
+| `--memory` | Per-worker memory ceiling in MiB; `0` derives it from capacity |
+| `--queue` | Queue length; `0` uses `workers * 2` |
+| `--cache` | Maximum cached scenes/meshes per worker |
+| `--cache-bytes` | Estimated cache budget per worker in bytes; `0` derives half of the per-worker memory ceiling |
+| `--greedy-mesh` | Enable greedy mesh merging in every worker; disabled by default |
 
-## 安全边界
+## Security Boundary
 
-`serve` 和 `supervise` 只应被可信调用方使用。输入路径、输出目录和资源包路径由
-调用方控制；不要把 stdio 服务直接暴露给不可信网络客户端。
+Use `serve` and `supervise` only with trusted callers. Input paths, output
+directories, and resource-pack paths are controlled by the caller. Do not expose
+the stdio service directly to untrusted network clients.
 
-## 相关文档
+## See Also
 
-- [引擎协议 v1](../engine-protocol.md)
+- [Engine protocol v1](/engine-protocol)
 - [Docker](./docker.md)
-- [故障排查](./troubleshooting.md)
-- [English](./en/service.md)
+- [Troubleshooting](./troubleshooting.md)
+- [中文](/zh/user/service)

@@ -41,7 +41,7 @@
 
 ### Slice 4: Docs and gate
 
-- Update `docs/user/cli.md`, `docs/user/en/cli.md`, both changelogs, and
+- Update `docs/zh/user/cli.md`, `docs/user/cli.md`, both changelogs, and
   `tasks/todo.md`.
 - Run `cargo fmt --all --check`, clippy, the full test suite, and a manual
   Windows Terminal check.

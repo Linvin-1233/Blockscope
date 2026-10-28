@@ -12,104 +12,128 @@
     "light": "/logo/light.svg",
     "dark": "/logo/dark.svg"
   },
-  "navbar": {
-    "links": [
-      {
-        "label": "GitHub",
-        "href": "https://github.com/Linvin-1233/Blockscope"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Repository",
-      "href": "https://github.com/Linvin-1233/Blockscope"
-    }
-  },
-  "footer": {
-    "socials": {
-      "github": "https://github.com/Linvin-1233/Blockscope"
-    }
-  },
   "navigation": {
-    "tabs": [
+    "languages": [
       {
-        "tab": "User Guide",
-        "groups": [
+        "language": "en",
+        "navbar": {
+          "links": [
+            {
+              "label": "GitHub",
+              "href": "https://github.com/Linvin-1233/Blockscope"
+            }
+          ],
+          "primary": {
+            "type": "button",
+            "label": "Repository",
+            "href": "https://github.com/Linvin-1233/Blockscope"
+          }
+        },
+        "footer": {
+          "socials": {
+            "github": "https://github.com/Linvin-1233/Blockscope"
+          }
+        },
+        "tabs": [
           {
-            "group": "Overview",
-            "pages": [
-              "index",
-              "user/en/index",
-              "user/en/getting-started",
-              "user/en/features",
-              "user/en/cli"
+            "tab": "User Guide",
+            "groups": [
+              {
+                "group": "Overview",
+                "pages": [
+                  "index",
+                  "user/index",
+                  "user/getting-started",
+                  "user/features",
+                  "user/cli"
+                ]
+              },
+              {
+                "group": "Guides & Operations",
+                "pages": [
+                  "user/materials",
+                  "user/lod",
+                  "user/service",
+                  "user/docker"
+                ]
+              },
+              {
+                "group": "Reference",
+                "pages": [
+                  "user/limits",
+                  "user/troubleshooting"
+                ]
+              }
             ]
           },
           {
-            "group": "Guides & Operations",
-            "pages": [
-              "user/en/materials",
-              "user/en/lod",
-              "user/en/service",
-              "user/en/docker"
-            ]
-          },
-          {
-            "group": "Reference",
-            "pages": [
-              "user/en/limits",
-              "user/en/troubleshooting"
+            "tab": "Technical Specs",
+            "groups": [
+              {
+                "group": "Pipeline Architecture",
+                "pages": [
+                  "litematic-format",
+                  "mesh-geometry",
+                  "rendering",
+                  "textures"
+                ]
+              },
+              {
+                "group": "System & Protocol",
+                "pages": [
+                  "engine-protocol",
+                  "deployment"
+                ]
+              }
             ]
           }
         ]
       },
       {
-        "tab": "用户指南",
+        "language": "zh",
+        "navbar": {
+          "links": [
+            {
+              "label": "GitHub",
+              "href": "https://github.com/Linvin-1233/Blockscope"
+            }
+          ],
+          "primary": {
+            "type": "button",
+            "label": "代码仓库",
+            "href": "https://github.com/Linvin-1233/Blockscope"
+          }
+        },
+        "footer": {
+          "socials": {
+            "github": "https://github.com/Linvin-1233/Blockscope"
+          }
+        },
         "groups": [
           {
             "group": "入门与概览",
             "pages": [
-              "user/index",
-              "user/getting-started",
-              "user/features",
-              "user/cli"
+              "zh/index",
+              "zh/user/index",
+              "zh/user/getting-started",
+              "zh/user/features",
+              "zh/user/cli"
             ]
           },
           {
             "group": "进阶与部署",
             "pages": [
-              "user/materials",
-              "user/lod",
-              "user/service",
-              "user/docker"
+              "zh/user/materials",
+              "zh/user/lod",
+              "zh/user/service",
+              "zh/user/docker"
             ]
           },
           {
             "group": "参考与排查",
             "pages": [
-              "user/limits",
-              "user/troubleshooting"
-            ]
-          }
-        ]
-      },
-      {
-        "tab": "Technical Specs",
-        "groups": [
-          {
-            "group": "Pipeline Architecture",
-            "pages": [
-              "litematic-format",
-              "mesh-geometry",
-              "rendering",
-              "textures"
-            ]
-          },
-          {
-            "group": "System & Protocol",
-            "pages": [
-              "engine-protocol",
-              "deployment"
+              "zh/user/limits",
+              "zh/user/troubleshooting"
             ]
           }
         ]

@@ -22,16 +22,16 @@ Documentation is hosted under `docs/` as a [Mintlify](https://mintlify.com) site
 
 ### User Guide
 
-- [User documentation index](docs/user/en/index.md)
-- [Features and limitations](docs/user/en/features.md)
-- [Installation and quick start](docs/user/en/getting-started.md)
-- [CLI reference](docs/user/en/cli.md)
-- [Materials and resource packs](docs/user/en/materials.md)
-- [LOD and large structures](docs/user/en/lod.md)
-- [Service mode](docs/user/en/service.md)
-- [Limits and security](docs/user/en/limits.md)
-- [Docker](docs/user/en/docker.md)
-- [Troubleshooting](docs/user/en/troubleshooting.md)
+- [User documentation index](docs/user/index.md)
+- [Features and limitations](docs/user/features.md)
+- [Installation and quick start](docs/user/getting-started.md)
+- [CLI reference](docs/user/cli.md)
+- [Materials and resource packs](docs/user/materials.md)
+- [LOD and large structures](docs/user/lod.md)
+- [Service mode](docs/user/service.md)
+- [Limits and security](docs/user/limits.md)
+- [Docker](docs/user/docker.md)
+- [Troubleshooting](docs/user/troubleshooting.md)
 
 ### Technical Documentation
 

@@ -8,7 +8,7 @@ It runs the same way on Linux, macOS, in containers, and on Windows.
 Tagged releases publish standalone, statically linked binaries for Linux, macOS,
 and Windows (using musl on Linux and static CRT on Windows). For binary downloads,
 checksum verification, and desktop installer guides, see
-[Installation and Quick Start](./user/en/getting-started.md).
+[Installation and Quick Start](./user/getting-started.md).
 
 ## Cutting a Release
 
@@ -24,8 +24,8 @@ checksum verification, and desktop installer guides, see
    `.github/workflows/release.yml`.
 
 The versioned download examples in `docs/user/getting-started.md` and its
-English counterpart name the last published release; update them after the new
-release is available.
+Chinese counterpart in `docs/zh/user/getting-started.md` name the last
+published release; update them after the new release is available.
 
 ## Container Deployment
 
@@ -34,7 +34,7 @@ dependencies or assets. Client jars, resource packs, and job directories must be
 mounted at runtime.
 
 For container build commands, volume mounting, worker execution, and supervisor
-setup, see the [Docker Guide](./user/en/docker.md) and [Service Mode](./user/en/service.md).
+setup, see the [Docker Guide](./user/docker.md) and [Service Mode](./user/service.md).
 
 Always verify container sizing using `blockscope capacity` against the host
 cgroup limits before deploying.

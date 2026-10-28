@@ -20,16 +20,16 @@ Blockscope 是一个把 Minecraft `.litematic` 投影文件渲染成 PNG 的
 
 ### 用户文档
 
-- [用户文档总览](docs/user/index.md)
-- [功能与限制](docs/user/features.md)
-- [安装与快速开始](docs/user/getting-started.md)
-- [CLI 命令](docs/user/cli.md)
-- [材质与资源包](docs/user/materials.md)
-- [LOD 与大结构](docs/user/lod.md)
-- [服务模式](docs/user/service.md)
-- [限制与安全](docs/user/limits.md)
-- [Docker](docs/user/docker.md)
-- [故障排查](docs/user/troubleshooting.md)
+- [用户文档总览](docs/zh/user/index.md)
+- [功能与限制](docs/zh/user/features.md)
+- [安装与快速开始](docs/zh/user/getting-started.md)
+- [CLI 命令](docs/zh/user/cli.md)
+- [材质与资源包](docs/zh/user/materials.md)
+- [LOD 与大结构](docs/zh/user/lod.md)
+- [服务模式](docs/zh/user/service.md)
+- [限制与安全](docs/zh/user/limits.md)
+- [Docker](docs/zh/user/docker.md)
+- [故障排查](docs/zh/user/troubleshooting.md)
 
 ### 技术文档
 
