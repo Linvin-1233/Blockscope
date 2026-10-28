@@ -81,37 +81,68 @@ pub fn detect_terminal_protocol() -> TerminalProtocol {
     TerminalProtocol::Halfblocks
 }
 
+/// Query the terminal's cell grid and pixel size from `STDOUT_FILENO`.
+#[cfg(unix)]
+fn unix_winsize() -> Option<(u16, u16, u32, u32)> {
+    #[repr(C)]
+    struct WinSize {
+        ws_row: u16,
+        ws_col: u16,
+        ws_xpixel: u16,
+        ws_ypixel: u16,
+    }
+
+    #[cfg(target_os = "macos")]
+    const TIOCGWINSZ: std::ffi::c_ulong = 0x40087468;
+    #[cfg(not(target_os = "macos"))]
+    const TIOCGWINSZ: std::ffi::c_ulong = 0x5413;
+
+    // SAFETY: the variadic signature matches the platform libc `ioctl`.
+    unsafe extern "C" {
+        fn ioctl(fd: i32, request: std::ffi::c_ulong, ...) -> i32;
+    }
+
+    // SAFETY: `WinSize` is a plain C-layout struct, and `ioctl` writes a
+    // `winsize` into the live buffer when `TIOCGWINSZ` succeeds.
+    unsafe {
+        let mut ws: WinSize = std::mem::zeroed();
+        // 1 is STDOUT_FILENO
+        if ioctl(1, TIOCGWINSZ, &mut ws) == 0 && ws.ws_col > 0 && ws.ws_row > 0 {
+            return Some((
+                ws.ws_col,
+                ws.ws_row,
+                u32::from(ws.ws_xpixel),
+                u32::from(ws.ws_ypixel),
+            ));
+        }
+    }
+    None
+}
+
+/// Detect the terminal viewport size in pixels (width, height).
+///
+/// Pixel dimensions are what cell-addressed graphics protocols need to fit an
+/// image to the visible grid. Returns `None` when stdout is not a terminal or the
+/// emulator reports no pixel size (kitten, Ghostty, kitty, WezTerm and iTerm2 all
+/// report it).
+pub fn detect_terminal_pixels() -> Option<(u32, u32)> {
+    #[cfg(unix)]
+    {
+        if let Some((_, _, width, height)) = unix_winsize()
+            && width > 0
+            && height > 0
+        {
+            return Some((width, height));
+        }
+    }
+    None
+}
+
 /// Detect the current terminal width and height in character cells (columns, rows).
 pub fn detect_terminal_size() -> Option<(u16, u16)> {
     #[cfg(unix)]
-    {
-        #[repr(C)]
-        struct WinSize {
-            ws_row: u16,
-            ws_col: u16,
-            ws_xpixel: u16,
-            ws_ypixel: u16,
-        }
-
-        #[cfg(target_os = "macos")]
-        const TIOCGWINSZ: std::ffi::c_ulong = 0x40087468;
-        #[cfg(not(target_os = "macos"))]
-        const TIOCGWINSZ: std::ffi::c_ulong = 0x5413;
-
-        // SAFETY: the variadic signature matches the platform libc `ioctl`.
-        unsafe extern "C" {
-            fn ioctl(fd: i32, request: std::ffi::c_ulong, ...) -> i32;
-        }
-
-        // SAFETY: `WinSize` is a plain C-layout struct, and `ioctl` writes a
-        // `winsize` into the live buffer when `TIOCGWINSZ` succeeds.
-        unsafe {
-            let mut ws: WinSize = std::mem::zeroed();
-            // 1 is STDOUT_FILENO
-            if ioctl(1, TIOCGWINSZ, &mut ws) == 0 && ws.ws_col > 0 && ws.ws_row > 0 {
-                return Some((ws.ws_col, ws.ws_row));
-            }
-        }
+    if let Some((cols, rows, _, _)) = unix_winsize() {
+        return Some((cols, rows));
     }
     #[cfg(windows)]
     {

@@ -11,13 +11,17 @@ mod quantize;
 mod scale;
 mod sixel;
 
-pub use detect::{detect_terminal_protocol, detect_terminal_size, enable_windows_virtual_terminal};
+pub use detect::{
+    detect_terminal_pixels, detect_terminal_protocol, detect_terminal_size,
+    enable_windows_virtual_terminal,
+};
 pub use halfblocks::encode_halfblocks;
 pub use iterm2::{encode_iterm2, encode_iterm2_png};
 pub use kitty::{encode_kitty, encode_kitty_png};
 pub use options::TerminalOptions;
 pub use protocol::TerminalProtocol;
 pub use quantize::quantize_rgba;
+pub use scale::{cell_footprint, fit_terminal_cells};
 pub use sixel::encode_sixel;
 
 use crate::{RenderError, RenderOutput};

@@ -61,6 +61,15 @@ or `{id}-{yaw}.png` for multiple views. When a complete mesh is available,
 multiple views render concurrently within the `--threads` budget; output order
 is preserved, and each view is written and released before the next batch.
 
+Terminal images are fitted to the visible grid: when the rendered pixel size
+would exceed the window, the next cell dimension is requested so the terminal
+scales the image down while keeping its aspect ratio. The summary is printed
+first and the image last, so text cannot scroll it out of view. Inside `tmux` or
+`screen`, which drop graphics sequences unless passthrough is enabled,
+auto-detection falls back to half blocks; pass `--terminal-protocol` to override
+that. When stdout is not a terminal (a pipe, a log, a captured shell), a warning
+is printed because the escape sequences cannot be displayed.
+
 ## Common Options
 
 | Option | Description |
