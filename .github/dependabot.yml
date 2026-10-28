@@ -6,6 +6,13 @@ updates:
       interval: weekly
     groups:
       cargo:
-        applies-to: version-updates
+        patterns:
+          - "*"
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
         patterns:
           - "*"
