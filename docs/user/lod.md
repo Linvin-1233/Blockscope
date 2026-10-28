@@ -1,43 +1,51 @@
-# LOD 与大结构
+---
+title: "LOD and Large Structures"
+---
 
-默认 `--lod 1` 保留完整细节。超大结构可以使用固定 LOD 或自动预算：
+`--lod 1` is the default and keeps full detail. For large structures, use a
+fixed LOD or the automatic budget:
 
 ```bash
 blockscope render huge.litematic --output huge.png --lod 4
 blockscope render huge.litematic --output huge.png --lod auto
 ```
 
-## 模式
+## Modes
 
-- `--lod 1`：关闭 LOD，渲染完整网格
-- `--lod 2..=16`：固定 LOD 因子，适合需要跨机器复现的输出
-- `--lod auto`：先尝试精确渲染，内存预算不足时依次尝试 `2`、`4`、`8`、`16`
+- `--lod 1`: disable LOD and render the full mesh
+- `--lod 2..=16`: fixed LOD factor, suitable for reproducible output across hosts
+- `--lod auto`: try exact rendering first, then `2`, `4`, `8`, and `16` as the
+  memory budget requires
 
-## 行为
+## Behavior
 
-LOD 会把每个 `N x N x N` cell 聚合为最常见的非空气方块；平票时使用规范状态
-顺序。重叠 region 使用与 mesh builder 相同的“后出现的 region 优先”策略。
+LOD aggregates each `N x N x N` cell into the most frequent non-air state; ties
+use canonical state order. Overlapping regions use the same "later region wins"
+policy as the mesh builder.
 
-LOD 场景会丢弃：
+LOD drops:
 
 - block entities
 - entities
 - pending ticks
 
-因此 LOD 只适合预览，不适合依赖容器内容或实体细节的最终展示。
+Use LOD for previews, not for final output that depends on container contents or
+entity detail.
 
-## 内存与可复现性
+## Memory and Reproducibility
 
-`auto` 使用 `capacity` 计算出的 quad 预算；不同内存的机器可能选择不同因子。
-如果需要跨机器得到相同输出，请使用固定 `--lod`。
+`auto` uses the quad budget derived from `capacity`; hosts with different
+memory may choose different factors. Use a fixed `--lod` when output must be
+reproducible across machines.
 
-`--force-limits` 会提高资源上限，但不会绕过线程、纹理和 NBT 深度等固定限制；
-只应对可信输入使用，并确保机器有足够内存。
+`--force-limits` raises resource caps but does not disable the fixed thread,
+texture, or NBT-depth limits. Use it only with trusted input and enough memory.
 
-更多性能数据和实现细节见 [CPU 渲染说明](../rendering.md)。
+See [CPU rendering](/rendering) for performance data and
+implementation details.
 
-## 相关文档
+## See Also
 
-- [CLI 命令](./cli.md)
-- [限制与安全](./limits.md)
-- [English](./en/lod.md)
+- [CLI Reference](./cli.md)
+- [Limits and Security](./limits.md)
+- [中文](/zh/user/lod)

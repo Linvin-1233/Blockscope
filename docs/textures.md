@@ -7,7 +7,7 @@ runtime; no Minecraft assets are stored in this repository.
 ## Overview
 
 For end-user CLI workflows using `--client-jar`, `--assets`, and `--resource-pack`,
-see [Materials and Resource Packs](./user/en/materials.md). Without resource pack
+see [Materials and Resource Packs](./user/materials.md). Without resource pack
 options, rendering defaults to the built-in color-block mode.
 
 ## Asset Layout
@@ -135,7 +135,7 @@ texture coordinates or materials yet; use `blockscope render` for textured outpu
 
 ## Coverage Report
 
-The `materials` command (documented in [CLI Reference](./user/en/cli.md))
+The `materials` command (documented in [CLI Reference](./user/cli.md))
 reports per-block kinds (`pack-model`, `chest`, `fallback`, `unknown`), texture
 status, and missing texture counts.
 

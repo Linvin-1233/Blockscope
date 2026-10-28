@@ -1,43 +1,52 @@
-# 功能与限制
+---
+title: "Features and Limitations"
+---
 
-Blockscope 是一个把 Minecraft `.litematic` 投影文件渲染成 PNG 的
-无头 Rust 图像渲染引擎，面向通用后端服务、批处理工具和自动化管线。
+Blockscope is a headless Rust image-rendering engine that turns
+Minecraft `.litematic` projections into PNG images. It is designed for general
+backend services, batch tools, and automation pipelines.
 
-当前 workspace 版本为 `0.4.0`，支持 Windows、Linux 和 macOS。仓库包含解析、材质、
-网格、CPU 光栅化、CLI 和 stdio 服务；不包含特定聊天平台或机器人适配层。
+The current workspace version is `0.4.0` and supports Windows, Linux, and macOS. The
+repository contains parsing, materials, meshing, CPU rasterization, a CLI, and a
+stdio service. It does not contain a chat-platform or bot adapter.
 
-## 功能
+## Features
 
-- 解析 `.litematic` v1-v7：metadata、regions、palette、packed block states、
-  block entities、entities 和 pending ticks
-- 生成规范 Scene IR、材料统计、诊断、稳定 manifest 和 SHA-256 哈希
-- 内置色块 catalog：无需资源包即可渲染常见方块、partial shapes 和流体
-- 资源包材质：blockstate/model、parent 链、multipart、UV、旋转、tint、
-  cutout/translucent、PNG 贴图和 overlay
-- 内置箱子 body/lid/lock 模型和 entity 贴图
-- 网格导出：OBJ、带顶点颜色的 PLY
-- 可选 `--greedy-mesh` 共面合并，降低大平面和重复结构的 quad 数
-- CPU 正交相机、tile 光栅化、`flat-v1` / `simple-ao-v1` 光照、PNG 输出
-- 超采样 1-4、多视角、并行 tile、分页流式渲染
-- LOD 固定因子 `2..=16` 或 `auto`，用于超大结构降级
-- `serve` 长驻 worker 和 `supervise` 多进程调度，使用 newline-delimited JSON
-- 容量检测、内存预算、mesh/render 上限和稳定错误码
-- 黄金 manifest/PNG、并发和协议测试
+- Parse `.litematic` v1-v7: metadata, regions, palettes, packed block states,
+  block entities, entities, and pending ticks
+- Build a canonical Scene IR, material statistics, diagnostics, deterministic
+  manifests, and SHA-256 hashes
+- Built-in color catalog for common blocks, partial shapes, and fluids without
+  a resource pack
+- Resource packs: blockstates, models, parent chains, multipart, UVs, rotation,
+  tint, cutout/translucent layers, PNG textures, and overlays
+- Built-in chest body/lid/lock model and entity textures
+- Mesh export: OBJ and colored PLY
+- Optional `--greedy-mesh` coplanar merging for large flat or repetitive
+  surfaces
+- CPU orthographic camera, tiled rasterization, `flat-v1` / `simple-ao-v1`
+  lighting, and PNG output
+- Supersampling 1-4, multi-view output, parallel tiles, and paged streaming
+- LOD with a fixed `2..=16` factor or `auto`
+- `serve` worker and `supervise` process pool over newline-delimited JSON
+- Capacity detection, memory budgets, mesh/render limits, and stable error codes
+- Golden manifest/PNG, concurrency, and protocol tests
 
-## 当前限制
+## Current Limitations
 
-- 不包含特定聊天平台/机器人适配层；本仓库只提供渲染引擎和 stdio 协议
-- 不渲染通用实体模型、实体动画、block entity 文本/图标、banner pattern 或
-  skull skin
-- 材质 tint 使用固定 plains 色，不读取 biome colormap
-- 没有阴影、完整光照传播、emissive bloom 或 mipmap
-- LOD 会丢弃 block entities、entities 和 pending ticks
-- 资源包、客户端 jar 和私有 `.litematic` 不随仓库提交
-- 没有网络端口；`serve`/`supervise` 只通过 stdio 与上层服务通信
+- No chat-platform or bot adapter; this repository provides only the renderer
+  and stdio protocol
+- No general entity models, entity animations, block-entity text/icons, banner
+  patterns, or skull skins
+- Tint is a fixed plains color; biome colormaps are not read
+- No shadows, full light propagation, emissive bloom, or mipmaps
+- LOD drops block entities, entities, and pending ticks
+- Resource packs, client jars, and private `.litematic` files are not committed
+- No network listener; `serve`/`supervise` communicate over stdio only
 
-## 下一步
+## Next
 
-- [安装与快速开始](./getting-started.md)
-- [CLI 命令](./cli.md)
-- [限制与安全](./limits.md)
-- [English](./en/features.md)
+- [Installation and Quick Start](./getting-started.md)
+- [CLI Reference](./cli.md)
+- [Limits and Security](./limits.md)
+- [中文](/zh/user/features)

@@ -99,7 +99,7 @@ into protocol DTOs.
 - Return stable error codes, not only strings
 - Update `docs/engine-protocol.md` and `MANIFEST_SCHEMA_VERSION` or
   `PROTOCOL_VERSION` for public protocol changes
-- Update `docs/user`, `CHANGELOG.en.md`, help text, and tests for CLI
+- Update `docs/user` and `docs/zh/user`, `CHANGELOG.en.md`, help text, and tests for CLI
   changes
 - Do not commit `target/`, `renders/`, `cache/`, logs, or IDE configuration
 
@@ -187,11 +187,11 @@ Do not regenerate goldens without an explanation.
 - Use existing prefixes: `feat:`, `fix:`, `perf:`, `refactor:`, `test:`,
   `docs:`, `chore:`
 - Explain what changed and why; avoid messages like `fix bug`
-- Update `docs/user`, `CHANGELOG.en.md`, protocol docs, and tests with
+- Update `docs/user` and `docs/zh/user`, `CHANGELOG.en.md`, protocol docs, and tests with
   behavior changes
 - The PR description should cover context, changes, verification commands, and
   known limitations
-- Keep `docs/user` and the root README navigation in sync with user-visible
+- Keep `docs/user`, `docs/zh/user`, and the root README navigation in sync with user-visible
   behavior changes
 - Include before/after output or golden diffs for rendering changes
 - Keep PRs reviewable; split large changes into smaller PRs
@@ -237,7 +237,7 @@ profile and include impact, reproduction steps, and a suggested fix.
 - Error codes are a stable API; do not rename them casually
 - Prefer backward-compatible protocol additions; bump `PROTOCOL_VERSION` for
   removals or semantic changes
-- Update `docs/user`, help text, and tests when CLI defaults or
+- Update `docs/user` and `docs/zh/user`, help text, and tests when CLI defaults or
   limits change
 
 ## Code of Conduct

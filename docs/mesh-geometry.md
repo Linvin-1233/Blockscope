@@ -117,7 +117,7 @@ Both exporters are deterministic: the same mesh produces identical bytes.
 ## CLI
 
 For CLI invocation and mesh export options (`--obj`, `--ply`, `--json`), see
-[CLI Reference - mesh](./user/en/cli.md).
+[CLI Reference - mesh](./user/cli.md).
 
 ## Partial Shapes
 

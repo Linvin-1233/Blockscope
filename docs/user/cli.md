@@ -1,134 +1,150 @@
-# CLI 命令
+---
+title: "CLI Reference"
+---
 
-`blockscope` 的构建和路径说明见 [安装与快速开始](./getting-started.md)。
+See [Installation and Quick Start](./getting-started.md) for building
+`blockscope` and locating the binary.
 
-## 命令总览
+## Commands
 
-| 命令 | 用途 |
+| Command | Purpose |
 |---|---|
-| `inspect` | 输出稳定 manifest，包含 bounds、regions、统计、诊断、`inputHash` 和 `sceneHash` |
-| `validate` | 快速验证文件并输出摘要 |
-| `stats` | 输出方块/材料统计 |
-| `mesh` | 构建网格，可导出 OBJ 或 PLY |
-| `render` | 渲染 PNG 或直接在终端中显示图像 |
-| `bench` | 测量 parse、LOD、mesh、render、PNG 各阶段耗时 |
-| `materials` | 检查资源包对当前模型的覆盖率 |
-| `capacity` | 输出 CPU/内存容量和建议的 worker/thread 配置 |
-| `serve` | 长驻 worker，使用 stdio JSON 协议 |
-| `supervise` | 启动并调度多个 worker 进程 |
+| `inspect` | Print the stable manifest, including bounds, regions, statistics, diagnostics, `inputHash`, and `sceneHash` |
+| `validate` | Validate a file and print a summary |
+| `stats` | Print block/material statistics |
+| `mesh` | Build a mesh and optionally export OBJ or PLY |
+| `render` | Render PNG output or display directly in the terminal |
+| `bench` | Measure parse, LOD, mesh, render, and PNG timings |
+| `materials` | Report resource-pack coverage for the scene |
+| `capacity` | Print detected CPU/memory capacity and suggested worker/thread settings |
+| `serve` | Long-lived worker over the stdio JSON protocol |
+| `supervise` | Spawn and route jobs across multiple worker processes |
 
-## 常用示例
+## Examples
 
 ```bash
-# manifest
+# Manifest
 blockscope inspect model.litematic --json
 blockscope inspect model.litematic --json --compact
 
-# 验证和统计
+# Validation and statistics
 blockscope validate model.litematic
 blockscope stats model.litematic --json
 
-# 网格导出
+# Mesh export
 blockscope mesh model.litematic --obj out.obj
 blockscope mesh model.litematic --ply out.ply
 
-# 高分辨率、抗锯齿、多视角
+# Resolution, anti-aliasing, and multi-view
 blockscope render model.litematic --output out.png \
   --width 2048 --height 2048 --supersample 2 --threads 4
 blockscope render model.litematic --output out.png --views 45,225
 
-# 超大结构
+# Huge structures
 blockscope render huge.litematic --output huge.png --lod auto
 blockscope render huge.litematic --output huge.png --lod 4
 blockscope render huge.litematic --output huge.png --lod 1 --stream-mesh
 
-# 材质覆盖率
+# Material coverage
 blockscope materials model.litematic --client-jar client.jar --json
 
-# 容器容量
+# Capacity
 blockscope capacity --json
-# 终端内直接预览图像（Kitty、iTerm2、Sixel、Halfblocks/Truecolor）
+# Terminal image rendering (Kitty, iTerm2, Sixel, Halfblocks/Truecolor)
 blockscope render model.litematic --terminal
 blockscope render model.litematic -t --terminal-protocol kitty
 blockscope render model.litematic -t --no-file
 blockscope preview model.litematic -t
 ```
 
-多视角渲染时，单视角输出 `out.png`，多视角输出 `out-45.png`、`out-225.png`
-等。`serve` 模式的输出命名为 `{id}.png`（单视角）或 `{id}-{yaw}.png`（多视角）。
-有完整 mesh 时，多视角会按 `--threads` 预算并行渲染；输出顺序不变，并且每个
-视角会在下一批开始前写出并释放缓冲，内存不会随视角数量无限增长。
+A single view writes `out.png`. Multiple views write `out-45.png`,
+`out-225.png`, and so on. In `serve` mode the names are `{id}.png` for one view
+or `{id}-{yaw}.png` for multiple views. When a complete mesh is available,
+multiple views render concurrently within the `--threads` budget; output order
+is preserved, and each view is written and released before the next batch.
 
-终端图像会先适配可见网格：渲染尺寸超过窗口时只向终端指定一个字符维度，由终端
-按原始宽高比缩小图像。摘要先输出、图像最后输出，后续文字不会把它顶出屏幕。
-在 `tmux` 或 `screen` 内（默认会丢弃图形序列，除非开启 passthrough），自动检测
-会退化为半块字符；需要时用 `--terminal-protocol` 覆盖。当 stdout 不是终端
-（管道、日志、被捕获的 shell）时会给出警告，因为转义序列无法显示。
+Terminal images are fitted to the visible grid: when the rendered pixel size
+would exceed the window, the next cell dimension is requested so the terminal
+scales the image down while keeping its aspect ratio. The summary is printed
+first and the image last, so text cannot scroll it out of view. Inside `tmux` or
+`screen`, which drop graphics sequences unless passthrough is enabled,
+auto-detection falls back to half blocks; pass `--terminal-protocol` to override
+that. When stdout is not a terminal (a pipe, a log, a captured shell), a warning
+is printed because the escape sequences cannot be displayed.
 
-## 常用选项
+## Common Options
 
-| 选项 | 说明 |
+| Option | Description |
 |---|---|
-| `--client-jar <PATH>` | 直接读取 Minecraft 客户端 jar |
-| `--assets <DIR>` | 读取已解压的 `assets/` 目录 |
-| `--resource-pack <PATH>` | 叠加资源包目录、zip 或 jar；优先级高于 base |
-| `--texture-filter nearest\|linear` | 纹理采样方式，默认 `nearest` |
-| `--width` / `--height` | 输出尺寸，默认 `1024x1024`，单边最大 4096 |
-| `--supersample <1-4>` | 超采样倍数，默认 `2` |
-| `--views <LIST>` | 逗号分隔的 yaw 角度，例如 `45,225`，最多 64 个 |
-| `--yaw` / `--elevation` | 单视角水平/俯仰角 |
-| `--background transparent\|#RRGGBB[AA]` | 背景，默认透明 |
-| `--lighting flat-v1\|simple-ao-v1` | 光照配置，默认 `simple-ao-v1` |
-| `--threads <N>` | mesh/rasterizer 线程数，`0` 使用可用并行度，最多 256 |
-| `--lod 1\|2-16\|auto` | LOD 因子，默认 `1`（关闭） |
-| `--stream-mesh [auto\|on\|off]` | 按页构建并渲染网格，不保留完整 Mesh；默认 `auto`，固定 LOD 时自动流式，`off` 保留完整 Mesh；`on` 不能与 `--lod auto` 同用 |
-| `--greedy-mesh` | 合并同材质、同光照的共面单位面；适合大平面和重复结构，默认关闭 |
-| `--force-limits` | 提高输入、场景、网格和像素上限；可能耗尽内存 |
-| `--ignore-block-entity-nbt` | 跳过容器 NBT；`mesh`/`render`/`bench` 默认开启 |
-| `-t, --terminal` | 在终端中直接渲染并显示图像 |
-| `--terminal-protocol <auto\|kitty\|iterm2\|sixel\|halfblocks>` | 指定终端图像协议，默认自动检测 |
-| `--terminal-width <COLS>` / `--terminal-height <ROWS>` | 指定终端显示字符列数与行数 |
-| `--no-file` | 仅在终端显示图像，跳过生成磁盘 PNG 文件 |
-| `--color auto\|always\|never` | 终端颜色策略，默认 `auto`；对帮助、错误和结果输出生效 |
+| `--client-jar <PATH>` | Read blockstates/models/textures directly from a Minecraft client jar |
+| `--assets <DIR>` | Read from an extracted `assets/` directory |
+| `--resource-pack <PATH>` | Overlay a directory, zip, or jar; takes precedence over the base |
+| `--texture-filter nearest\|linear` | Texture sampling; default `nearest` |
+| `--width` / `--height` | Output size; default `1024x1024`, maximum 4096 per side |
+| `--supersample <1-4>` | Supersampling factor; default `2` |
+| `--views <LIST>` | Comma-separated yaw angles, e.g. `45,225`; at most 64 |
+| `--yaw` / `--elevation` | Single-view horizontal/elevation angles |
+| `--background transparent\|#RRGGBB[AA]` | Background; default transparent |
+| `--lighting flat-v1\|simple-ao-v1` | Lighting profile; default `simple-ao-v1` |
+| `--threads <N>` | Mesh/rasterizer threads; `0` uses available parallelism, capped at 256 |
+| `--lod 1\|2-16\|auto` | LOD factor; default `1` (disabled) |
+| `--stream-mesh` | Build and render mesh in page chunks without retaining the full mesh; cannot be combined with `--lod auto` |
+| `--greedy-mesh` | Merge coplanar unit faces with identical material and lighting; useful for large flat or repetitive surfaces, disabled by default |
+| `--force-limits` | Raises input, scene, mesh, and pixel caps; can exhaust memory |
+| `--ignore-block-entity-nbt` | Skip container NBT; always on for `mesh`/`render`/`bench` |
+| `-t, --terminal` | Render and display the image directly in the terminal |
+| `--terminal-protocol <auto\|kitty\|iterm2\|sixel\|halfblocks>` | Specify terminal graphics protocol; defaults to auto-detection |
+| `--terminal-width <COLS>` / `--terminal-height <ROWS>` | Target display width in columns and height in rows |
+| `--no-file` | Render only to the terminal without writing an output PNG file |
+| `--color auto\|always\|never` | Color policy for help, errors, and human output; default `auto` |
 
-`inspect`、`validate` 和 `stats` 默认保留 `TileEntities` 内容；几何命令默认跳过，
-以减少大容器文件的解析时间和内存。
+`inspect`, `validate`, and `stats` keep `TileEntities` by default. Geometry
+commands skip them by default to reduce parse time and memory for large
+containers.
 
-## 终端样式与进度
+## Terminal Style and Progress
 
-在没有参数时，`blockscope` 打印静态欢迎屏并立即退出。字标会按启动时的终端宽度和
-高度选择布局；输出被重定向时使用紧凑字标。静态输出退出后由终端负责重排，程序无法
-继续控制已经打印的字符。
+Running `blockscope` without arguments prints the static welcome screen and
+exits immediately. The wordmark chooses its layout from the terminal width and
+height at print time; redirected output uses the compact mark. After the
+process exits, the terminal owns those characters and may reflow them on
+resize; the program can no longer control them.
 
-字标会按终端宽度和高度逐级降级：82 列宽字标、59 列紧凑字标、47 列小字标，更窄时
-改用纯文字标题并只保留最有用的命令；输出被重定向时使用紧凑字标。
+The wordmark steps down with the terminal width and height: an 82-column
+banner, a 59-column compact mark, a 47-column small mark, and finally a plain
+text title with only the most useful commands. Redirected output uses the
+compact mark.
 
-`--color` 可放在子命令前后，控制帮助、错误和人类可读结果的颜色：
+`--color` is accepted before or after the subcommand and controls help, errors,
+and human-readable results:
 
-| 值 | 行为 |
+| Value | Behavior |
 |---|---|
-| `auto`（默认） | 仅在终端输出颜色；`NO_COLOR` 会关闭颜色 |
-| `always` | 即使通过管道也输出颜色 |
-| `never` | 不输出颜色 |
+| `auto` (default) | Color only on a terminal; `NO_COLOR` disables it |
+| `always` | Emit color even through a pipe |
+| `never` | Never emit color |
 
-`--json` 输出始终是纯 JSON，不受 `--color` 影响。
+`--json` output is always plain JSON and is never affected by `--color`.
 
-`render`、`bench`、`mesh` 和 `materials` 在 stderr 是终端时显示进度：解析、材质、
-网格页数和单视角栅格化的 tile 百分比。多视角显示视角计数；流式渲染的最终合成和
-`--lod auto` 使用不定进度。以下情况自动关闭：stderr 不是终端、`--json`、设置了
-`CI` 环境变量、`NO_COLOR`，或 `--color never`。进度只写入 stderr，不会影响 stdout
-和管道输出；进度条会按终端宽度缩短或改为只显示计数，窗口缩放后会自动重排。
+`render`, `bench`, `mesh`, and `materials` show progress on stderr when stderr
+is a terminal: parsing, materials, mesh page counts, and tile percentages for
+single-view rasterization. Multi-view renders show a view counter; streaming
+compositing and `--lod auto` use indeterminate stages. Progress turns off when
+stderr is not a terminal, with `--json`, when `CI` is set, with `NO_COLOR`, or
+with `--color never`. It never writes to stdout or changes piped output. Bars
+shrink or fall back to a bare counter on narrow terminals and reflow after a
+window resize.
 
-## 退出码
+## Exit Codes
 
-- `0`：成功
-- `1`：内部错误
-- `2`：输入无效、解析失败或资源超限
+- `0`: success
+- `1`: internal error
+- `2`: invalid input, parse failure, or resource limit
 
-## 相关文档
+## See Also
 
-- [材质与资源包](./materials.md)
-- [LOD 与大结构](./lod.md)
-- [限制与安全](./limits.md)
-- [服务模式](./service.md)
-- [English](./en/cli.md)
+- [Materials and Resource Packs](./materials.md)
+- [LOD and Large Structures](./lod.md)
+- [Limits and Security](./limits.md)
+- [Service Mode](./service.md)
+- [中文](/zh/user/cli)
