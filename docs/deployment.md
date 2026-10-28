@@ -10,6 +10,23 @@ and Windows (using musl on Linux and static CRT on Windows). For binary download
 checksum verification, and desktop installer guides, see
 [Installation and Quick Start](./user/en/getting-started.md).
 
+## Cutting a Release
+
+1. Write the user-facing notes under `## [Unreleased]` in `CHANGELOG.md` and
+   `CHANGELOG.en.md`. `just bump` refuses to run when either section is empty,
+   because the release body comes from the version section the recipe creates.
+2. Run `just bump patch` (`minor` or `major` also work) on `main` in a clean
+   tree. The recipe raises `[workspace.package] version` in `Cargo.toml`,
+   refreshes `Cargo.lock`, updates the documents that state the current
+   version, moves the unreleased notes under the new version heading, then
+   commits `chore: bump to vX.Y.Z` and creates the annotated tag.
+3. Push both: `git push origin main vX.Y.Z`. The tag starts
+   `.github/workflows/release.yml`.
+
+The versioned download examples in `docs/user/getting-started.md` and its
+English counterpart name the last published release; update them after the new
+release is available.
+
 ## Container Deployment
 
 The container image contains only `blockscope` with no external runtime
