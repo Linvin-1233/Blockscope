@@ -8,6 +8,15 @@ User-facing changes are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Cloudflare Workers adapter (`blockscope-worker`) with configurable HTTP and
+  CORS settings, PNG rendering from a `.litematic` request body, and an optional
+  resource pack loaded from Workers Static Assets. Requests are validated and
+  parsed before the pack is fetched, the body is read as an 8 MiB capped stream,
+  and the parsed material set is cached per isolate. Windows builds use
+  `scripts/build-worker.ps1`; CI checks the wasm target.
+
 ### Fixed
 
 - Fallback colors now inherit the base material for decorated block variants, so

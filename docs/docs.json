@@ -51,7 +51,8 @@
               "user/en/materials",
               "user/en/lod",
               "user/en/service",
-              "user/en/docker"
+              "user/en/docker",
+              "user/en/cloudflare-workers"
             ]
           },
           {

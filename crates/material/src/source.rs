@@ -1,7 +1,7 @@
 use crate::{MaterialError, MaterialErrorCode};
 use std::cell::RefCell;
 use std::fs::{self, File};
-use std::io::Read;
+use std::io::{Cursor, Read, Seek};
 use std::path::{Path, PathBuf};
 use zip::ZipArchive;
 
@@ -15,6 +15,7 @@ pub struct AssetSource {
 enum Layer {
     Dir(PathBuf),
     Zip(RefCell<ZipArchive<File>>),
+    ZipBytes(RefCell<ZipArchive<Cursor<Vec<u8>>>>),
 }
 
 impl AssetSource {
@@ -37,6 +38,23 @@ impl AssetSource {
     /// Append a base layer.
     pub fn add_jar(&mut self, path: &Path) -> Result<(), MaterialError> {
         self.layers.push(Layer::Zip(open_zip(path)?));
+        Ok(())
+    }
+
+    /// Append an in-memory ZIP or jar.
+    ///
+    /// This is the entry point for hosts without a filesystem, such as
+    /// Cloudflare Workers, where the resource pack arrives as bytes from an
+    /// assets or object-storage binding.
+    pub fn add_zip_bytes(&mut self, bytes: Vec<u8>) -> Result<(), MaterialError> {
+        self.layers.push(Layer::ZipBytes(open_zip_bytes(bytes)?));
+        Ok(())
+    }
+
+    /// Append an in-memory overlay ZIP or jar in front of the existing layers.
+    pub fn add_overlay_zip_bytes(&mut self, bytes: Vec<u8>) -> Result<(), MaterialError> {
+        self.layers
+            .insert(0, Layer::ZipBytes(open_zip_bytes(bytes)?));
         Ok(())
     }
 
@@ -88,6 +106,7 @@ impl Layer {
         match self {
             Self::Dir(root) => read_dir(root, path, max_bytes),
             Self::Zip(archive) => read_zip(archive, path, max_bytes),
+            Self::ZipBytes(archive) => read_zip(archive, path, max_bytes),
         }
     }
 }
@@ -137,8 +156,8 @@ fn dir_candidates(root: &Path, path: &str) -> Vec<PathBuf> {
     candidates
 }
 
-fn read_zip(
-    archive: &RefCell<ZipArchive<File>>,
+fn read_zip<R: Read + Seek>(
+    archive: &RefCell<ZipArchive<R>>,
     path: &str,
     max_bytes: usize,
 ) -> Result<Option<Vec<u8>>, MaterialError> {
@@ -211,6 +230,16 @@ fn open_zip(path: &Path) -> Result<RefCell<ZipArchive<File>>, MaterialError> {
         MaterialError::new(
             MaterialErrorCode::UnsupportedSource,
             format!("{} is not a readable jar/zip: {error}", path.display()),
+        )
+    })?;
+    Ok(RefCell::new(archive))
+}
+
+fn open_zip_bytes(bytes: Vec<u8>) -> Result<RefCell<ZipArchive<Cursor<Vec<u8>>>>, MaterialError> {
+    let archive = ZipArchive::new(Cursor::new(bytes)).map_err(|error| {
+        MaterialError::new(
+            MaterialErrorCode::UnsupportedSource,
+            format!("resource pack is not a readable zip: {error}"),
         )
     })?;
     Ok(RefCell::new(archive))
@@ -300,6 +329,30 @@ mod tests {
 
         let bytes = read_reader_limited(reader, 8, "test", 8).unwrap();
         assert_eq!(bytes.len(), 8);
+    }
+
+    #[test]
+    fn reads_assets_from_an_in_memory_zip() {
+        let mut cursor = Cursor::new(Vec::new());
+        {
+            let mut writer = zip::ZipWriter::new(&mut cursor);
+            writer
+                .start_file(
+                    "assets/minecraft/blockstates/test.json",
+                    zip::write::SimpleFileOptions::default(),
+                )
+                .unwrap();
+            writer.write_all(b"{\"variants\":{}}").unwrap();
+            writer.finish().unwrap();
+        }
+
+        let mut source = AssetSource::new();
+        source.add_zip_bytes(cursor.into_inner()).unwrap();
+        let bytes = source
+            .read("assets/minecraft/blockstates/test.json")
+            .unwrap()
+            .unwrap();
+        assert_eq!(bytes, b"{\"variants\":{}}");
     }
 
     #[test]

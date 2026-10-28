@@ -26,6 +26,36 @@ where
     let keys = view.page_keys().collect::<Vec<_>>();
     let tables = PaletteTables::new(scene, catalog);
     let workers = worker_count(threads, keys.len());
+    if workers == 1 {
+        let mut hint = PageCapacityHint::default();
+        let mut total = 0u64;
+        let mut total_pages = 0u64;
+        for &coord in &keys {
+            let origin = page_origin_of(coord)?;
+            let page = build_page(
+                scene,
+                &view,
+                &tables,
+                origin,
+                options,
+                &mut hint,
+                PageMode::Count,
+            )?;
+            let count = page.statistics.quads;
+            if count == 0 {
+                continue;
+            }
+            total += count;
+            total_pages += 1;
+            if total > limits.max_quads as u64
+                || total.saturating_mul(4) > limits.max_vertices as u64
+                || total_pages > limits.max_pages as u64
+            {
+                return Ok(None);
+            }
+        }
+        return Ok(Some(total));
+    }
     let cursor = AtomicUsize::new(0);
     let abort = AtomicBool::new(false);
     let quads = AtomicU64::new(0);
@@ -131,6 +161,26 @@ where
     let sample = sample_pages.clamp(1, total_pages);
     let tables = PaletteTables::new(scene, catalog);
     let workers = worker_count(threads, sample);
+    if workers == 1 {
+        let mut hint = PageCapacityHint::default();
+        let mut total = 0u64;
+        for position in 0..sample {
+            let index = sample_index(position, sample, total_pages);
+            let origin = page_origin_of(keys[index])?;
+            let page = build_page(
+                scene,
+                &view,
+                &tables,
+                origin,
+                options,
+                &mut hint,
+                PageMode::Count,
+            )?;
+            total += page.statistics.quads;
+        }
+        let total = u128::from(total) * total_pages as u128;
+        return Ok(u64::try_from(total.div_ceil(sample as u128)).unwrap_or(u64::MAX));
+    }
     let cursor = AtomicUsize::new(0);
     let abort = AtomicBool::new(false);
     let quads = AtomicU64::new(0);

@@ -39,6 +39,12 @@ setup, see the [Docker Guide](./user/en/docker.md) and [Service Mode](./user/en/
 Always verify container sizing using `blockscope capacity` against the host
 cgroup limits before deploying.
 
+## Cloudflare Workers
+The `blockscope-worker` crate serves a stateless color-only HTTP API from a
+Worker. It accepts a `.litematic` body and returns a PNG. See
+[Cloudflare Workers](./user/en/cloudflare-workers.md) for deployment, endpoint
+configuration, CPU limits, and frontend integration.
+
 ## Linux via WSL
 
 WSL2 with Docker Desktop, or a plain Ubuntu distro, is enough for a local Linux
