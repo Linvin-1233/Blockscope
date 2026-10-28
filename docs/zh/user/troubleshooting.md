@@ -8,7 +8,7 @@ title: "故障排查"
 |---|---|
 | `ASSET_SOURCE_REQUIRED` | `materials` 需要 `--client-jar`、`--assets` 或自包含资源包 |
 | `INPUT_TOO_LARGE` | 文件超过输入上限；确认文件完整，或调整 LOD/资源上限 |
-| `MESH_LIMIT_EXCEEDED` / `PAGE_LIMIT_EXCEEDED` | 使用 `--lod 2`/`4`/`auto`，或在可信环境中使用 `--force-limits` |
+| `MESH_LIMIT_EXCEEDED` / `PAGE_LIMIT_EXCEEDED` | 显式使用 `--lod 2`/`4`，或在可信环境中使用 `--force-limits` |
 | 画面全是纯色块 | 没有提供资源包，或对应模型/贴图缺失；运行 `materials --json` 检查 |
 | 大量 missing textures | 客户端 jar 版本与模型不匹配，或 overlay 资源包不完整 |
 | `INVALID_RENDER_OPTIONS: threads` | `--threads` 或请求中的线程数超过 256 |

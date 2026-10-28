@@ -2,18 +2,27 @@
 title: "LOD 与大结构"
 ---
 
-默认 `--lod 1` 保留完整细节。超大结构可以使用固定 LOD 或自动预算：
+默认 `--lod 1` 保留完整细节。LOD 永远不会自动选择：需要减少几何量时，必须显式
+指定固定因子。
 
 ```bash
 blockscope render huge.litematic --output huge.png --lod 4
-blockscope render huge.litematic --output huge.png --lod auto
+```
+
+启用 LOD 会打印警告，因为数据层聚合无法保留方块级机制：
+
+```text
+warning: Enabling LOD will result in a significant loss of detail
 ```
 
 ## 模式
 
 - `--lod 1`：关闭 LOD，渲染完整网格
 - `--lod 2..=16`：固定 LOD 因子，适合需要跨机器复现的输出
-- `--lod auto`：先尝试精确渲染，内存预算不足时依次尝试 `2`、`4`、`8`、`16`
+
+不再提供 `auto` 模式。按内存预算自动选择因子会静默改变输出，而聚合后的 cell
+对红石等机制而言在功能上是不正确的。结构过大时优先考虑面剔除、惰性网格构建或
+视锥裁剪；只有在必须生成预览时才显式启用 LOD。
 
 ## 行为
 
@@ -26,15 +35,12 @@ LOD 场景会丢弃：
 - entities
 - pending ticks
 
-因此 LOD 只适合预览，不适合依赖容器内容或实体细节的最终展示。
+因此 LOD 只适合预览，不适合依赖容器内容、红石状态或实体细节的最终展示。
 
 ## 内存与可复现性
 
-`auto` 使用 `capacity` 计算出的 quad 预算；不同内存的机器可能选择不同因子。
-如果需要跨机器得到相同输出，请使用固定 `--lod`。
-
-`--force-limits` 会提高资源上限，但不会绕过线程、纹理和 NBT 深度等固定限制；
-只应对可信输入使用，并确保机器有足够内存。
+固定 `--lod` 在所有机器上产生相同输出。`--force-limits` 会提高资源上限，但不会
+绕过线程、纹理和 NBT 深度等固定限制；只应对可信输入使用，并确保机器有足够内存。
 
 更多性能数据和实现细节见 [CPU 渲染说明](/rendering)。
 

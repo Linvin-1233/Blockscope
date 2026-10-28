@@ -70,7 +70,7 @@ fn serve_renders_two_jobs_and_shuts_down() {
     let (mut child, mut stdin, mut lines) = start();
     let hello = read_json(&mut lines);
     assert_eq!(hello["type"], "hello");
-    assert_eq!(hello["protocolVersion"], 1);
+    assert_eq!(hello["protocolVersion"], 2);
     assert!(hello["suggestedWorkers"].as_u64().unwrap() >= 1);
     assert!(hello["defaultTier"]["width"].as_u64().unwrap() >= 1);
 
@@ -305,7 +305,7 @@ fn serve_cache_separates_lod_levels() {
 }
 
 #[test]
-fn serve_accepts_auto_lod() {
+fn serve_rejects_auto_lod() {
     let dir = tempfile::tempdir().unwrap();
     let input = fixture(dir.path());
     let out_dir = dir.path().join("out");
@@ -325,14 +325,9 @@ fn serve_accepts_auto_lod() {
         "outputDir": out_dir.display().to_string(),
     });
     send(&mut stdin, &request);
-    let first = read_json(&mut lines);
-    assert_eq!(first["ok"], true, "{first}");
-    assert_eq!(first["lod"], 1);
-    assert_eq!(first["cacheHit"], false);
-
-    send(&mut stdin, &request);
-    let second = read_json(&mut lines);
-    assert_eq!(second["cacheHit"], true);
+    let result = read_json(&mut lines);
+    assert_eq!(result["ok"], false, "{result}");
+    assert_eq!(result["error"]["code"], "INVALID_RENDER_OPTIONS");
 
     send(&mut stdin, &json!({ "type": "shutdown" }));
     assert_eq!(read_json(&mut lines)["type"], "bye");

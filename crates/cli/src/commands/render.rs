@@ -1,9 +1,9 @@
 use crate::ui::progress::Progress;
 use crate::ui::{self, ACCENT, HEADER, MUTED, WARNING};
 use crate::{
-    AssetArgs, CliError, GEOMETRY_IGNORES_BLOCK_ENTITY_NBT, LimitArgs, LodMode, MeshOptionArgs,
+    AssetArgs, CliError, GEOMETRY_IGNORES_BLOCK_ENTITY_NBT, LimitArgs, MeshOptionArgs,
     PreparedScene, apply_render_limits, load_materials, load_scene, mesh_limits, parse_background,
-    parse_lod, parse_texture_filter, prepare_scene, warn_forced,
+    parse_lod, parse_texture_filter, warn_forced, warn_lod,
 };
 use clap::Args;
 use litematic_render::terminal::enable_windows_virtual_terminal;
@@ -20,9 +20,9 @@ use std::time::Instant;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 enum StreamMeshMode {
-    /// Stream fixed-LOD renders; keep the full mesh for --lod auto.
+    /// Stream the mesh, which is the default.
     Auto,
-    /// Always stream the mesh. Requires a fixed LOD.
+    /// Always stream the mesh.
     On,
     /// Retain the full mesh.
     Off,
@@ -53,7 +53,7 @@ Examples:
   blockscope render model.litematic --width 2048 --height 2048 --supersample 2
   blockscope render model.litematic --views 45,225 --threads 8
   blockscope render model.litematic --terminal --no-file
-  blockscope render huge.litematic --output huge.png --lod auto")]
+  blockscope render huge.litematic --output huge.png --lod 4")]
 pub(crate) struct RenderArgs {
     file: PathBuf,
     /// Output PNG path.
@@ -84,8 +84,8 @@ pub(crate) struct RenderArgs {
     /// Rasterizer worker threads; 0 selects available parallelism.
     #[arg(long, default_value_t = 0, value_name = "N")]
     threads: u32,
-    /// Level of detail: 1 disables, 2-16 sets a factor, "auto" picks one.
-    #[arg(long, default_value = "1", value_name = "FACTOR|auto")]
+    /// Level of detail: 1 disables it, 2-16 aggregates N-sized cells.
+    #[arg(long, default_value = "1", value_name = "FACTOR")]
     lod: String,
     /// Comma-separated yaw angles, for example 45,225.
     #[arg(long, value_name = "LIST")]
@@ -108,8 +108,8 @@ pub(crate) struct RenderArgs {
     /// Skip writing output image file (useful with --terminal).
     #[arg(long)]
     no_file: bool,
-    /// Mesh streaming: auto streams fixed-LOD renders, on forces it, off keeps
-    /// the full mesh. `--stream-mesh` without a value means on.
+    /// Mesh streaming: auto and on stream the mesh, off keeps the full mesh.
+    /// `--stream-mesh` without a value means on.
     #[arg(
         long,
         value_enum,
@@ -130,6 +130,7 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
     let started = Instant::now();
     warn_forced(args.limits.force_limits);
     let lod = parse_lod(&args.lod)?;
+    warn_lod(lod);
     let background = parse_background(&args.background)?;
     let lighting = LightingProfile::parse(&args.lighting).ok_or_else(|| {
         CliError::input(format!(
@@ -159,16 +160,7 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
     } else {
         None
     };
-    let stream_mesh = match args.stream_mesh {
-        StreamMeshMode::Auto => !matches!(lod, LodMode::Auto),
-        StreamMeshMode::On => true,
-        StreamMeshMode::Off => false,
-    };
-    if stream_mesh && matches!(lod, LodMode::Auto) {
-        return Err(CliError::input(
-            "INVALID_RENDER_OPTIONS: --stream-mesh cannot be combined with --lod auto",
-        ));
-    }
+    let stream_mesh = !matches!(args.stream_mesh, StreamMeshMode::Off);
 
     let view_options: Vec<RenderOptions> = views
         .iter()
@@ -211,47 +203,29 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
 
     let limits = mesh_limits(args.limits.force_limits);
     let (scene, snapshot, mesh, factor, lod_ms, mut mesh_ms_total) = if stream_mesh {
-        let factor = match lod {
-            LodMode::Fixed(factor) => factor,
-            LodMode::Auto => unreachable!("auto LOD was rejected above"),
-        };
         let lod_started = Instant::now();
-        let scene = crate::apply_lod(scene, factor, args.threads)?;
+        let scene = crate::apply_lod(scene, lod, args.threads)?;
         let lod_ms = lod_started.elapsed().as_secs_f64() * 1000.0;
         let snapshot = materials
             .as_ref()
             .map(|materials| crate::material_snapshot(&scene, materials));
-        (scene, snapshot, None, factor, lod_ms, 0.0)
+        (scene, snapshot, None, lod, lod_ms, 0.0)
     } else {
-        let prepared = if matches!(lod, LodMode::Auto) {
-            let stage = progress.stage("Selecting LOD and building mesh");
-            let prepared = prepare_scene(
+        let bar = progress.bar("Building mesh");
+        let prepared = {
+            let update = |done, total| bar.update(done, total);
+            crate::prepare_scene_with_progress(
                 scene,
                 materials.as_ref(),
                 lod,
                 &limits,
                 args.threads,
                 args.mesh.options(),
-            );
-            stage.finish();
-            prepared?
-        } else {
-            let bar = progress.bar("Building mesh");
-            let prepared = {
-                let update = |done, total| bar.update(done, total);
-                crate::prepare_scene_with_progress(
-                    scene,
-                    materials.as_ref(),
-                    lod,
-                    &limits,
-                    args.threads,
-                    args.mesh.options(),
-                    Some(&update),
-                )
-            };
-            bar.finish();
-            prepared?
+                Some(&update),
+            )
         };
+        bar.finish();
+        let prepared = prepared?;
         let PreparedScene {
             scene,
             mesh,
@@ -447,7 +421,7 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
         ui::outln!(
             "{MUTED}timings:{MUTED:#} parse {parse_ms:.1} ms, mesh {mesh_ms_total:.1} ms, total {total_ms:.1} ms"
         );
-        if factor > 1 || matches!(lod, LodMode::Auto) {
+        if factor > 1 {
             ui::outln!("{MUTED}lod:{MUTED:#} {lod_ms:.1} ms {MUTED}(factor {factor}){MUTED:#}");
         }
         if let Some(snapshot) = &snapshot {

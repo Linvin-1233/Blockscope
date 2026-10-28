@@ -16,7 +16,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 const DEFAULT_SIZE: u32 = 1024;
 const DEFAULT_SUPERSAMPLE: u32 = 2;
 const DEFAULT_ELEVATION: f32 = 30.0;
@@ -343,26 +343,27 @@ fn process(
 
     let limits = crate::decode_limits(context.force_limits, context.ignore_block_entity_nbt);
     let lod_mode = match request.lod.as_ref() {
-        None => crate::LodMode::Fixed(1),
+        None => 1,
         Some(LodRequest::Factor(factor)) => {
-            if !(1..=16).contains(factor) {
-                return Err(CliError::input(
-                    "INVALID_RENDER_OPTIONS: lod must be between 1 and 16, or auto",
-                ));
+            if !(1..=crate::LOD_MAX).contains(factor) {
+                return Err(CliError::input(format!(
+                    "INVALID_RENDER_OPTIONS: lod must be between 1 and {}",
+                    crate::LOD_MAX
+                )));
             }
-            crate::LodMode::Fixed(*factor)
+            *factor
         }
-        Some(LodRequest::Text(text)) if text.eq_ignore_ascii_case("auto") => crate::LodMode::Auto,
         Some(LodRequest::Text(text)) => {
             return Err(CliError::input(format!(
-                "INVALID_RENDER_OPTIONS: invalid lod '{text}', expected 1-16 or auto"
+                "INVALID_RENDER_OPTIONS: invalid lod '{text}', expected 1-16"
             )));
         }
     };
-    let lod_key = match lod_mode {
-        crate::LodMode::Fixed(factor) => factor.to_string(),
-        crate::LodMode::Auto => "auto".to_string(),
-    };
+    if lod_mode > 1 {
+        static LOD_WARNING: std::sync::Once = std::sync::Once::new();
+        LOD_WARNING.call_once(|| crate::warn_lod(lod_mode));
+    }
+    let lod_key = lod_mode.to_string();
 
     // A caller-supplied hash is an identity, so a cache hit must not re-read the
     // file. The supervisor already hashes inputs for routing and forwards it.

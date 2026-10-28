@@ -41,7 +41,6 @@ blockscope render model.litematic --output out.png \
 blockscope render model.litematic --output out.png --views 45,225
 
 # Huge structures
-blockscope render huge.litematic --output huge.png --lod auto
 blockscope render huge.litematic --output huge.png --lod 4
 blockscope render huge.litematic --output huge.png --lod 1 --stream-mesh
 
@@ -87,8 +86,8 @@ is printed because the escape sequences cannot be displayed.
 | `--background transparent\|#RRGGBB[AA]` | Background; default transparent |
 | `--lighting flat-v1\|simple-ao-v1` | Lighting profile; default `simple-ao-v1` |
 | `--threads <N>` | Mesh/rasterizer threads; `0` uses available parallelism, capped at 256 |
-| `--lod 1\|2-16\|auto` | LOD factor; default `1` (disabled) |
-| `--stream-mesh` | Build and render mesh in page chunks without retaining the full mesh; cannot be combined with `--lod auto` |
+| `--lod 1\|2-16` | LOD factor; default `1` (disabled); values above 1 print a detail-loss warning |
+| `--stream-mesh [auto\|on\|off]` | Build and render mesh in page chunks without retaining the full mesh; default `auto`; `off` retains the full mesh |
 | `--greedy-mesh` | Merge coplanar unit faces with identical material and lighting; useful for large flat or repetitive surfaces, disabled by default |
 | `--force-limits` | Raises input, scene, mesh, and pixel caps; can exhaust memory |
 | `--ignore-block-entity-nbt` | Skip container NBT; always on for `mesh`/`render`/`bench` |
@@ -129,7 +128,7 @@ and human-readable results:
 `render`, `bench`, `mesh`, and `materials` show progress on stderr when stderr
 is a terminal: parsing, materials, mesh page counts, and tile percentages for
 single-view rasterization. Multi-view renders show a view counter; streaming
-compositing and `--lod auto` use indeterminate stages. Progress turns off when
+compositing uses indeterminate stages. Progress turns off when
 stderr is not a terminal, with `--json`, when `CI` is set, with `NO_COLOR`, or
 with `--color never`. It never writes to stdout or changes piped output. Bars
 shrink or fall back to a bare counter on narrow terminals and reflow after a

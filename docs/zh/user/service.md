@@ -48,7 +48,7 @@ worker 在资源包准备完成后输出一行 `hello`，之后才接受 job。
 - `views` 为空时默认 `[45]`，最多 64 个角度；有完整 mesh 时多视角并行渲染
 - 输出文件为 `{id}.png` 或 `{id}-{yaw}.png`；调用方必须保证 `id` 和
   `outputDir` 在并发任务中唯一，重复 `id` 或重复视角会覆盖同一路径
-- 完整字段、结果和错误码见 [引擎协议 v1](/engine-protocol)
+- 完整字段、结果和错误码见 [引擎协议 v2](/engine-protocol)
 
 ## Supervisor
 
@@ -83,7 +83,7 @@ blockscope supervise \
 
 ## 相关文档
 
-- [引擎协议 v1](/engine-protocol)
+- [引擎协议 v2](/engine-protocol)
 - [Docker](./docker.md)
 - [故障排查](./troubleshooting.md)
 - [English](/user/service)

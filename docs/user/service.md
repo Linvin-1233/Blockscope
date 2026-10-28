@@ -56,7 +56,7 @@ The worker prints one `hello` line after materials are ready, then accepts jobs.
   `outputDir` unique across concurrent jobs. Duplicate ids or yaw values
   overwrite the same path
 - Full fields, results, and error codes are in
-  [Engine protocol v1](/engine-protocol)
+  [Engine protocol v2](/engine-protocol)
 
 ## Supervisor
 
@@ -92,7 +92,7 @@ the stdio service directly to untrusted network clients.
 
 ## See Also
 
-- [Engine protocol v1](/engine-protocol)
+- [Engine protocol v2](/engine-protocol)
 - [Docker](./docker.md)
 - [Troubleshooting](./troubleshooting.md)
 - [中文](/zh/user/service)

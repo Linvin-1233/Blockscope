@@ -257,9 +257,8 @@ unchanged.
 
 `--stream-mesh` builds 32-page chunks, renders them into the resident tile
 buffers, and drops the chunk before building the next one. The full `Mesh` is
-never materialized. The default is `auto`: fixed-LOD renders stream, while
-`--lod auto` keeps the full mesh because choosing a factor needs a complete
-mesh. `--stream-mesh=off` opts back into the full mesh, and `--stream-mesh` or
+never materialized. The default is `auto`, which streams like `on`;
+`--stream-mesh=off` opts back into the full mesh, and `--stream-mesh` or
 `--stream-mesh=on` forces streaming. Multiple views rebuild the streamed mesh
 once per view.
 
@@ -453,7 +452,10 @@ state order and overlapping regions keep the later region. The result is an
 ordinary scene in LOD units, so meshing and rendering are unchanged.
 
 LOD is an approximation: block entities, entities, and pending ticks are
-dropped, and small details disappear. It is opt-in and off by default.
+dropped, and small details disappear. It is opt-in and off by default. Values
+above `1` print a detail-loss warning, and there is no automatic factor: data
+layer aggregation cannot preserve redstone and other block-level mechanics, so
+choosing a factor implicitly would change the output without consent.
 
 Measured on the 9.4M-block stress fixture (211x211x211, 1024x1024, supersample
 2, 12 threads, client jar):
@@ -470,23 +472,9 @@ single-threaded path. On the test host, the LOD 2 pass for `000001` dropped from
 threads. LOD 8 for `000002` dropped from 1.2 s to 0.20 s.
 
 For oversized schematics, LOD 4 is the practical default; LOD 2 keeps more
-detail at a large memory cost.
-
-`--lod auto` starts with an exact mesh and falls back to 2, 4, 8, or 16 only
-when the quad budget does not fit. The budget is 80 percent of available memory
-divided by roughly 400 bytes per quad, so a file that can be rendered exactly
-is never degraded.
-
-Before building a factor, auto samples 128 evenly spaced pages and estimates
-the quad count. Only when the estimate is clearly above the budget does it run
-an exact count, which uses the same page cache and culling as the builder but
-allocates no vertices or ambient occlusion. The exact count decides the
-fallback, so a scene that fits is still built exactly. On the color-only
-fixture (`000001`, 1024x1024, supersample 2, 12 threads) the auto mesh pass
-drops from 5.0-5.2 s to 3.6-3.7 s. `000002` fits exactly and pays about 30 ms
-for the sample. On the 48 GB test host, `000003` (solid, 67M blocks) renders
-exactly in 7.5 s; the earlier client-jar run of `000001` fell back to LOD 2 in
-16.4 s.
+detail at a large memory cost. Use these factors only for previews; a scene
+that must preserve mechanics needs face culling, lazy meshing, or frustum
+pruning instead of aggregation.
 
 ## Known Limitations
 

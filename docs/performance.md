@@ -132,9 +132,8 @@ the same PNG SHA-256 as `HEAD` (the previous 618 MB / 16.2 s row was from an
 earlier host/build state). The temporary directory is removed when the render
 finishes.
 
-`render` now defaults to `--stream-mesh=auto`: fixed-LOD renders stream, and
-`--lod auto` keeps the full mesh because selecting a factor needs a complete
-mesh. `--stream-mesh=off` restores the full-mesh path. This is what avoids the
+`render` defaults to `--stream-mesh=auto`, which streams like `on`;
+`--stream-mesh=off` restores the full-mesh path. This is what avoids the
 18.9 GB full-mesh peak without requiring a flag.
 
 ## Reproducing the CLI peak

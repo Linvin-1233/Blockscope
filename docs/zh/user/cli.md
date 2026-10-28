@@ -40,7 +40,6 @@ blockscope render model.litematic --output out.png \
 blockscope render model.litematic --output out.png --views 45,225
 
 # 超大结构
-blockscope render huge.litematic --output huge.png --lod auto
 blockscope render huge.litematic --output huge.png --lod 4
 blockscope render huge.litematic --output huge.png --lod 1 --stream-mesh
 
@@ -82,8 +81,8 @@ blockscope preview model.litematic -t
 | `--background transparent\|#RRGGBB[AA]` | 背景，默认透明 |
 | `--lighting flat-v1\|simple-ao-v1` | 光照配置，默认 `simple-ao-v1` |
 | `--threads <N>` | mesh/rasterizer 线程数，`0` 使用可用并行度，最多 256 |
-| `--lod 1\|2-16\|auto` | LOD 因子，默认 `1`（关闭） |
-| `--stream-mesh [auto\|on\|off]` | 按页构建并渲染网格，不保留完整 Mesh；默认 `auto`，固定 LOD 时自动流式，`off` 保留完整 Mesh；`on` 不能与 `--lod auto` 同用 |
+| `--lod 1\|2-16` | LOD 因子，默认 `1`（关闭）；大于 1 时会打印细节损失警告 |
+| `--stream-mesh [auto\|on\|off]` | 按页构建并渲染网格，不保留完整 Mesh；默认 `auto`，`off` 保留完整 Mesh |
 | `--greedy-mesh` | 合并同材质、同光照的共面单位面；适合大平面和重复结构，默认关闭 |
 | `--force-limits` | 提高输入、场景、网格和像素上限；可能耗尽内存 |
 | `--ignore-block-entity-nbt` | 跳过容器 NBT；`mesh`/`render`/`bench` 默认开启 |
@@ -116,8 +115,7 @@ blockscope preview model.litematic -t
 `--json` 输出始终是纯 JSON，不受 `--color` 影响。
 
 `render`、`bench`、`mesh` 和 `materials` 在 stderr 是终端时显示进度：解析、材质、
-网格页数和单视角栅格化的 tile 百分比。多视角显示视角计数；流式渲染的最终合成和
-`--lod auto` 使用不定进度。以下情况自动关闭：stderr 不是终端、`--json`、设置了
+网格页数和单视角栅格化的 tile 百分比。多视角显示视角计数；流式渲染的最终合成使用不定进度。以下情况自动关闭：stderr 不是终端、`--json`、设置了
 `CI` 环境变量、`NO_COLOR`，或 `--color never`。进度只写入 stderr，不会影响 stdout
 和管道输出；进度条会按终端宽度缩短或改为只显示计数，窗口缩放后会自动重排。
 

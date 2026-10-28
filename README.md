@@ -37,7 +37,7 @@ Blockscope 是一个把 Minecraft `.litematic` 投影文件渲染成 PNG 的
 - [Color-block 网格说明](https://blockscope.linvin.net/mesh-geometry)
 - [CPU 渲染说明](https://blockscope.linvin.net/rendering)
 - [资源包材质说明](https://blockscope.linvin.net/textures)
-- [引擎协议 v1](https://blockscope.linvin.net/engine-protocol)
+- [引擎协议 v2](https://blockscope.linvin.net/engine-protocol)
 - [部署说明](https://blockscope.linvin.net/deployment)
 
 ### 项目文档

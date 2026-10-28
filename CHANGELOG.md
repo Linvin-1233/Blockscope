@@ -7,6 +7,8 @@
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-29
+
 ### 新增
 
 - 新增 Cloudflare Workers 适配器（`blockscope-worker`），支持可配置 HTTP 端点和
@@ -14,6 +16,17 @@
   请求先校验并解析，再读取资源包；请求体按 8 MiB 上限流式读取；解析后的材质集
   按 isolate 缓存。Windows 使用 `scripts/build-worker.ps1` 构建，CI 会检查 wasm
   目标。
+
+### 变更
+
+- `--lod` 不再接受 `auto`，LOD 因子必须显式指定为 `1..=16`；`render`、`mesh`、
+  `bench` 和 `serve` 都只接受固定数字。数据层聚合无法保留红石等方块级机制，按
+  内存预算自动降级会静默改变输出，因此移除自动选择。启用 LOD（因子大于 1）时
+  会向 stderr 打印警告：`Enabling LOD will result in a significant loss of detail`。
+- `render` 的 `--stream-mesh` 默认仍为 `auto`；移除自动 LOD 后 `auto` 与 `on`
+  等价，始终按页流式构建网格，`off` 保留完整 mesh。
+- `serve`/`supervise` 协议版本提升到 2：`lod` 只接受 `1..=16` 的整数，不再接受
+  `"auto"`。
 
 ### 修复
 

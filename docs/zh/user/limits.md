@@ -47,7 +47,7 @@ title: "限制与安全"
 ## 错误码
 
 协议错误码、可重试性和 manifest 字段见
-[引擎协议 v1](/engine-protocol)。常见错误：
+[引擎协议 v2](/engine-protocol)。常见错误：
 
 - `INPUT_TOO_LARGE`：输入或资源超限
 - `INVALID_REQUEST`：请求格式错误、相对路径或非普通文件

@@ -1,10 +1,10 @@
-# Engine Protocol (v1)
+# Engine Protocol (v2)
 
 Wire protocol between an upper-layer service/supervisor and a standalone
 renderer process. The goal is one transport that behaves the same on Linux and
 Windows, with a single job in flight per process.
 
-**Status:** Implemented for `blockscope serve` and `blockscope supervise` (protocol v1).
+**Status:** Implemented for `blockscope serve` and `blockscope supervise` (protocol v2).
 
 ## Transport
 
@@ -17,7 +17,7 @@ Windows, with a single job in flight per process.
 - `stdout` carries protocol messages only. Logs and diagnostics go to `stderr`.
 - Standard input is read as raw bytes and decoded as UTF-8; do not route it
   through a console code page.
-- v1 uses no sockets. stdio is identical across supported platforms and needs no port
+- v2 uses no sockets. stdio is identical across supported platforms and needs no port
   allocation, firewall rule, or named-pipe path.
 
 ## Lifecycle
@@ -44,7 +44,7 @@ supervisor                          worker
 ### Messages
 
 ```json
-{"type":"hello","protocolVersion":1,"engineVersion":"0.4.0","platform":"windows","cores":12,
+{"type":"hello","protocolVersion":2,"engineVersion":"0.4.1","platform":"windows","cores":12,
  "cpuQuota":null,"memoryLimitBytes":51401564160,"memoryAvailableBytes":21526179840,
  "suggestedWorkers":4,"suggestedThreads":3,"suggestedMaxQuads":54313181,
  "cacheBytes":10763089920,
@@ -80,10 +80,10 @@ memory.
 | `lighting` | string | `simple-ao-v1` | `flat-v1` or `simple-ao-v1` |
 | `background` | string | `transparent` | `transparent`, `#RRGGBB`, or `#RRGGBBAA` |
 | `textureFilter` | string | `nearest` | `nearest` or `linear` |
-| `format` | string | `png` | `png` only in v1 |
+| `format` | string | `png` | `png` only in v2 |
 | `outputDir` | string | required | Absolute directory; created if missing |
 | `threads` | integer | `0` | Mesh and rasterizer threads; `0` uses all cores, capped at 256 |
-| `lod` | integer or `"auto"` | `1` | `1` disables; `2..=16` is a fixed factor; `auto` picks the smallest factor that fits the memory budget |
+| `lod` | integer | `1` | `1` disables; `2..=16` is a fixed factor; values above 1 lose detail |
 | `elevation` | number | `30` | Degrees, `-89.9..=89.9` |
 
 `width * height` must not exceed 16,777,216 output pixels. Supersampling
@@ -165,8 +165,8 @@ rasterizer mid-tile.
   routing when the caller omitted it.
 - `sceneHash` describes the scene that was rendered. With `lod > 1` it is the
   aggregated scene, not the original projection.
-- `lod` echoes the effective factor. With `"lod": "auto"` the worker reports the
-  factor it chose, and the cache key stays `auto`.
+- `lod` echoes the effective factor. The first request with `lod > 1` logs a
+  detail-loss warning to stderr; the value itself is always explicit.
 - `timings` are wall-clock aggregates for the whole job.
 - `statistics` is advisory; consumers must not depend on fields beyond
   `triangles`.
@@ -217,7 +217,7 @@ to a fresh directory or overwritten in place, and no state survives a job.
 `blockscope serve` children:
 
 ```json
-{"type":"hello","protocolVersion":1,"engineVersion":"0.4.0","platform":"linux",
+{"type":"hello","protocolVersion":2,"engineVersion":"0.4.1","platform":"linux",
  "cores":4,"memoryLimitBytes":8589934592,"workers":2,"threadsPerWorker":2,
  "queueLimit":4,"cacheEntries":1,"timeoutSeconds":60,
  "memoryLimitPerWorkerBytes":3650722201,"suggestedMaxQuads":17000000,
@@ -282,11 +282,11 @@ prompts, no reading from a TTY.
 - `protocolVersion` is an integer, incremented for breaking changes.
 - New optional request fields and new response fields are not breaking.
 - Removing fields, renaming fields, or changing defaults is breaking.
-- Version v1 requests do not carry `protocolVersion`; clients compare the
+- Requests do not carry `protocolVersion`; clients compare the
   value in `hello` before sending jobs. An unknown request `type` returns
   `INVALID_REQUEST` and leaves the worker running.
 
-## Non-goals for v1
+## Non-goals for v2
 
 - Cancellation of a running job.
 - Streaming or progressive output.

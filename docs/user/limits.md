@@ -50,7 +50,7 @@ per-side limits. The option can exhaust memory; use it only with trusted input.
 
 ## Error Codes
 
-See [Engine protocol v1](/engine-protocol) for the full error
+See [Engine protocol v2](/engine-protocol) for the full error
 table and retryability. Common errors:
 
 - `INPUT_TOO_LARGE`: input or resource limit exceeded

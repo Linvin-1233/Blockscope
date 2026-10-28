@@ -8,7 +8,7 @@ title: "Troubleshooting"
 |---|---|
 | `ASSET_SOURCE_REQUIRED` | `materials` needs `--client-jar`, `--assets`, or a self-contained pack |
 | `INPUT_TOO_LARGE` | File exceeds the input cap; check integrity or adjust LOD/limits |
-| `MESH_LIMIT_EXCEEDED` / `PAGE_LIMIT_EXCEEDED` | Use `--lod 2`/`4`/`auto`, or `--force-limits` with trusted input |
+| `MESH_LIMIT_EXCEEDED` / `PAGE_LIMIT_EXCEEDED` | Use an explicit `--lod 2`/`4`, or `--force-limits` with trusted input |
 | Everything renders as flat colors | No resource pack, or missing models/textures; run `materials --json` |
 | Many missing textures | Client jar version mismatch, or an incomplete overlay pack |
 | `INVALID_RENDER_OPTIONS: threads` | `--threads` or the request exceeds 256 |

@@ -8,6 +8,8 @@ User-facing changes are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-29
+
 ### Added
 
 - Cloudflare Workers adapter (`blockscope-worker`) with configurable HTTP and
@@ -16,6 +18,20 @@ User-facing changes are recorded here. The format follows
   parsed before the pack is fetched, the body is read as an 8 MiB capped stream,
   and the parsed material set is cached per isolate. Windows builds use
   `scripts/build-worker.ps1`; CI checks the wasm target.
+
+### Changed
+
+- `--lod` no longer accepts `auto`; the factor must be explicit in `1..=16`.
+  `render`, `mesh`, `bench`, and `serve` accept fixed numbers only. Data-layer
+  aggregation cannot preserve redstone or other block-level mechanics, and
+  choosing a factor from a memory budget silently changed the output, so the
+  automatic mode is gone. Enabling LOD (a factor above 1) now prints
+  `warning: Enabling LOD will result in a significant loss of detail` to stderr.
+- `render` still defaults to `--stream-mesh=auto`. Without automatic LOD,
+  `auto` is equivalent to `on` and always streams pages; `off` retains the full
+  mesh.
+- The `serve`/`supervise` protocol version is now 2: `lod` accepts only integers
+  in `1..=16`, not `"auto"`.
 
 ### Fixed
 

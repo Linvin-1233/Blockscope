@@ -78,3 +78,14 @@ Plan: `tasks/render-memory-plan.md`
 - [x] Fall back to half blocks inside `tmux`/`screen`; warn when stdout is not a
       terminal; stop sending `width=auto`/`height=auto` to iTerm2.
 - [x] Update CLI docs and changelog.
+
+## Release 0.4.1
+
+- [x] Remove `--lod auto`; LOD requires an explicit `1..=16` factor.
+- [x] Warn when LOD is enabled: `Enabling LOD will result in a significant loss
+      of detail`.
+- [x] Raise the `serve`/`supervise` protocol to v2 because `lod` no longer
+      accepts `"auto"`.
+- [x] Update CLI tests, docs, and changelog.
+- [ ] Push `v0.4.1` and let the release workflow publish the artifacts
+      (maintainer).

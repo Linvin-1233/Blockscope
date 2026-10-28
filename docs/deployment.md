@@ -94,8 +94,8 @@ pushes, so the pipeline can be verified before the first tag exists.
 `blockscope capacity` also reports `suggestedMaxQuads`: 80 percent of available
 memory divided by roughly 400 bytes per quad. The default mesh cap is the lower
 of 5,000,000 quads and that budget, so a 1 GiB container rejects oversized
-schematics earlier than a 32 GiB host. `--force-limits` bypasses the cap;
-`--lod auto` uses the budget to pick a factor.
+schematics earlier than a 32 GiB host. `--force-limits` bypasses the cap; there
+is no automatic LOD, so choose an explicit `--lod` when a scene cannot fit.
 
 | Machine | workers | threads | default tier | peak RSS per worker |
 |---|---|---|---|---|

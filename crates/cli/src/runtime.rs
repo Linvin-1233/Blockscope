@@ -5,9 +5,9 @@ use crate::{AssetArgs, CliError, read_file_limited};
 use litematic_core::{DecodeLimits, LitematicFile, LitematicLimits};
 use litematic_material::{AssetSource, MaterialSet, MaterialSnapshot, TextureFilter};
 use litematic_mesh::{
-    BlockCatalog, ColorBlockCatalog, Mesh, MeshBuildOptions, MeshLimits, MeshPage, MeshStatistics,
-    PageProgress, Rgba, build_mesh_parallel_with_options_and_progress,
-    build_mesh_streaming_with_options_and_progress, count_mesh_quads, estimate_mesh_quads,
+    ColorBlockCatalog, Mesh, MeshBuildOptions, MeshLimits, MeshPage, MeshStatistics, PageProgress,
+    Rgba, build_mesh_parallel_with_options_and_progress,
+    build_mesh_streaming_with_options_and_progress,
 };
 use litematic_render::{
     Background, RenderOptions, RenderOutput, TileProgress, render_mesh, render_mesh_with_progress,
@@ -20,14 +20,14 @@ use std::time::Instant;
 /// Upper bound for mesh, LOD, and rasterizer worker threads.
 pub(crate) const MAX_THREADS: u32 = 256;
 
+/// Largest data-layer aggregation factor accepted by `--lod`.
+pub(crate) const LOD_MAX: u32 = 16;
+
 /// Upper bound for the number of yaw angles in one render request.
 pub(crate) const MAX_VIEWS: usize = 64;
 
 /// Keep one batch of rendered views under this much output memory.
 const MAX_VIEW_BATCH_BYTES: u64 = 256 * 1024 * 1024;
-
-/// Pages sampled to decide whether an exact quad count is worth running.
-const AUTO_LOD_SAMPLE_PAGES: usize = 128;
 
 fn build_scene_mesh_with_progress(
     scene: &Scene,
@@ -53,75 +53,6 @@ fn build_scene_mesh_with_progress(
                 scene, &snapshot, limits, threads, options, progress,
             )
             .map_err(CliError::from)
-        }
-    }
-}
-
-/// Count against the limit first so an oversized exact attempt is not meshed.
-///
-/// Greedy merging is skipped because a merged page can fit budgets the
-/// unmerged count rejects.
-fn count_and_build_mesh<C>(
-    scene: &Scene,
-    catalog: &C,
-    limits: &MeshLimits,
-    threads: u32,
-    options: MeshBuildOptions,
-    progress: Option<PageProgress<'_>>,
-) -> Result<Option<Mesh>, CliError>
-where
-    C: BlockCatalog + Sync,
-{
-    if !options.greedy {
-        let estimate = estimate_mesh_quads(
-            scene,
-            catalog,
-            limits,
-            AUTO_LOD_SAMPLE_PAGES,
-            threads,
-            options,
-        )
-        .map_err(CliError::from)?;
-        let budget = limits.max_quads as u64;
-        if estimate.saturating_mul(10) > budget.saturating_mul(11)
-            && count_mesh_quads(scene, catalog, limits, threads, options)
-                .map_err(CliError::from)?
-                .is_none()
-        {
-            return Ok(None);
-        }
-    }
-
-    build_mesh_parallel_with_options_and_progress(
-        scene, catalog, limits, threads, options, progress,
-    )
-    .map(Some)
-    .map_err(CliError::from)
-}
-
-fn count_and_build_scene_mesh(
-    scene: &Scene,
-    materials: Option<&MaterialSet>,
-    limits: &MeshLimits,
-    threads: u32,
-    options: MeshBuildOptions,
-    progress: Option<PageProgress<'_>>,
-) -> Result<(Option<Mesh>, Option<MaterialSnapshot>), CliError> {
-    match materials {
-        Some(materials) => {
-            let snapshot = material_snapshot(scene, materials);
-            let mesh = count_and_build_mesh(scene, &snapshot, limits, threads, options, progress)?;
-            Ok((mesh, Some(snapshot)))
-        }
-        None => {
-            let catalog = ColorBlockCatalog::new().map_err(CliError::internal)?;
-            let states = scene
-                .regions
-                .iter()
-                .flat_map(|region| region.palette.iter().cloned());
-            let snapshot = catalog.snapshot(states);
-            let mesh = count_and_build_mesh(scene, &snapshot, limits, threads, options, progress)?;
-            Ok((mesh, None))
         }
     }
 }
@@ -416,28 +347,30 @@ pub(crate) fn parse_background(value: &str) -> Result<Background, CliError> {
     Ok(Background::Solid(color))
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum LodMode {
-    Fixed(u32),
-    Auto,
-}
-
-pub(crate) fn parse_lod(value: &str) -> Result<LodMode, CliError> {
-    if value.eq_ignore_ascii_case("auto") {
-        return Ok(LodMode::Auto);
-    }
-
+pub(crate) fn parse_lod(value: &str) -> Result<u32, CliError> {
     let factor = value.parse::<u32>().map_err(|_| {
         CliError::input(format!(
-            "INVALID_RENDER_OPTIONS: invalid lod '{value}', expected 1-16 or auto"
+            "INVALID_RENDER_OPTIONS: invalid lod '{value}', expected 1-16"
         ))
     })?;
-    if !(1..=16).contains(&factor) {
-        return Err(CliError::input(
-            "INVALID_RENDER_OPTIONS: lod must be between 1 and 16, or auto",
-        ));
+    if !(1..=LOD_MAX).contains(&factor) {
+        return Err(CliError::input(format!(
+            "INVALID_RENDER_OPTIONS: lod must be between 1 and {LOD_MAX}"
+        )));
     }
-    Ok(LodMode::Fixed(factor))
+    Ok(factor)
+}
+
+/// Warn because data-layer aggregation cannot preserve redstone and other
+/// block-level mechanics.
+pub(crate) fn warn_lod(lod: u32) {
+    if lod > 1 {
+        crate::ui::errln!(
+            "{}warning:{:#} Enabling LOD will result in a significant loss of detail",
+            crate::ui::WARNING,
+            crate::ui::WARNING
+        );
+    }
 }
 
 pub(crate) struct PreparedScene {
@@ -452,7 +385,7 @@ pub(crate) struct PreparedScene {
 pub(crate) fn prepare_scene(
     scene: Scene,
     materials: Option<&MaterialSet>,
-    lod: LodMode,
+    lod: u32,
     limits: &MeshLimits,
     threads: u32,
     options: MeshBuildOptions,
@@ -463,7 +396,7 @@ pub(crate) fn prepare_scene(
 pub(crate) fn prepare_scene_with_progress(
     scene: Scene,
     materials: Option<&MaterialSet>,
-    lod: LodMode,
+    lod: u32,
     limits: &MeshLimits,
     threads: u32,
     options: MeshBuildOptions,
@@ -475,100 +408,30 @@ pub(crate) fn prepare_scene_with_progress(
         )));
     }
 
-    match lod {
-        LodMode::Fixed(factor) => {
-            let lod_started = Instant::now();
-            let scene = apply_lod(scene, factor, threads)?;
-            let lod_ms = lod_started.elapsed().as_secs_f64() * 1000.0;
+    let lod_started = Instant::now();
+    let scene = apply_lod(scene, lod, threads)?;
+    let lod_ms = lod_started.elapsed().as_secs_f64() * 1000.0;
 
-            let mesh_started = Instant::now();
-            let snapshot = materials.map(|materials| material_snapshot(&scene, materials));
-            let mesh = build_scene_mesh_with_progress(
-                &scene,
-                snapshot.as_ref(),
-                limits,
-                threads,
-                options,
-                progress,
-            )?;
-            let mesh_ms = mesh_started.elapsed().as_secs_f64() * 1000.0;
+    let mesh_started = Instant::now();
+    let snapshot = materials.map(|materials| material_snapshot(&scene, materials));
+    let mesh = build_scene_mesh_with_progress(
+        &scene,
+        snapshot.as_ref(),
+        limits,
+        threads,
+        options,
+        progress,
+    )?;
+    let mesh_ms = mesh_started.elapsed().as_secs_f64() * 1000.0;
 
-            Ok(PreparedScene {
-                scene,
-                mesh,
-                snapshot,
-                factor,
-                lod_ms,
-                mesh_ms,
-            })
-        }
-        LodMode::Auto => prepare_auto(scene, materials, limits, threads, options),
-    }
-}
-
-fn prepare_auto(
-    scene: Scene,
-    materials: Option<&MaterialSet>,
-    base_limits: &MeshLimits,
-    threads: u32,
-    options: MeshBuildOptions,
-) -> Result<PreparedScene, CliError> {
-    let capacity = Capacity::detect();
-    let budget_quads = usize::try_from(capacity.suggested_max_quads).unwrap_or(usize::MAX);
-    let limits = MeshLimits {
-        max_quads: budget_quads,
-        max_vertices: budget_quads.saturating_mul(4),
-        max_pages: base_limits.max_pages,
-    };
-
-    let mut lod_total = 0.0;
-    let mut mesh_total = 0.0;
-    let mut last_error = None;
-
-    for factor in [1u32, 2, 4, 8, 16] {
-        let lod_started = Instant::now();
-        let aggregated = if factor == 1 {
-            None
-        } else {
-            Some(aggregate_with_threads(&scene, factor, threads).map_err(CliError::from)?)
-        };
-        lod_total += lod_started.elapsed().as_secs_f64() * 1000.0;
-
-        let attempt = {
-            let candidate = aggregated.as_ref().unwrap_or(&scene);
-            let mesh_started = Instant::now();
-            let result =
-                count_and_build_scene_mesh(candidate, materials, &limits, threads, options, None);
-            mesh_total += mesh_started.elapsed().as_secs_f64() * 1000.0;
-            result
-        };
-
-        match attempt {
-            Ok((Some(mesh), snapshot)) => {
-                let scene = aggregated.unwrap_or(scene);
-                return Ok(PreparedScene {
-                    scene,
-                    mesh,
-                    snapshot,
-                    factor,
-                    lod_ms: lod_total,
-                    mesh_ms: mesh_total,
-                });
-            }
-            Ok((None, _)) => continue,
-            Err(error) if is_mesh_limit_error(&error) => last_error = Some(error),
-            Err(error) => return Err(error),
-        }
-    }
-
-    Err(last_error.unwrap_or_else(|| {
-        CliError::input("MESH_LIMIT_EXCEEDED: no LOD factor fits the memory budget")
-    }))
-}
-
-fn is_mesh_limit_error(error: &CliError) -> bool {
-    error.message.starts_with("MESH_LIMIT_EXCEEDED")
-        || error.message.starts_with("PAGE_LIMIT_EXCEEDED")
+    Ok(PreparedScene {
+        scene,
+        mesh,
+        snapshot,
+        factor: lod,
+        lod_ms,
+        mesh_ms,
+    })
 }
 
 pub(crate) fn apply_lod(scene: Scene, lod: u32, threads: u32) -> Result<Scene, CliError> {

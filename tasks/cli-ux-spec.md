@@ -144,7 +144,7 @@ ui::outln!("{}", ui::success("OK"));
 ### Welcome screen (`blockscope` with no subcommand)
 
 - Exit code `0` instead of clap's "subcommand required" error.
-- Prints the logo, `Blockscope 0.4.0`, a one-line description, quick-start
+- Prints the logo, `Blockscope 0.4.1`, a one-line description, quick-start
   commands, and a pointer to `blockscope help`.
 - Adapts to the detected terminal width at print time: wide logo and full body
   at 84+ columns, compact logo and short body at 62+, small logo and short
@@ -195,8 +195,6 @@ ui::outln!("{}", ui::success("OK"));
 - Streaming rasterization shows page progress plus an indeterminate
   compositing spinner, because a tile is revisited by many pages and a
   per-tile percentage would move backwards.
-- `--lod auto` shows the current LOD attempt as a spinner because the total
-  work changes between attempts.
 - Spinners use ASCII ticks and `{msg} ({elapsed})`; work bars use
   `{msg} [{bar}] {pos}/{len}`. On narrow stderr, the bar shortens to 16 cells,
   then to `{msg} {pos}/{len}`, then to a bare counter, and long messages are

@@ -11,7 +11,7 @@ It is not a Minecraft client screenshot tool: the engine parses `.litematic`
 directly and renders deterministic PNGs on the CPU without a graphical
 environment.
 
-- Version: `0.4.0`
+- Version: `0.4.1`
 - Platforms: Windows x86_64, Linux x86_64 / aarch64, macOS aarch64 / x86_64
 - Download: prebuilt binaries on [GitHub Releases](https://github.com/Linvin-1233/Blockscope/releases)
 - 中文: [README.md](README.md)
@@ -39,7 +39,7 @@ Read the documentation at [blockscope.linvin.net](https://blockscope.linvin.net)
 - [Color-block mesh](https://blockscope.linvin.net/mesh-geometry)
 - [CPU rendering](https://blockscope.linvin.net/rendering)
 - [Resource-pack materials](https://blockscope.linvin.net/textures)
-- [Engine protocol v1](https://blockscope.linvin.net/engine-protocol)
+- [Engine protocol v2](https://blockscope.linvin.net/engine-protocol)
 - [Deployment](https://blockscope.linvin.net/deployment)
 
 ### Project

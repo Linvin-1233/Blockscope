@@ -234,7 +234,7 @@ fn default_mesh_streaming_matches_full_render() {
 }
 
 #[test]
-fn streamed_mesh_rejects_auto_lod() {
+fn lod_auto_is_rejected() {
     let file = write_fixture(&basic_fixture());
     let path = file.path().to_str().unwrap();
     let dir = tempfile::tempdir().unwrap();
@@ -252,7 +252,10 @@ fn streamed_mesh_rejects_auto_lod() {
 
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.contains("--stream-mesh cannot be combined with --lod auto"));
+    assert!(
+        stderr.contains("invalid lod 'auto', expected 1-16"),
+        "{stderr}"
+    );
 }
 
 #[test]
@@ -663,18 +666,25 @@ fn lod_reduces_the_mesh() {
 }
 
 #[test]
-fn auto_lod_renders_when_the_scene_fits() {
+fn lod_prints_a_detail_warning() {
     let fixture = write_fixture(&basic_fixture());
     let path = fixture.path().to_str().unwrap();
 
-    let output = run(&["mesh", path, "--json", "--lod", "auto"]);
+    let plain = run(&["mesh", path, "--json"]);
+    assert!(plain.status.success());
+    assert!(!String::from_utf8_lossy(&plain.stderr).contains("significant loss of detail"));
+
+    let output = run(&["mesh", path, "--json", "--lod", "2"]);
     assert!(
         output.status.success(),
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let stats: MeshStatistics = serde_json::from_slice(&output.stdout).unwrap();
-    assert!(stats.quads > 0);
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("warning: Enabling LOD will result in a significant loss of detail"),
+        "{stderr}"
+    );
 }
 
 #[test]
