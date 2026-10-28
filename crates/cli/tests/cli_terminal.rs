@@ -109,3 +109,47 @@ fn render_rejects_invalid_terminal_protocol() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("INVALID_TERMINAL_PROTOCOL"));
 }
+
+#[test]
+fn render_terminal_prints_summary_before_the_image() {
+    let file = write_fixture(&basic_fixture());
+    let path = file.path().to_str().unwrap();
+
+    let output = run(&["render", path, "--terminal-protocol", "kitty", "--no-file"]);
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    let summary = stdout.find("output: terminal (kitty)").expect("summary");
+    let image = stdout.find("\x1b_G").expect("kitty graphics");
+    assert!(
+        summary < image,
+        "summary must precede the image so text cannot scroll it away"
+    );
+}
+
+#[test]
+fn render_terminal_warns_when_stdout_is_not_a_tty() {
+    let file = write_fixture(&basic_fixture());
+    let path = file.path().to_str().unwrap();
+
+    let output = run(&["render", path, "-t", "--no-file"]);
+    assert!(output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("stdout is not a terminal"), "{stderr}");
+}
+
+#[test]
+fn render_terminal_falls_back_to_halfblocks_inside_tmux() {
+    let file = write_fixture(&basic_fixture());
+    let path = file.path().to_str().unwrap();
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_blockscope"))
+        .args(["render", path, "--terminal", "--no-file"])
+        .env("TMUX", "/tmp/tmux-501/default,1,0")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("output: terminal (halfblocks)"), "{stdout}");
+    assert!(!stdout.contains("\x1b_G"), "no kitty graphics inside tmux");
+}

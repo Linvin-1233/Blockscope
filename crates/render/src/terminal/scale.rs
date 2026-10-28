@@ -1,3 +1,45 @@
+/// Cell footprint of an image, rounded up to whole terminal cells.
+pub fn cell_footprint(image_w: u32, image_h: u32, cell_w: u32, cell_h: u32) -> (u32, u32) {
+    if image_w == 0 || image_h == 0 || cell_w == 0 || cell_h == 0 {
+        return (0, 0);
+    }
+    (image_w.div_ceil(cell_w), image_h.div_ceil(cell_h))
+}
+
+/// Pick the single cell dimension to constrain so an image fits a terminal grid.
+///
+/// Returns `(columns, rows)` with at most one side set: the terminal derives the
+/// other side from the image aspect ratio, so the image is scaled but never
+/// stretched. `(None, None)` means the image already fits and should be drawn at
+/// its natural size.
+pub fn fit_terminal_cells(
+    image_w: u32,
+    image_h: u32,
+    cols: u32,
+    rows: u32,
+    cell_w: u32,
+    cell_h: u32,
+) -> (Option<u32>, Option<u32>) {
+    if cols == 0 || rows == 0 {
+        return (None, None);
+    }
+    let (natural_cols, natural_rows) = cell_footprint(image_w, image_h, cell_w, cell_h);
+    if natural_cols == 0 || natural_rows == 0 {
+        return (None, None);
+    }
+    if natural_cols <= cols && natural_rows <= rows {
+        return (None, None);
+    }
+
+    let width_scale = f64::from(cols) / f64::from(natural_cols);
+    let height_scale = f64::from(rows) / f64::from(natural_rows);
+    if width_scale <= height_scale {
+        (Some(cols), None)
+    } else {
+        (None, Some(rows))
+    }
+}
+
 /// Calculate dimensions fitting inside max bounds while preserving aspect ratio.
 pub(crate) fn fit_dimensions(orig_w: u32, orig_h: u32, max_w: u32, max_h: u32) -> (u32, u32) {
     if orig_w == 0 || orig_h == 0 || max_w == 0 || max_h == 0 {
@@ -84,6 +126,63 @@ pub(crate) fn resize_rgba(input: &[u8], in_w: u32, in_h: u32, out_w: u32, out_h:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fit_terminal_cells_leaves_fitting_images_at_native_size() {
+        // 1024x1024 at 16x32 px cells needs 64x32 cells.
+        assert_eq!(
+            fit_terminal_cells(1024, 1024, 187, 55, 16, 32),
+            (None, None),
+            "an image that already fits must not be constrained"
+        );
+    }
+
+    #[test]
+    fn fit_terminal_cells_constrains_a_single_side() {
+        // Too narrow: constrain columns so the aspect ratio is preserved.
+        assert_eq!(
+            fit_terminal_cells(1024, 512, 40, 55, 16, 32),
+            (Some(40), None)
+        );
+        // Too tall: constrain rows.
+        assert_eq!(
+            fit_terminal_cells(1024, 1024, 187, 20, 16, 32),
+            (None, Some(20))
+        );
+    }
+
+    #[test]
+    fn fit_terminal_cells_bounds_images_without_pixel_metrics() {
+        // 8x16 is the assumed minimum cell when the terminal reports no pixels:
+        // 1024x1024 then needs at most 128x64 cells.
+        assert_eq!(
+            fit_terminal_cells(1024, 1024, 186, 53, 8, 16),
+            (None, Some(53)),
+            "a tall bound must still be applied when the cell size is unknown"
+        );
+        assert_eq!(
+            fit_terminal_cells(1024, 1024, 79, 22, 8, 16),
+            (None, Some(22))
+        );
+        assert_eq!(
+            fit_terminal_cells(1024, 1024, 200, 70, 8, 16),
+            (None, None),
+            "a viewport larger than the conservative footprint needs no bound"
+        );
+    }
+
+    #[test]
+    fn fit_terminal_cells_ignores_unknown_dimensions() {
+        assert_eq!(fit_terminal_cells(1024, 1024, 0, 55, 16, 32), (None, None));
+        assert_eq!(fit_terminal_cells(1024, 1024, 187, 55, 0, 32), (None, None));
+        assert_eq!(fit_terminal_cells(0, 0, 187, 55, 16, 32), (None, None));
+    }
+
+    #[test]
+    fn cell_footprint_rounds_up() {
+        assert_eq!(cell_footprint(1025, 1024, 16, 32), (65, 32));
+        assert_eq!(cell_footprint(1024, 1024, 16, 32), (64, 32));
+    }
 
     #[test]
     fn fit_dimensions_preserves_aspect_ratio() {

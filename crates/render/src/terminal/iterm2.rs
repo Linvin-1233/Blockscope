@@ -21,16 +21,13 @@ pub fn encode_iterm2_png(png_bytes: &[u8], options: &TerminalOptions) -> Vec<u8>
     let preserve = if options.preserve_aspect_ratio { 1 } else { 0 };
     args.push_str(&format!(";preserveAspectRatio={preserve}"));
 
+    // Only emit the dimensions the caller pinned: an omitted axis keeps the
+    // image's own aspect ratio instead of being stretched.
     if let Some(cols) = options.width {
         args.push_str(&format!(";width={cols}"));
-    } else {
-        args.push_str(";width=auto");
     }
-
     if let Some(rows) = options.height {
         args.push_str(&format!(";height={rows}"));
-    } else {
-        args.push_str(";height=auto");
     }
 
     // Format: ESC ] 1337 ; File = <args> : <base64> BEL \n

@@ -171,6 +171,14 @@ impl ColorBlockCatalog {
             };
         }
 
+        if is_invisible(state) {
+            return ResolvedStyle {
+                color: Rgba::TRANSPARENT,
+                layer: RenderLayer::Cutout,
+                known: true,
+            };
+        }
+
         if let Some(power) = shape::redstone_power(state) {
             return ResolvedStyle {
                 color: redstone_color(power),
@@ -203,9 +211,16 @@ impl ColorBlockCatalog {
     }
 }
 
+/// Blocks that draw nothing in game, so the fallback must not paint them.
+const INVISIBLE_BLOCKS: &[&str] = &["barrier", "light", "structure_void"];
+
+fn is_invisible(state: &BlockStateKey) -> bool {
+    INVISIBLE_BLOCKS.contains(&strip_namespace(&state.name))
+}
+
 impl BlockCatalog for ColorBlockCatalog {
     fn resolve(&self, state: &BlockStateKey) -> ResolvedBlock {
-        if state.is_air() {
+        if state.is_air() || is_invisible(state) {
             return ResolvedBlock {
                 color: Rgba::TRANSPARENT,
                 layer: RenderLayer::Cutout,
@@ -419,7 +434,75 @@ fn family_color(name: &str, catalog: &ColorBlockCatalog) -> Option<Rgba> {
         return Some(entry.color);
     }
 
-    None
+    material_color(name, catalog)
+}
+
+/// Qualifiers that decorate a base material without changing its identity.
+const MATERIAL_QUALIFIERS: &[&str] = &[
+    "chiseled_",
+    "cracked_",
+    "cut_",
+    "mossy_",
+    "oxidized_",
+    "polished_",
+    "smooth_",
+    "waxed_",
+    "weathered_",
+];
+
+/// Shape tokens that never change the base material color.
+const SHAPE_TOKENS: &[&str] = &[
+    "_bars",
+    "_block",
+    "_brick",
+    "_bricks",
+    "_button",
+    "_carpet",
+    "_door",
+    "_fence",
+    "_fence_gate",
+    "_pillar",
+    "_pane",
+    "_pressure_plate",
+    "_sign",
+    "_slab",
+    "_stairs",
+    "_trapdoor",
+    "_wall",
+];
+
+/// Resolve a decorated variant through its plain material entry so
+/// `quartz_pillar`, `quartz_stairs`, and `chiseled_quartz_block` inherit
+/// `quartz_block` instead of falling through to the unknown-block sentinel.
+fn material_color(name: &str, catalog: &ColorBlockCatalog) -> Option<Rgba> {
+    let mut base = strip_namespace(name);
+    for _ in 0..4 {
+        if let Some(color) = palette_color(base, catalog) {
+            return Some(color);
+        }
+        let stripped_prefix = MATERIAL_QUALIFIERS
+            .iter()
+            .find_map(|prefix| base.strip_prefix(prefix));
+        let stripped_suffix = SHAPE_TOKENS
+            .iter()
+            .find_map(|suffix| base.strip_suffix(suffix));
+        match stripped_prefix.or(stripped_suffix) {
+            Some(rest) if !rest.is_empty() => base = rest,
+            _ => return None,
+        }
+    }
+    palette_color(base, catalog)
+}
+
+fn palette_color(name: &str, catalog: &ColorBlockCatalog) -> Option<Rgba> {
+    let mut candidates = vec![name.to_string(), format!("{name}_block")];
+    if let Some(singular) = name.strip_suffix('s') {
+        candidates.push(singular.to_string());
+    }
+    candidates
+        .into_iter()
+        .find_map(|candidate| catalog.entries.get(&format!("minecraft:{candidate}")))
+        .map(|entry| entry.color)
 }
 
 fn layer_for_name(name: &str) -> RenderLayer {

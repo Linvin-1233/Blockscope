@@ -1,17 +1,20 @@
 use crate::ui::progress::Progress;
-use crate::ui::{self, ACCENT, HEADER, MUTED};
+use crate::ui::{self, ACCENT, HEADER, MUTED, WARNING};
 use crate::{
     AssetArgs, CliError, GEOMETRY_IGNORES_BLOCK_ENTITY_NBT, LimitArgs, LodMode, MeshOptionArgs,
     PreparedScene, apply_render_limits, load_materials, load_scene, mesh_limits, parse_background,
     parse_lod, parse_texture_filter, prepare_scene, warn_forced,
 };
 use clap::Args;
+use litematic_render::terminal::enable_windows_virtual_terminal;
 use litematic_render::{
     Background, LightingProfile, RenderOptions, RenderOutput, RenderStatistics, StreamingRenderer,
-    TerminalOptions, TerminalProtocol, detect_terminal_protocol, render_to_terminal, write_png,
+    TerminalOptions, TerminalProtocol, detect_terminal_pixels, detect_terminal_protocol,
+    detect_terminal_size, encode_terminal, fit_terminal_cells, write_png,
 };
+use std::env;
 use std::fs::File;
-use std::io::{BufWriter, Write};
+use std::io::{BufWriter, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -37,6 +40,10 @@ struct ViewResult {
     background: Background,
     render_ms: f64,
     png_ms: f64,
+    /// Encoded terminal graphics. Every view is encoded before the first image
+    /// is written so all summaries stay together and the images remain
+    /// contiguous at the end instead of scrolling each other away.
+    terminal: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Args)]
@@ -140,21 +147,15 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
         || args.terminal_height.is_some();
 
     let term_options = if show_terminal {
-        let protocol = match args.terminal_protocol.as_deref() {
-            Some(p) if p.eq_ignore_ascii_case("auto") => detect_terminal_protocol(),
-            Some(p) => TerminalProtocol::parse(p).ok_or_else(|| {
-                CliError::input(format!(
-                    "INVALID_TERMINAL_PROTOCOL: unknown protocol '{p}', expected one of: auto, kitty, iterm2, sixel, halfblocks"
-                ))
-            })?,
-            None => detect_terminal_protocol(),
-        };
-        Some(TerminalOptions {
-            protocol,
-            width: args.terminal_width,
-            height: args.terminal_height,
-            ..Default::default()
-        })
+        // The CLI writes encoded graphics directly instead of going through
+        // render_to_terminal, so enable Windows VT processing here.
+        enable_windows_virtual_terminal();
+        if !std::io::stdout().is_terminal() {
+            ui::errln!(
+                "{WARNING}warning:{WARNING:#} stdout is not a terminal; the image is emitted as raw escape sequences instead of being displayed"
+            );
+        }
+        Some(terminal_options(&args)?)
     } else {
         None
     };
@@ -460,9 +461,96 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
                 diagnostics.missing_textures
             );
         }
+        // Emit graphics last so no further text can scroll the image away.
+        for view in &results {
+            if let Some(bytes) = &view.terminal {
+                let mut stdout = std::io::stdout().lock();
+                stdout
+                    .write_all(bytes)
+                    .and_then(|()| stdout.flush())
+                    .map_err(|error| CliError::input(format!("IO_ERROR: stdout: {error}")))?;
+            }
+        }
     }
 
     Ok(())
+}
+
+/// Rows kept free below the image so the shell prompt cannot push it off-screen.
+const TERMINAL_PROMPT_ROWS: u16 = 2;
+
+/// Smallest cell size assumed when the terminal reports no pixel dimensions
+/// (common for ptys and some wrappers). It is a lower bound, so the resulting
+/// cell footprint is an upper bound and the image is never left unbounded.
+const MIN_CELL_PX: (u32, u32) = (8, 16);
+
+/// Build terminal options, fitting the image to the viewport unless the user
+/// pinned the cell size with `--terminal-width` / `--terminal-height`.
+fn terminal_options(args: &RenderArgs) -> Result<TerminalOptions, CliError> {
+    let protocol = match args.terminal_protocol.as_deref() {
+        Some(p) if p.eq_ignore_ascii_case("auto") => detect_display_protocol(),
+        Some(p) => TerminalProtocol::parse(p).ok_or_else(|| {
+            CliError::input(format!(
+                "INVALID_TERMINAL_PROTOCOL: unknown protocol '{p}', expected one of: auto, kitty, iterm2, sixel, halfblocks"
+            ))
+        })?,
+        None => detect_display_protocol(),
+    };
+    let mut options = TerminalOptions {
+        protocol,
+        width: args.terminal_width,
+        height: args.terminal_height,
+        ..Default::default()
+    };
+    if options.width.is_none() && options.height.is_none() {
+        fit_to_viewport(&mut options, args.width, args.height);
+    }
+    Ok(options)
+}
+
+/// Multiplexers drop graphics sequences unless passthrough is enabled, so draw
+/// with half blocks there instead of emitting an invisible image.
+fn detect_display_protocol() -> TerminalProtocol {
+    if env::var_os("TMUX").is_some() || env::var_os("STY").is_some() {
+        TerminalProtocol::Halfblocks
+    } else {
+        detect_terminal_protocol()
+    }
+}
+
+/// Constrain the encoded image to the visible grid. Only one axis is limited so
+/// the terminal keeps the aspect ratio from the unconstrained side.
+fn fit_to_viewport(options: &mut TerminalOptions, image_w: u32, image_h: u32) {
+    if options.protocol == TerminalProtocol::Halfblocks {
+        return; // The half-block encoder already fits itself to the detected grid.
+    }
+    let Some((cols, rows)) = detect_terminal_size() else {
+        return;
+    };
+    let avail_cols = u32::from(cols.saturating_sub(1).max(1));
+    let avail_rows = u32::from(rows.saturating_sub(TERMINAL_PROMPT_ROWS).max(1));
+    // Without pixel metrics the exact cell footprint is unknown; the minimum
+    // assumed cell keeps the bound conservative instead of sending native pixels.
+    let (cell_w, cell_h) = cell_pixels(cols, rows).unwrap_or(MIN_CELL_PX);
+
+    if options.protocol == TerminalProtocol::Sixel {
+        options.pixel_width = Some(avail_cols * cell_w);
+        options.pixel_height = Some(avail_rows * cell_h);
+        return;
+    }
+    let (width, height) =
+        fit_terminal_cells(image_w, image_h, avail_cols, avail_rows, cell_w, cell_h);
+    options.width = width;
+    options.height = height;
+}
+
+/// Cell size in pixels, which cell-addressed protocols need to count cells.
+fn cell_pixels(cols: u16, rows: u16) -> Option<(u32, u32)> {
+    let (px_w, px_h) = detect_terminal_pixels()?;
+    Some((
+        (px_w / u32::from(cols)).max(1),
+        (px_h / u32::from(rows)).max(1),
+    ))
 }
 
 fn view_output_path(output: &Path, view_count: usize, yaw: f32) -> PathBuf {
@@ -484,15 +572,20 @@ fn write_view_output(
     no_file: bool,
     term_options: Option<&TerminalOptions>,
 ) -> Result<ViewResult, CliError> {
-    if let Some(term_options) = term_options {
-        if json {
-            render_to_terminal(&output, term_options, &mut std::io::stderr())
-                .map_err(CliError::from)?;
-        } else {
-            render_to_terminal(&output, term_options, &mut std::io::stdout())
-                .map_err(CliError::from)?;
+    let terminal = match term_options {
+        // JSON keeps stdout machine-readable, so graphics go to stderr immediately.
+        Some(term_options) if json => {
+            let bytes = encode_terminal(&output, term_options).map_err(CliError::from)?;
+            let mut stderr = std::io::stderr();
+            stderr
+                .write_all(&bytes)
+                .and_then(|()| stderr.flush())
+                .map_err(|error| CliError::input(format!("IO_ERROR: stderr: {error}")))?;
+            None
         }
-    }
+        Some(term_options) => Some(encode_terminal(&output, term_options).map_err(CliError::from)?),
+        None => None,
+    };
 
     let mut png_ms = 0.0;
     if !no_file {
@@ -519,6 +612,7 @@ fn write_view_output(
         background: options.background,
         render_ms,
         png_ms,
+        terminal,
     })
 }
 

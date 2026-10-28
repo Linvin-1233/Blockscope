@@ -62,3 +62,19 @@ Plan: `tasks/render-memory-plan.md`
 - [x] Measure streamed/full textured memory and update `docs/performance.md`.
 - [x] Update CLI/render tests and changelog.
 - [ ] Optional: `serve` stream-mesh protocol support; separate spec.
+
+## Fallback color coverage
+
+- [x] Resolve decorated variants (`quartz_pillar`, `chiseled_*`, `smooth_*_slab`)
+      through the base material entry instead of the magenta sentinel.
+- [x] Skip invisible blocks (`barrier`, `light`, `structure_void`).
+- [x] Add palette entries for anvils, hoppers, lanterns, end rods, cocoa, and
+      weighted pressure plates.
+
+## Terminal image display
+
+- [x] Fit terminal images to the visible grid (kitty/iTerm2 cells, sixel pixels)
+      and emit the image after the summary.
+- [x] Fall back to half blocks inside `tmux`/`screen`; warn when stdout is not a
+      terminal; stop sending `width=auto`/`height=auto` to iTerm2.
+- [x] Update CLI docs and changelog.

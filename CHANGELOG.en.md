@@ -8,6 +8,20 @@ User-facing changes are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Fallback colors now inherit the base material for decorated block variants, so
+  quartz pillars, stairs, and slabs render as quartz instead of the magenta
+  unknown-block sentinel. Invisible blocks such as barriers are skipped instead
+  of being painted.
+
+- Terminal image output (`--terminal`) now fits the image to the visible grid
+  instead of sending it at native pixel size, and prints the summary before the
+  image so text can never scroll it out of view. Auto-detection falls back to
+  half blocks inside `tmux`/`screen`, a warning is printed when stdout is not a
+  terminal, and the iTerm2 encoder no longer sends invented `width=auto` /
+  `height=auto` keys.
+
 ## [0.4.0] - 2026-10-28
 
 ### Added

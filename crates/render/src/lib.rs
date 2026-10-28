@@ -18,9 +18,10 @@ pub use rasterizer::{
     will_stream,
 };
 pub use terminal::{
-    TerminalOptions, TerminalProtocol, detect_terminal_protocol, detect_terminal_size,
-    encode_halfblocks, encode_iterm2, encode_iterm2_png, encode_kitty, encode_kitty_png,
-    encode_sixel, encode_terminal, render_to_terminal,
+    TerminalOptions, TerminalProtocol, cell_footprint, detect_terminal_pixels,
+    detect_terminal_protocol, detect_terminal_size, encode_halfblocks, encode_iterm2,
+    encode_iterm2_png, encode_kitty, encode_kitty_png, encode_sixel, encode_terminal,
+    fit_terminal_cells, render_to_terminal,
 };
 
 pub const CRATE_NAME: &str = "litematic-render";
