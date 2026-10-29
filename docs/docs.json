@@ -17,15 +17,9 @@
       {
         "language": "en",
         "navbar": {
-          "links": [
-            {
-              "label": "GitHub",
-              "href": "https://github.com/Linvin-1233/Blockscope"
-            }
-          ],
           "primary": {
-            "type": "button",
-            "label": "Repository",
+            "type": "github",
+            "label": "GitHub",
             "href": "https://github.com/Linvin-1233/Blockscope"
           }
         },
@@ -50,19 +44,11 @@
               },
               {
                 "group": "Guides & Operations",
-                "pages": [
-                  "user/materials",
-                  "user/lod",
-                  "user/service",
-                  "user/docker"
-                ]
+                "pages": ["user/materials", "user/lod", "user/service", "user/docker"]
               },
               {
                 "group": "Reference",
-                "pages": [
-                  "user/limits",
-                  "user/troubleshooting"
-                ]
+                "pages": ["user/limits", "user/troubleshooting"]
               }
             ]
           },
@@ -71,19 +57,11 @@
             "groups": [
               {
                 "group": "Pipeline Architecture",
-                "pages": [
-                  "litematic-format",
-                  "mesh-geometry",
-                  "rendering",
-                  "textures"
-                ]
+                "pages": ["litematic-format", "mesh-geometry", "rendering", "textures"]
               },
               {
                 "group": "System & Protocol",
-                "pages": [
-                  "engine-protocol",
-                  "deployment"
-                ]
+                "pages": ["engine-protocol", "deployment"]
               }
             ]
           }
@@ -92,15 +70,9 @@
       {
         "language": "zh",
         "navbar": {
-          "links": [
-            {
-              "label": "GitHub",
-              "href": "https://github.com/Linvin-1233/Blockscope"
-            }
-          ],
           "primary": {
-            "type": "button",
-            "label": "代码仓库",
+            "type": "github",
+            "label": "GitHub",
             "href": "https://github.com/Linvin-1233/Blockscope"
           }
         },
@@ -122,19 +94,11 @@
           },
           {
             "group": "进阶与部署",
-            "pages": [
-              "zh/user/materials",
-              "zh/user/lod",
-              "zh/user/service",
-              "zh/user/docker"
-            ]
+            "pages": ["zh/user/materials", "zh/user/lod", "zh/user/service", "zh/user/docker"]
           },
           {
             "group": "参考与排查",
-            "pages": [
-              "zh/user/limits",
-              "zh/user/troubleshooting"
-            ]
+            "pages": ["zh/user/limits", "zh/user/troubleshooting"]
           }
         ]
       }
