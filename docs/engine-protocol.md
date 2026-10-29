@@ -39,6 +39,7 @@ supervisor                          worker
  "cpuQuota":null,"memoryLimitBytes":51401564160,"memoryAvailableBytes":21526179840,
  "suggestedWorkers":4,"suggestedThreads":3,"suggestedMaxQuads":54313181,
  "cacheBytes":10763089920,
+ "backends":["cpu","auto"],
  "defaultTier":{"width":2048,"height":2048,"supersample":2}}
 {"type":"render","id":"...","input":{...},...}
 {"type":"result","id":"...","ok":true,...}
@@ -141,7 +142,8 @@ Paths must be absolute. The worker rejects relative paths with `INVALID_REQUEST`
   "statistics": {
     "triangles": 359110,
     "culledBackfaces": 146996,
-    "textures": 206
+    "textures": 206,
+    "backendUsed": "cpu"
   }
 }
 ```

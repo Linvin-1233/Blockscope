@@ -11,10 +11,22 @@ pub(super) fn project_mesh_pages(
     statistics: &mut RenderStatistics,
     threads: usize,
 ) -> (Vec<QuadRender>, Vec<Triangle>) {
-    if threads <= 1 || mesh.pages.len() <= 1 {
+    project_pages(&mesh.pages, camera, options, statistics, threads)
+}
+
+/// Project an arbitrary page slice. The GPU backend calls this once per
+/// retained page chunk so its staging buffers stay bounded.
+pub(super) fn project_pages(
+    pages: &[MeshPage],
+    camera: &Camera,
+    options: &RenderOptions,
+    statistics: &mut RenderStatistics,
+    threads: usize,
+) -> (Vec<QuadRender>, Vec<Triangle>) {
+    if threads <= 1 || pages.len() <= 1 {
         let mut quads = Vec::new();
         let mut translucent = Vec::new();
-        for page in &mesh.pages {
+        for page in pages {
             push_page_quads(
                 page,
                 camera,
@@ -27,12 +39,11 @@ pub(super) fn project_mesh_pages(
         return (quads, translucent);
     }
 
-    let workers = threads.clamp(1, mesh.pages.len());
-    let chunk_size = mesh.pages.len().div_ceil(workers);
+    let workers = threads.clamp(1, pages.len());
+    let chunk_size = pages.len().div_ceil(workers);
     let chunk_results: Vec<(Vec<QuadRender>, Vec<Triangle>, RenderStatistics)> =
         std::thread::scope(|scope| {
-            let handles: Vec<_> = mesh
-                .pages
+            let handles: Vec<_> = pages
                 .chunks(chunk_size)
                 .map(|chunk| {
                     scope.spawn(move || {
@@ -212,7 +223,7 @@ pub(super) struct Triangle {
     color: [u8; 4],
     shade: f32,
     ao: [u8; 3],
-    uvs: [[i16; 2]; 3],
+    pub(super) uvs: [[i16; 2]; 3],
     pub(super) texture: u16,
     /// The average depth is kept as f64 so the sort order is independent of the
     /// compact point representation.

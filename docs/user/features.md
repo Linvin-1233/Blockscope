@@ -27,6 +27,9 @@ The current workspace version is `0.4.1` and supports Windows, Linux, and macOS.
 - No general entity models, entity animations, block-entity text/icons, banner patterns, or skull skins
 - Tint is a fixed plains color; biome colormaps are not read
 - No shadows, full light propagation, emissive bloom, or mipmaps
+- GPU output varies by vendor and driver, is not byte-exact, and is not part
+  of the published release binaries
+- LOD drops block entities, entities, and pending ticks
 - Resource packs, client jars, and private `.litematic` files are not committed
 - No network listener; `serve`/`supervise` communicate over stdio only
 

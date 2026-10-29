@@ -615,3 +615,129 @@ fn force_limits_prints_a_warning() {
         String::from_utf8_lossy(&default.stderr)
     );
 }
+
+#[test]
+fn render_rejects_unknown_backend() {
+    let output = run(&["render", "missing.litematic", "--backend", "quantum"]);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("INVALID_RENDER_OPTIONS: unknown backend 'quantum'"),
+        "{stderr}"
+    );
+}
+
+#[cfg(feature = "gpu")]
+#[test]
+fn render_gpu_backend_matches_cpu_pixels() {
+    let file = write_fixture(&basic_fixture());
+    let path = file.path().to_str().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let cpu_path = dir.path().join("cpu.png");
+    let gpu_path = dir.path().join("gpu.png");
+
+    let cpu = run(&[
+        "render",
+        path,
+        "--output",
+        cpu_path.to_str().unwrap(),
+        "--width",
+        "64",
+        "--height",
+        "64",
+        "--backend",
+        "cpu",
+    ]);
+    assert!(cpu.status.success());
+
+    let gpu = run(&[
+        "render",
+        path,
+        "--output",
+        gpu_path.to_str().unwrap(),
+        "--width",
+        "64",
+        "--height",
+        "64",
+        "--backend",
+        "gpu",
+    ]);
+    if !gpu.status.success() {
+        let stderr = String::from_utf8(gpu.stderr).unwrap();
+        if stderr.contains("BACKEND_UNAVAILABLE") {
+            eprintln!("skipping GPU CLI test: {stderr}");
+            return;
+        }
+        panic!("GPU render failed: {stderr}");
+    }
+    let stdout = String::from_utf8(gpu.stdout).unwrap();
+    assert!(stdout.contains("backend: gpu"), "{stdout}");
+
+    let decode = |path: &std::path::Path| {
+        let file = std::fs::File::open(path).unwrap();
+        let decoder = png::Decoder::new(std::io::BufReader::new(file));
+        let mut reader = decoder.read_info().unwrap();
+        let size = reader.output_buffer_size().expect("png output size");
+        let mut bytes: Vec<u8> = vec![0; size];
+        let info = reader.next_frame(&mut bytes).unwrap();
+        bytes.truncate(info.buffer_size());
+        bytes
+    };
+    let cpu_pixels = decode(&cpu_path);
+    let gpu_pixels = decode(&gpu_path);
+    assert_eq!(cpu_pixels.len(), gpu_pixels.len());
+    let max_delta = cpu_pixels
+        .iter()
+        .zip(&gpu_pixels)
+        .map(|(left, right)| left.abs_diff(*right))
+        .max()
+        .unwrap_or(0);
+    assert!(max_delta <= 2, "max channel delta {max_delta}");
+}
+
+#[test]
+fn render_gpu_backend_requires_a_gpu_build() {
+    let file = write_fixture(&basic_fixture());
+    let path = file.path().to_str().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let output_path = dir.path().join("gpu.png");
+    let output = run(&[
+        "render",
+        path,
+        "--output",
+        output_path.to_str().unwrap(),
+        "--width",
+        "64",
+        "--height",
+        "64",
+        "--backend",
+        "gpu",
+    ]);
+
+    if cfg!(feature = "gpu") {
+        // A GPU build may legitimately render; the unavailable path is covered
+        // by the parity test on hosts without an adapter.
+        return;
+    }
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("BACKEND_UNAVAILABLE"), "{stderr}");
+    assert!(!output_path.exists());
+}
+
+#[test]
+fn render_rejects_streaming_with_a_gpu_backend() {
+    let output = run(&[
+        "render",
+        "missing.litematic",
+        "--backend",
+        "gpu",
+        "--stream-mesh",
+    ]);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("GPU backends do not support --stream-mesh"),
+        "{stderr}"
+    );
+}

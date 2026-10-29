@@ -4,10 +4,12 @@
 
 Blockscope 是一个把 Minecraft `.litematic` 投影文件渲染成 PNG 的
 无头 Rust 图像渲染引擎，面向通用后端服务、批处理工具和自动化管线。仓库包含
-解析、材质、网格、CPU 渲染、CLI 和 stdio 服务。
+解析、材质、网格、CPU 渲染（可选离屏 GPU 后端）、CLI 和 stdio 服务。
 
-它不是 Minecraft 客户端截图工具：引擎直接解析 `.litematic`，在 CPU 上生成
-确定性 PNG，并可在服务端无图形环境中运行。
+它不是 Minecraft 客户端截图工具：引擎直接解析 `.litematic`，默认在 CPU 上生成
+确定性 PNG，并可在服务端无图形环境中运行。以 `--features gpu` 构建后可选用
+`wgpu` 离屏后端，适合 CPU 较弱但具备硬件适配器的主机；CPU 仍是默认和逐字节
+golden 参考。
 
 - 当前版本：`0.4.0`
 - 支持平台：Windows x86_64、Linux x86_64 / aarch64、macOS aarch64 / x86_64
@@ -34,7 +36,7 @@ Blockscope 是一个把 Minecraft `.litematic` 投影文件渲染成 PNG 的
 
 - [Litematic 格式说明](https://blockscope.linvin.net/litematic-format)
 - [Color-block 网格说明](https://blockscope.linvin.net/mesh-geometry)
-- [CPU 渲染说明](https://blockscope.linvin.net/rendering)
+- [渲染与 PNG 输出](https://blockscope.linvin.net/rendering)
 - [资源包材质说明](https://blockscope.linvin.net/textures)
 - [引擎协议 v3](https://blockscope.linvin.net/engine-protocol)
 - [部署说明](https://blockscope.linvin.net/deployment)

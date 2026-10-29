@@ -1,5 +1,5 @@
 use crate::camera::Camera;
-use crate::{RenderError, RenderOptions};
+use crate::{RenderBackend, RenderError, RenderOptions};
 use litematic_material::TextureSet;
 use litematic_mesh::Mesh;
 use litematic_scene::Scene;
@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 mod bin;
 mod downsample;
 mod geometry;
+mod gpu;
 mod project;
 mod spill;
 mod stream;
@@ -15,10 +16,15 @@ mod tile;
 
 use bin::{bin_quads, bin_triangles, effective_tile_size, tile_jobs, worker_count};
 use downsample::downsample;
+use gpu::{GpuFailure, try_render as try_gpu_render};
 use project::{QuadRender, Triangle, project_mesh_pages};
 pub use stream::StreamingRenderer;
 use stream::chunk_ranges;
 use tile::{TileProgressSink, render_tile, render_tiles_parallel};
+
+/// Auto selects the GPU at or above this mesh quad count. Below it the device
+/// setup and readback cost more than the CPU tile loop.
+const GPU_AUTO_MIN_QUADS: u64 = 50_000;
 
 /// Receives `(completed_tiles, total_tiles)` from the rasterizer.
 pub type TileProgress<'a> = &'a (dyn Fn(u64, u64) + Sync);
@@ -41,6 +47,9 @@ pub struct RenderStatistics {
     pub textured_triangles: u64,
     pub pixels_tested: u64,
     pub pixels_written: u64,
+    /// Backend that produced the image. `Auto` resolves to `Cpu` or `Gpu`.
+    #[serde(default)]
+    pub backend_used: RenderBackend,
 }
 
 /// RGBA output plus render diagnostics.
@@ -114,6 +123,26 @@ fn render_mesh_internal(
     options.validate()?;
     let camera = Camera::new(&scene.bounds, options)?;
 
+    // Auto only pays GPU initialization when the mesh is large enough to
+    // amortize device setup and readback.
+    let backend = options.backend;
+    let auto = backend == RenderBackend::Auto;
+    if backend != RenderBackend::Cpu {
+        if options.force_streaming {
+            if backend == RenderBackend::Gpu {
+                return Err(RenderError::invalid(
+                    "the GPU backend does not support mesh streaming",
+                ));
+            }
+        } else if backend == RenderBackend::Gpu || mesh.statistics.quads >= GPU_AUTO_MIN_QUADS {
+            match try_gpu_render(scene, mesh, &camera, options, textures) {
+                Ok(output) => return Ok(output),
+                Err(GpuFailure::Unavailable(_)) if auto => {}
+                Err(failure) => return Err(failure.into_error()),
+            }
+        }
+    }
+
     let streaming = will_stream(mesh, options);
     if streaming {
         let mut renderer = StreamingRenderer::with_camera(camera, options, textures);
@@ -129,6 +158,7 @@ fn render_mesh_internal(
         supersample: options.supersample,
         internal_width: options.internal_width(),
         internal_height: options.internal_height(),
+        backend_used: RenderBackend::Cpu,
         ..Default::default()
     };
     let threads = worker_count(options.threads, mesh.pages.len());

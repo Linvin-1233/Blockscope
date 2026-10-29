@@ -98,6 +98,17 @@ cargo build --release -p blockscope-cli
 
 可以把 `target/release` 加入 `PATH`，也可以在命令中直接使用完整路径。
 
+默认构建仅包含 CPU 后端。需要可选的离屏 GPU 光栅器时（要求硬件适配器和平台
+GPU 驱动）：
+
+```bash
+cargo build --release -p blockscope-cli --features gpu
+```
+
+该二进制仍默认使用 `--backend cpu`；传入 `--backend gpu` 或 `--backend auto`
+才会启用。Linux musl 静态发布包不包含此特性，因为静态二进制无法在运行时加载
+Vulkan loader。
+
 ## 运行测试
 
 ```bash

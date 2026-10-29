@@ -25,6 +25,15 @@ User-facing changes are recorded here. The format follows
 
 ### Added
 
+- An optional offscreen GPU rasterizer (`wgpu` with Metal, Vulkan, or D3D12):
+  build with `--features gpu` and select it with `--backend cpu|gpu|auto`. The
+  service protocol accepts `backend`, advertises `hello.backends`, and reports
+  the backend that produced the image. The GPU path reuses a process-wide device
+  and pipelines and supports texture atlases, cutouts, translucency, and
+  supersampling. The CPU backend remains the default and the byte-exact golden
+  and determinism reference.
+- `bench` and the synthetic `tile_bench` example accept `--backend gpu` for
+  CPU-versus-GPU rasterizer comparisons.
 - Cloudflare Workers adapter (`blockscope-worker`) with configurable HTTP and
   CORS settings, PNG rendering from a `.litematic` request body, and an optional
   resource pack loaded from Workers Static Assets. Requests are validated and

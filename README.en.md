@@ -5,11 +5,14 @@
 Blockscope is a headless Rust image-rendering engine that turns
 Minecraft `.litematic` projections into PNG images. It is designed for general
 backend services, batch tools, and automation pipelines. This repository
-contains parsing, materials, meshing, CPU rendering, a CLI, and a stdio service.
+contains parsing, materials, meshing, CPU rendering (plus an optional offscreen
+GPU backend), a CLI, and a stdio service.
 
 It is not a Minecraft client screenshot tool: the engine parses `.litematic`
 directly and renders deterministic PNGs on the CPU without a graphical
-environment.
+environment. Build with `--features gpu` to add the `wgpu` offscreen backend for
+hosts with a weak CPU and a hardware adapter; the CPU remains the default and
+the byte-exact golden reference.
 
 - Version: `0.4.1`
 - Platforms: Windows x86_64, Linux x86_64 / aarch64, macOS aarch64 / x86_64
@@ -36,7 +39,7 @@ Read the documentation at [blockscope.linvin.net](https://blockscope.linvin.net)
 
 - [Litematic format](https://blockscope.linvin.net/litematic-format)
 - [Color-block mesh](https://blockscope.linvin.net/mesh-geometry)
-- [CPU rendering](https://blockscope.linvin.net/rendering)
+- [Rendering and PNG output](https://blockscope.linvin.net/rendering)
 - [Resource-pack materials](https://blockscope.linvin.net/textures)
 - [Engine protocol v3](https://blockscope.linvin.net/engine-protocol)
 - [Deployment](https://blockscope.linvin.net/deployment)

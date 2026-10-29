@@ -1,10 +1,11 @@
 //! Compare single-threaded and parallel tile rasterization on a synthetic scene.
 //!
 //! Usage: `cargo run --release -p litematic-render --example tile_bench`
-//! Options: `--width N`, `--height N`, `--supersample N`, `--iterations N`.
+//! Options: `--width N`, `--height N`, `--supersample N`, `--iterations N`,
+//! `--backend cpu|gpu` (GPU requires `--features gpu`).
 
 use litematic_mesh::{ColorBlockCatalog, MeshLimits, build_mesh};
-use litematic_render::{RenderOptions, render_mesh};
+use litematic_render::{RenderBackend, RenderOptions, render_mesh};
 use litematic_scene::{BlockStateKey, PackedIndices, Region, Scene, SceneMetadata};
 use std::time::Instant;
 
@@ -13,7 +14,19 @@ fn main() {
     let mut height = 1024;
     let mut supersample = 2;
     let mut iterations = 3;
-    parse_args(&mut width, &mut height, &mut supersample, &mut iterations);
+    let mut backend = RenderBackend::Cpu;
+    parse_args(
+        &mut width,
+        &mut height,
+        &mut supersample,
+        &mut iterations,
+        &mut backend,
+    );
+    if backend == RenderBackend::Gpu && !cfg!(feature = "gpu") {
+        eprintln!("gpu backend requires --features gpu");
+        std::process::exit(2);
+    }
+    println!("backend: {}", backend.as_str());
 
     let scene = synthetic_scene();
     let mesh = build_mesh(
@@ -33,7 +46,11 @@ fn main() {
         .unwrap_or(1);
     println!("available parallelism: {available}");
 
-    let mut thread_counts = vec![1, 2, available as u32];
+    let mut thread_counts = if backend == RenderBackend::Cpu {
+        vec![1, 2, available as u32]
+    } else {
+        vec![1]
+    };
     thread_counts.sort_unstable();
     thread_counts.dedup();
 
@@ -43,6 +60,7 @@ fn main() {
             height,
             supersample,
             threads,
+            backend,
             ..Default::default()
         };
 
@@ -60,7 +78,13 @@ fn main() {
     }
 }
 
-fn parse_args(width: &mut u32, height: &mut u32, supersample: &mut u32, iterations: &mut u32) {
+fn parse_args(
+    width: &mut u32,
+    height: &mut u32,
+    supersample: &mut u32,
+    iterations: &mut u32,
+    backend: &mut RenderBackend,
+) {
     let mut args = std::env::args().skip(1);
     while let Some(flag) = args.next() {
         let Some(value) = args.next() else {
@@ -71,6 +95,7 @@ fn parse_args(width: &mut u32, height: &mut u32, supersample: &mut u32, iteratio
             "--height" => *height = value.parse().expect("height"),
             "--supersample" => *supersample = value.parse().expect("supersample"),
             "--iterations" => *iterations = value.parse().expect("iterations"),
+            "--backend" => *backend = RenderBackend::parse(&value).expect("backend"),
             _ => {}
         }
     }
