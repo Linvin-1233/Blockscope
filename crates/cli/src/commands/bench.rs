@@ -223,7 +223,6 @@ pub(crate) fn run(args: BenchArgs) -> Result<(), CliError> {
             "supersample": options.supersample,
             "threads": options.threads,
             "backend": output.statistics.backend_used.as_str(),
-            "lod": factor,
             "parseMs": parse_ms,
             "meshMs": mesh_ms,
             "renderMs": timing_json(&render),
