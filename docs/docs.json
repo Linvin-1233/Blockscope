@@ -44,7 +44,13 @@
               },
               {
                 "group": "Guides & Operations",
-                "pages": ["user/materials", "user/lod", "user/service", "user/docker"]
+                "pages": [
+                  "user/materials",
+                  "user/lod",
+                  "user/service",
+                  "user/docker",
+                  "user/cloudflare-workers"
+                ]
               },
               {
                 "group": "Reference",

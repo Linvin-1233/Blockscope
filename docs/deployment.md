@@ -40,10 +40,10 @@ Always verify container sizing using `blockscope capacity` against the host
 cgroup limits before deploying.
 
 ## Cloudflare Workers
-The `blockscope-worker` crate serves a stateless color-only HTTP API from a
-Worker. It accepts a `.litematic` body and returns a PNG. See
-[Cloudflare Workers](./user/en/cloudflare-workers.md) for deployment, endpoint
-configuration, CPU limits, and frontend integration.
+The `blockscope-worker` crate serves a stateless HTTP API from a Worker. It
+accepts a `.litematic` body and returns a PNG, using a bundled resource pack when
+one is configured. See [Cloudflare Workers](./user/cloudflare-workers.md) for
+deployment, endpoint configuration, CPU limits, and frontend integration.
 
 ## Linux via WSL
 
