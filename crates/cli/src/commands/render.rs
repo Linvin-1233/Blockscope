@@ -8,9 +8,9 @@ use crate::{
 use clap::Args;
 use litematic_render::terminal::enable_windows_virtual_terminal;
 use litematic_render::{
-    Background, LightingProfile, RenderOptions, RenderOutput, RenderStatistics, StreamingRenderer,
-    TerminalOptions, TerminalProtocol, detect_terminal_pixels, detect_terminal_protocol,
-    detect_terminal_size, encode_terminal, fit_terminal_cells, write_png,
+    Background, LightingProfile, RenderBackend, RenderOptions, RenderOutput, RenderStatistics,
+    StreamingRenderer, TerminalOptions, TerminalProtocol, detect_terminal_pixels,
+    detect_terminal_protocol, detect_terminal_size, encode_terminal, fit_terminal_cells, write_png,
 };
 use std::env;
 use std::fs::File;
@@ -78,6 +78,9 @@ pub(crate) struct RenderArgs {
     /// flat-v1 or simple-ao-v1.
     #[arg(long, default_value = "simple-ao-v1", value_name = "PROFILE")]
     lighting: String,
+    /// Rasterization backend: cpu, gpu, or auto.
+    #[arg(long, default_value = "cpu", value_name = "BACKEND")]
+    backend: String,
     /// Supersampling factor: 1, 2, 3, or 4.
     #[arg(long, default_value_t = 2, value_name = "N")]
     supersample: u32,
@@ -138,6 +141,12 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
             args.lighting
         ))
     })?;
+    let backend = RenderBackend::parse(&args.backend).ok_or_else(|| {
+        CliError::input(format!(
+            "INVALID_RENDER_OPTIONS: unknown backend '{}'",
+            args.backend
+        ))
+    })?;
     let views = parse_views(&args)?;
     let view_count = views.len();
     let texture_filter = parse_texture_filter(&args.assets.texture_filter)?;
@@ -160,7 +169,16 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
     } else {
         None
     };
-    let stream_mesh = !matches!(args.stream_mesh, StreamMeshMode::Off);
+    if backend != RenderBackend::Cpu && matches!(args.stream_mesh, StreamMeshMode::On) {
+        return Err(CliError::input(
+            "INVALID_RENDER_OPTIONS: GPU backends do not support --stream-mesh",
+        ));
+    }
+    // GPU rendering needs the complete page table: it chunks pages internally.
+    // Auto retains the mesh too so it can choose based on the quad count. The CPU
+    // path keeps the upstream streaming default.
+    let stream_mesh =
+        backend == RenderBackend::Cpu && !matches!(args.stream_mesh, StreamMeshMode::Off);
 
     let view_options: Vec<RenderOptions> = views
         .iter()
@@ -175,6 +193,7 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
                 supersample: args.supersample,
                 threads: args.threads,
                 texture_filter,
+                backend,
                 ..Default::default()
             };
             apply_render_limits(args.limits.force_limits, &mut options);
@@ -239,8 +258,9 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
 
     let mut results = Vec::with_capacity(view_count);
     if let Some(mesh) = &mesh {
-        let single_tile_progress =
-            view_count == 1 && !litematic_render::will_stream(mesh, &view_options[0]);
+        let single_tile_progress = view_count == 1
+            && backend == RenderBackend::Cpu
+            && !litematic_render::will_stream(mesh, &view_options[0]);
         let tile_bar = single_tile_progress.then(|| progress.bar("Rendering"));
         let tile_update = |done, total| {
             if let Some(bar) = &tile_bar {
@@ -640,6 +660,20 @@ fn output_path_for_yaw(path: &Path, yaw: f32) -> PathBuf {
 }
 
 fn print_render_stats(statistics: &RenderStatistics) {
+    ui::outln!(
+        "{MUTED}backend:{MUTED:#} {}",
+        statistics.backend_used.as_str()
+    );
+    if statistics.backend_used != RenderBackend::Cpu {
+        ui::outln!("{MUTED}triangles:{MUTED:#} {}", statistics.triangles);
+        ui::outln!(
+            "{MUTED}layer triangles:{MUTED:#} opaque {} cutout {} translucent {}",
+            statistics.opaque_triangles,
+            statistics.cutout_triangles,
+            statistics.translucent_triangles
+        );
+        return;
+    }
     ui::outln!("{MUTED}tiles:{MUTED:#} {}", statistics.tiles);
     ui::outln!("{MUTED}triangles:{MUTED:#} {}", statistics.triangles);
     ui::outln!(

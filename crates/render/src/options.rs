@@ -1,4 +1,4 @@
-use crate::RenderError;
+use crate::{RenderBackend, RenderError};
 use litematic_material::TextureFilter;
 use litematic_mesh::Rgba;
 use serde::{Deserialize, Serialize};
@@ -77,6 +77,8 @@ pub struct RenderOptions {
     pub max_supersampled_pixels: u64,
     /// Use the page-streaming rasterizer even when the quad table would fit.
     pub force_streaming: bool,
+    /// Rasterization backend. See [`RenderBackend`].
+    pub backend: RenderBackend,
 }
 
 impl Default for RenderOptions {
@@ -96,6 +98,7 @@ impl Default for RenderOptions {
             max_pixels: 16_777_216,
             max_supersampled_pixels: 33_554_432,
             force_streaming: false,
+            backend: RenderBackend::Cpu,
         }
     }
 }

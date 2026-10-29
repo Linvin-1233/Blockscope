@@ -196,6 +196,11 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
             "queueLimit": queue_limit,
             "cacheEntries": spec.cache,
             "cacheBytes": spec.cache_bytes,
+            "backends": if cfg!(feature = "gpu") {
+                vec!["cpu", "auto", "gpu"]
+            } else {
+                vec!["cpu", "auto"]
+            },
             "defaultLod": 1,
             "suggestedMaxQuads": capacity.suggested_max_quads,
             "timeoutSeconds": timeout.map(|value| value.as_secs()),

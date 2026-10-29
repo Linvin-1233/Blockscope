@@ -19,6 +19,21 @@ Plan: `tasks/cli-ux-plan.md`
       Windows Terminal at 80 and 120 columns, plus 55/40/28/18-column tiers
       via a PTY.
 
+## Optional GPU backend
+
+Plan: `tasks/gpu-feasibility.md`
+
+- [x] Add `RenderBackend`, `RenderOptions.backend`, `backendUsed`, and
+      `BACKEND_UNAVAILABLE`.
+- [x] Implement the offscreen wgpu pipeline, atlas, vertex upload, readback,
+      premultiplied resolve, and process-wide device/pipeline cache.
+- [x] Dispatch CPU/GPU/auto and require a full mesh for GPU paths.
+- [x] Add `--backend` to `render`/`bench`, service `backend`, and
+      `hello.backends` / `backendUsed`.
+- [x] Add parity and CLI/service tests; skip when no hardware adapter exists.
+- [x] Document determinism, streaming, deployment, and measured performance.
+- [ ] Decide whether release artifacts should ship a separate glibc GPU build.
+
 ## Pending verification
 
 - [ ] Run the real-file smoke tests with

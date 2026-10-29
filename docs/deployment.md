@@ -6,6 +6,12 @@ The engine is a single static-ish binary with no runtime service dependencies. I
 
 Tagged releases publish standalone, statically linked binaries for Linux, macOS, and Windows (using musl on Linux and static CRT on Windows). For binary downloads, checksum verification, and desktop installer guides, see [Installation and Quick Start](./user/getting-started.md).
 
+Release artifacts are CPU-only. GPU support is an optional source-build feature
+(`--features gpu`) and needs a hardware adapter plus platform drivers. Static
+musl binaries cannot load the Vulkan loader at runtime, so GPU deployments
+should use a glibc build; containers additionally need the GPU device passthrough
+and driver packages. See [Rendering and PNG Output](./rendering.md#gpu-backend).
+
 ## Cutting a Release
 
 1. Write the user-facing notes under `## [Unreleased]` in `CHANGELOG.md` and `CHANGELOG.en.md`. `just bump` refuses to run when either section is empty, because the release body comes from the version section the recipe creates.

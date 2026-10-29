@@ -6,7 +6,7 @@ use clap::Args;
 use litematic_core::LitematicFile;
 use litematic_material::{MaterialSet, MaterialSnapshot};
 use litematic_mesh::{Mesh, MeshLimits};
-use litematic_render::{LightingProfile, RenderOptions, write_png};
+use litematic_render::{LightingProfile, RenderBackend, RenderOptions, write_png};
 use litematic_scene::{Scene, sha256};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -98,6 +98,9 @@ struct RenderRequest {
     background: Option<String>,
     #[serde(default)]
     texture_filter: Option<String>,
+    /// Rasterization backend: cpu, gpu, or auto. Defaults to cpu.
+    #[serde(default)]
+    backend: Option<String>,
     #[serde(default)]
     format: Option<String>,
     #[serde(default)]
@@ -207,6 +210,10 @@ pub fn run(args: ServeArgs) -> Result<(), CliError> {
 }
 
 fn hello(capacity: &Capacity, cache_bytes: u64) -> Value {
+    let mut backends = vec!["cpu", "auto"];
+    if cfg!(feature = "gpu") {
+        backends.push("gpu");
+    }
     json!({
         "type": "hello",
         "protocolVersion": PROTOCOL_VERSION,
@@ -221,6 +228,7 @@ fn hello(capacity: &Capacity, cache_bytes: u64) -> Value {
         "suggestedThreads": capacity.suggested_threads,
         "suggestedMaxQuads": capacity.suggested_max_quads,
         "defaultLod": 1,
+        "backends": backends,
         "defaultTier": {
             "width": capacity.default_width,
             "height": capacity.default_height,
@@ -308,6 +316,13 @@ fn process(
     let background = parse_background(request.background.as_deref().unwrap_or("transparent"))?;
     let texture_filter =
         parse_texture_filter(request.texture_filter.as_deref().unwrap_or("nearest"))?;
+    let backend =
+        RenderBackend::parse(request.backend.as_deref().unwrap_or("cpu")).ok_or_else(|| {
+            CliError::input(format!(
+                "INVALID_RENDER_OPTIONS: unknown backend '{}'",
+                request.backend.as_deref().unwrap_or_default()
+            ))
+        })?;
 
     fs::create_dir_all(&request.output_dir).map_err(|error| {
         CliError::input(format!(
@@ -329,6 +344,7 @@ fn process(
                 supersample: request.supersample.unwrap_or(DEFAULT_SUPERSAMPLE),
                 threads: request.threads.unwrap_or(context.default_threads),
                 texture_filter,
+                backend,
                 ..Default::default()
             };
             crate::apply_render_limits(context.force_limits, &mut options);
@@ -530,6 +546,7 @@ fn process(
             "triangles": statistics.triangles,
             "culledBackfaces": statistics.culled_backfaces,
             "textures": snapshot.as_ref().map(|value| value.textures().len()).unwrap_or(0),
+            "backendUsed": statistics.backend_used.as_str(),
         },
     }))
 }

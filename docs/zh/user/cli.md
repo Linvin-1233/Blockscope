@@ -87,6 +87,11 @@ blockscope preview model.litematic -t
 
 `inspect`、`validate` 和 `stats` 默认保留 `TileEntities` 内容；几何命令默认跳过，以减少大容器文件的解析时间和内存。
 
+GPU 后端需要完整 Mesh，不能与 `--stream-mesh on` 同用。若二进制未启用 `gpu`
+特性或没有可用硬件适配器，显式 `gpu` 会以 `BACKEND_UNAVAILABLE` 失败；`auto`
+则回退到 CPU。GPU 输出与 CPU 参考视觉接近，但跨驱动不保证逐字节一致，因此
+golden PNG 和确定性保证仍以 `cpu` 为准。
+
 ## 终端样式与进度
 
 在没有参数时，`blockscope` 打印静态欢迎屏并立即退出。字标会按启动时的终端宽度和高度选择布局；输出被重定向时使用紧凑字标。静态输出退出后由终端负责重排，程序无法继续控制已经打印的字符。

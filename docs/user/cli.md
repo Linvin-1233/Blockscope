@@ -87,6 +87,13 @@ Terminal images are fitted to the visible grid: when the rendered pixel size wou
 
 `inspect`, `validate`, and `stats` keep `TileEntities` by default. Geometry commands skip them by default to reduce parse time and memory for large containers.
 
+The GPU backend needs the complete mesh and cannot be combined with
+`--stream-mesh on`. If the binary was not built with `--features gpu` or no
+hardware adapter is available, an explicit `gpu` request fails with
+`BACKEND_UNAVAILABLE`; `auto` falls back to the CPU instead. GPU output is
+visually close to the CPU reference but is not byte-exact across drivers, so
+golden PNGs and determinism guarantees remain on `cpu`.
+
 ## Terminal Style and Progress
 
 Running `blockscope` without arguments prints the static welcome screen and exits immediately. The wordmark chooses its layout from the terminal width and height at print time; redirected output uses the compact mark. After the process exits, the terminal owns those characters and may reflow them on resize; the program can no longer control them.

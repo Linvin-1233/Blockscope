@@ -8,6 +8,8 @@ pub enum RenderErrorCode {
     PngEncodeFailed,
     TempStorageFailed,
     TranslucentBudgetExceeded,
+    BackendUnavailable,
+    GpuRenderFailed,
 }
 
 impl RenderErrorCode {
@@ -18,6 +20,8 @@ impl RenderErrorCode {
             Self::PngEncodeFailed => "PNG_ENCODE_FAILED",
             Self::TempStorageFailed => "TEMP_STORAGE_FAILED",
             Self::TranslucentBudgetExceeded => "TRANSLUCENT_BUDGET_EXCEEDED",
+            Self::BackendUnavailable => "BACKEND_UNAVAILABLE",
+            Self::GpuRenderFailed => "GPU_RENDER_FAILED",
         }
     }
 }
@@ -54,6 +58,14 @@ impl RenderError {
 
     pub fn translucent_budget(message: impl Into<String>) -> Self {
         Self::new(RenderErrorCode::TranslucentBudgetExceeded, message)
+    }
+
+    pub fn unavailable(message: impl Into<String>) -> Self {
+        Self::new(RenderErrorCode::BackendUnavailable, message)
+    }
+
+    pub fn gpu(message: impl Into<String>) -> Self {
+        Self::new(RenderErrorCode::GpuRenderFailed, message)
     }
 }
 

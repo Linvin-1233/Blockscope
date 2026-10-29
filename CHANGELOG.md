@@ -11,6 +11,13 @@
 
 ### 新增
 
+- 新增可选的离屏 GPU 光栅化后端（`wgpu`，Metal/Vulkan/D3D12）：以
+  `--features gpu` 构建后可用 `--backend cpu|gpu|auto` 选择，服务协议新增
+  `backend` 字段和 `hello.backends`，统计结果报告实际使用的后端。GPU 后端复用
+  进程级 device/pipeline，支持纹理图集、剪裁、半透明和超采样；默认仍为 CPU，
+  逐字节一致的 golden 和确定性保证不变。
+- `bench` 和合成 `tile_bench` 示例支持 `--backend gpu`，用于对比 CPU 与 GPU
+  的栅格化耗时。
 - 新增 Cloudflare Workers 适配器（`blockscope-worker`），支持可配置 HTTP 端点和
   CORS，直接从 `.litematic` 请求体渲染 PNG，并可从 Workers 静态资源加载资源包。
   请求先校验并解析，再读取资源包；请求体按 8 MiB 上限流式读取；解析后的材质集
