@@ -87,28 +87,28 @@ Scene block state
 
 ## Task Index
 
-| ID | Task | Depends on | Size |
-|---|---|---|---|
-| M1 | Asset sources and JSON structs | Phase 3B | M |
-| M2 | Blockstate and model resolver | M1 | L |
-| M3 | Texture loader and tint | M2 | M |
-| M4 | Mesh/render texture integration | M3 | L |
-| M5 | Fallback and chest model | M4 | M |
-| M6 | CLI and materials report | M5 | M |
-| M7 | Golden tests and real-jar validation | M6 | M |
-| M8 | Documentation and final checks | M7 | S |
+| ID  | Task                                 | Depends on | Size |
+| --- | ------------------------------------ | ---------- | ---- |
+| M1  | Asset sources and JSON structs       | Phase 3B   | M    |
+| M2  | Blockstate and model resolver        | M1         | L    |
+| M3  | Texture loader and tint              | M2         | M    |
+| M4  | Mesh/render texture integration      | M3         | L    |
+| M5  | Fallback and chest model             | M4         | M    |
+| M6  | CLI and materials report             | M5         | M    |
+| M7  | Golden tests and real-jar validation | M6         | M    |
+| M8  | Documentation and final checks       | M7         | S    |
 
 ## Risks
 
-| Risk | Impact | Mitigation |
-|---|---|---|
+| Risk                                       | Impact                       | Mitigation                                                     |
+| ------------------------------------------ | ---------------------------- | -------------------------------------------------------------- |
 | UV/normal orientation differs from vanilla | Textures rotated or mirrored | Synthetic quadrant texture, golden tests, real-jar visual pass |
-| Model parser rejects valid packs | Missing geometry | Tolerant parser, fallback, `materials` diagnostics |
-| Empty block-entity models | Invisible chests | Dedicated chest model and fallback |
-| Texture memory/zip bombs | OOM | Per-image and total limits, zip path checks |
-| Large model count slows mesh build | Latency | Lazy per-state cache, parse only used blocks |
-| Cross-platform trig differences | Golden drift | Golden only uses 0/90 rotations; real assets not byte-golden |
-| Resource pack overlay misses textures | Patchy output | Base jar fallback, then name mapping/color |
+| Model parser rejects valid packs           | Missing geometry             | Tolerant parser, fallback, `materials` diagnostics             |
+| Empty block-entity models                  | Invisible chests             | Dedicated chest model and fallback                             |
+| Texture memory/zip bombs                   | OOM                          | Per-image and total limits, zip path checks                    |
+| Large model count slows mesh build         | Latency                      | Lazy per-state cache, parse only used blocks                   |
+| Cross-platform trig differences            | Golden drift                 | Golden only uses 0/90 rotations; real assets not byte-golden   |
+| Resource pack overlay misses textures      | Patchy output                | Base jar fallback, then name mapping/color                     |
 
 ## Checkpoints
 

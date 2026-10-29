@@ -2,8 +2,7 @@
 title: "Docker"
 ---
 
-The image contains only `blockscope`; it does not include Minecraft assets. Mount
-the client jar, resource packs, and job directory at runtime.
+The image contains only `blockscope`; it does not include Minecraft assets. Mount the client jar, resource packs, and job directory at runtime.
 
 ## Build
 
@@ -27,8 +26,7 @@ docker run --rm -i \
   blockscope serve --client-jar /assets/client.jar
 ```
 
-The container working directory is `/data`. Input paths and `outputDir` must be
-absolute paths visible inside the container.
+The container working directory is `/data`. Input paths and `outputDir` must be absolute paths visible inside the container.
 
 ## Run a Supervisor
 
@@ -51,9 +49,7 @@ printf '%s\n' '{"type":"shutdown"}' |
 
 ## Sizing
 
-`capacity` reads cgroup CPU/memory limits and suggests worker, thread, and
-default-resolution settings. On a 1 CPU / 1 GiB host, prefer one worker, one
-thread, and a smaller resolution; increase concurrency only on larger hosts.
+`capacity` reads cgroup CPU/memory limits and suggests worker, thread, and default-resolution settings. On a 1 CPU / 1 GiB host, prefer one worker, one thread, and a smaller resolution; increase concurrency only on larger hosts.
 
 See [Deployment](/deployment) for the full deployment guide.
 

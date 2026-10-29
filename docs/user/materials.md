@@ -4,9 +4,7 @@ title: "Materials and Resource Packs"
 
 ## Built-in Colors
 
-Without a resource pack, the engine uses its built-in color catalog. This is
-useful for quick previews, CI, and golden tests, but it does not reproduce real
-textures.
+Without a resource pack, the engine uses its built-in color catalog. This is useful for quick previews, CI, and golden tests, but it does not reproduce real textures.
 
 ```bash
 blockscope render model.litematic --output out.png
@@ -18,9 +16,7 @@ blockscope render model.litematic --output out.png
 blockscope render model.litematic --output out.png --client-jar client.jar
 ```
 
-The jar may contain `assets/minecraft/blockstates`, `models`, and `textures`.
-The engine reads the jar directly and does not extract it into the working
-directory.
+The jar may contain `assets/minecraft/blockstates`, `models`, and `textures`. The engine reads the jar directly and does not extract it into the working directory.
 
 ## Extracted Assets
 
@@ -28,8 +24,7 @@ directory.
 blockscope render model.litematic --output out.png --assets ./assets
 ```
 
-`--assets` points to a directory containing `assets/minecraft/...` (or a
-directory whose root maps to the Minecraft asset tree).
+`--assets` points to a directory containing `assets/minecraft/...` (or a directory whose root maps to the Minecraft asset tree).
 
 ## Resource-Pack Overlays
 
@@ -39,8 +34,7 @@ blockscope render model.litematic --output out.png \
   --resource-pack ./packs/my-pack
 ```
 
-`--resource-pack` may be a directory, zip, or jar. Matching blockstates,
-models, and textures in the overlay replace the base.
+`--resource-pack` may be a directory, zip, or jar. Matching blockstates, models, and textures in the overlay replace the base.
 
 ## Fallback Behavior
 
@@ -57,14 +51,11 @@ Use `materials --json` to inspect coverage:
 blockscope materials model.litematic --client-jar client.jar --json
 ```
 
-Non-JSON `render` output also prints material diagnostics. See
-[Resource-pack materials](/textures) for the full contract.
+Non-JSON `render` output also prints material diagnostics. See [Resource-pack materials](/textures) for the full contract.
 
 ## Asset Policy
 
-Resource packs, client jars, and private `.litematic` files must be supplied by
-the deployer. The repository does not commit `.jar` files, `resourcepacks/`,
-Minecraft textures, or user uploads.
+Resource packs, client jars, and private `.litematic` files must be supplied by the deployer. The repository does not commit `.jar` files, `resourcepacks/`, Minecraft textures, or user uploads.
 
 ## See Also
 

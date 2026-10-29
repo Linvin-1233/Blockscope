@@ -102,18 +102,18 @@ changing the mesh container.
 
 ## Task Index
 
-| ID | Task | Depends on | Size |
-|---|---|---|---|
-| P2-1 | Mesh types and error/limits | None | M |
-| P2-2 | Color palette and catalog | P2-1 | M |
-| P2-3 | Scene block view | P2-1 | M |
-| P2-4 | Full-cube mesh builder | P2-2, P2-3 | M |
-| P2-5 | OBJ/PLY exporters | P2-4 | S |
-| P2-6 | `blockscope mesh` CLI | P2-4, P2-5 | M |
-| P2-7 | Phase 2A tests and docs | P2-4, P2-6 | M |
-| P2-8 | Box shapes + voxel mesher | P2-4 | L |
-| P2-9 | Shape families and properties | P2-8 | L |
-| P2-10 | Fluids and static block entities | P2-9 | L |
+| ID    | Task                             | Depends on | Size |
+| ----- | -------------------------------- | ---------- | ---- |
+| P2-1  | Mesh types and error/limits      | None       | M    |
+| P2-2  | Color palette and catalog        | P2-1       | M    |
+| P2-3  | Scene block view                 | P2-1       | M    |
+| P2-4  | Full-cube mesh builder           | P2-2, P2-3 | M    |
+| P2-5  | OBJ/PLY exporters                | P2-4       | S    |
+| P2-6  | `blockscope mesh` CLI            | P2-4, P2-5 | M    |
+| P2-7  | Phase 2A tests and docs          | P2-4, P2-6 | M    |
+| P2-8  | Box shapes + voxel mesher        | P2-4       | L    |
+| P2-9  | Shape families and properties    | P2-8       | L    |
+| P2-10 | Fluids and static block entities | P2-9       | L    |
 
 Detailed acceptance criteria live in `tasks/phase-2-todo.md`.
 
@@ -142,14 +142,14 @@ Detailed acceptance criteria live in `tasks/phase-2-todo.md`.
 
 ## Risks and Mitigations
 
-| Risk | Impact | Mitigation |
-|---|---|---|
-| Large scenes exceed mesh memory | OOM | Page limits, quad/vertex limits, sparse page map |
-| Overlap order differs from renderer | Wrong geometry | Single `SceneBlockView` used by builder and culling |
-| Translucent culling looks wrong | Visual artifacts | Explicit same-state + opaque rules; golden cases |
-| Color table looks arbitrary | Product mismatch | Family heuristics + documented fallback; user can tune later |
-| Partial shapes balloon scope | Delay | Split 2A/2B/2C; 2A ships full cubes first |
-| f32 precision at world scale | Geometry cracks | Page-local f32 positions; page origin in i32 |
+| Risk                                | Impact           | Mitigation                                                   |
+| ----------------------------------- | ---------------- | ------------------------------------------------------------ |
+| Large scenes exceed mesh memory     | OOM              | Page limits, quad/vertex limits, sparse page map             |
+| Overlap order differs from renderer | Wrong geometry   | Single `SceneBlockView` used by builder and culling          |
+| Translucent culling looks wrong     | Visual artifacts | Explicit same-state + opaque rules; golden cases             |
+| Color table looks arbitrary         | Product mismatch | Family heuristics + documented fallback; user can tune later |
+| Partial shapes balloon scope        | Delay            | Split 2A/2B/2C; 2A ships full cubes first                    |
+| f32 precision at world scale        | Geometry cracks  | Page-local f32 positions; page origin in i32                 |
 
 ## Open Questions
 

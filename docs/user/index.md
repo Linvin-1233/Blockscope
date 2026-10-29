@@ -2,11 +2,9 @@
 title: "User Documentation"
 ---
 
-Welcome to the Blockscope User Guide. Blockscope is an offline, standalone Minecraft
-schematic inspection and rendering engine written in Rust.
+Welcome to the Blockscope User Guide. Blockscope is an offline, standalone Minecraft schematic inspection and rendering engine written in Rust.
 
-This guide covers everything needed to install, configure, operate, and troubleshoot
-Blockscope across desktop and server environments.
+This guide covers everything needed to install, configure, operate, and troubleshoot Blockscope across desktop and server environments.
 
 ## Guide Overview
 

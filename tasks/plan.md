@@ -119,20 +119,20 @@ diagnosis.
 
 ## Task Index
 
-| ID | Task | Depends on | Size |
-|---|---|---|---|
-| T1 | Project housekeeping | None | S |
-| T2 | Rust workspace and quality gates | T1 | M |
-| T3 | NBT types, limits, and errors | T2 | S |
-| T4 | NBT decoder and tests | T3 | M |
-| T5 | Litematic container, metadata, regions | T4 | M |
-| T6 | Palette and packed block states | T5 | M |
-| T7 | Block entities and diagnostics | T5 | M |
-| T8 | Scene IR and statistics | T6, T7 | M |
-| T9 | Hashes and manifest JSON | T8 | S |
-| T10 | `blockscope` CLI | T9 | M |
-| T11 | Fixtures and golden manifests | T8, T10 | M |
-| T12 | Format documentation and hardening | T10, T11 | M |
+| ID  | Task                                   | Depends on | Size |
+| --- | -------------------------------------- | ---------- | ---- |
+| T1  | Project housekeeping                   | None       | S    |
+| T2  | Rust workspace and quality gates       | T1         | M    |
+| T3  | NBT types, limits, and errors          | T2         | S    |
+| T4  | NBT decoder and tests                  | T3         | M    |
+| T5  | Litematic container, metadata, regions | T4         | M    |
+| T6  | Palette and packed block states        | T5         | M    |
+| T7  | Block entities and diagnostics         | T5         | M    |
+| T8  | Scene IR and statistics                | T6, T7     | M    |
+| T9  | Hashes and manifest JSON               | T8         | S    |
+| T10 | `blockscope` CLI                       | T9         | M    |
+| T11 | Fixtures and golden manifests          | T8, T10    | M    |
+| T12 | Format documentation and hardening     | T10, T11   | M    |
 
 Detailed acceptance criteria and verification steps live in
 `tasks/todo.md`.
@@ -167,15 +167,15 @@ Detailed acceptance criteria and verification steps live in
 
 ## Risks and Mitigations
 
-| Risk | Impact | Mitigation |
-|---|---|---|
-| Rust toolchain is installed but no default version is configured | Cannot build | Run `rustup default stable` and pin it in `rust-toolchain.toml` |
-| No real litematic samples in the repository | Parser may miss real-world edge cases | Synthetic fixtures plus user-side validation with `blockscope inspect` |
-| Litematic v1-v7 differences are undocumented | Silent misparse | Read Litematica upstream, write format notes, add boundary tests |
-| Windows/Linux path and atomic rename differences | Publish or cleanup failures | CI matrix, path tests, retry-safe atomic publish in later phases |
-| Reference repository has no license | Legal and contamination risk | Study-only policy, no code/asset copying, provenance notes |
-| Color-block default does not meet visual expectations | Product mismatch | Clearly label it as a fallback; optional resource-pack catalog later |
-| Large structures exceed memory budget | OOM | Paged storage, decode limits, two-stage admission in later phases |
+| Risk                                                             | Impact                                | Mitigation                                                             |
+| ---------------------------------------------------------------- | ------------------------------------- | ---------------------------------------------------------------------- |
+| Rust toolchain is installed but no default version is configured | Cannot build                          | Run `rustup default stable` and pin it in `rust-toolchain.toml`        |
+| No real litematic samples in the repository                      | Parser may miss real-world edge cases | Synthetic fixtures plus user-side validation with `blockscope inspect` |
+| Litematic v1-v7 differences are undocumented                     | Silent misparse                       | Read Litematica upstream, write format notes, add boundary tests       |
+| Windows/Linux path and atomic rename differences                 | Publish or cleanup failures           | CI matrix, path tests, retry-safe atomic publish in later phases       |
+| Reference repository has no license                              | Legal and contamination risk          | Study-only policy, no code/asset copying, provenance notes             |
+| Color-block default does not meet visual expectations            | Product mismatch                      | Clearly label it as a fallback; optional resource-pack catalog later   |
+| Large structures exceed memory budget                            | OOM                                   | Paged storage, decode limits, two-stage admission in later phases      |
 
 ## Open Questions
 

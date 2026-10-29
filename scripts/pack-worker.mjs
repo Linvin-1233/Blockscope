@@ -6,7 +6,16 @@
 // RESOURCE_PACK selects the local ZIP and RESOURCE_PACK_PATH selects its
 // static-asset URL inside the Worker.
 
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -57,8 +66,9 @@ for (const path of bundleFiles) {
 }
 
 const candidates = ["index.js", "shim.mjs", "worker.mjs"];
-const mainModule = candidates.find((name) => modules[name]?.type === "esm")
-  ?? Object.keys(modules).find((name) => modules[name].type === "esm");
+const mainModule =
+  candidates.find((name) => modules[name]?.type === "esm") ??
+  Object.keys(modules).find((name) => modules[name].type === "esm");
 if (!mainModule) {
   console.error("worker build has no ESM entry module");
   process.exit(1);
@@ -82,7 +92,9 @@ let packBytes = 0;
 if (existsSync(packSource) && statSync(packSource).isFile()) {
   packBytes = statSync(packSource).size;
   if (packBytes > 24 * 1024 * 1024) {
-    console.error(`resource pack is ${(packBytes / 1024 / 1024).toFixed(1)} MiB; the Worker limit is 24 MiB`);
+    console.error(
+      `resource pack is ${(packBytes / 1024 / 1024).toFixed(1)} MiB; the Worker limit is 24 MiB`,
+    );
     process.exit(1);
   }
   mkdirSync(assetsDir, { recursive: true });

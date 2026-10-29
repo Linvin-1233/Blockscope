@@ -66,4 +66,3 @@ jobs:
             out/blockscope-msi-check.msi
             out/install.log
             out/uninstall.log
-

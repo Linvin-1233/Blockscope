@@ -6,23 +6,23 @@
 
 `000001.litematic`, 211x211x211, 9.39M blocks, 211 cubed:
 
-| Metric | Value |
-|---|---|
-| Mesh wall time | 44.8 s (single-threaded, aborted at 5M quads) |
-| Peak working set | 978 MB at the abort |
-| Outcome | `MESH_LIMIT_EXCEEDED` at 5,000,000 quads |
+| Metric           | Value                                         |
+| ---------------- | --------------------------------------------- |
+| Mesh wall time   | 44.8 s (single-threaded, aborted at 5M quads) |
+| Peak working set | 978 MB at the abort                           |
+| Outcome          | `MESH_LIMIT_EXCEEDED` at 5,000,000 quads      |
 
 ### After C1 (parallel meshing, 12 threads, `--force-limits`)
 
-| Metric | Value |
-|---|---|
-| Wall time | 27.1 s |
-| Peak working set | 13,493 MB |
-| Quads | 77,578,844 |
-| Vertices | 310,315,376 |
-| Pages | 2,744 |
-| Blocks visited | 9,393,931 |
-| Unknown blocks (no palette color) | 3,268,723 |
+| Metric                            | Value       |
+| --------------------------------- | ----------- |
+| Wall time                         | 27.1 s      |
+| Peak working set                  | 13,493 MB   |
+| Quads                             | 77,578,844  |
+| Vertices                          | 310,315,376 |
+| Pages                             | 2,744       |
+| Blocks visited                    | 9,393,931   |
+| Unknown blocks (no palette color) | 3,268,723   |
 
 The fixture is pathological: its 9.4M blocks emit 77.6M quads with the
 color-only catalog, roughly 8 quads per block, so face culling barely helps. The
@@ -86,12 +86,12 @@ separately for depth sorting.
 
 Measured on `000002` at 1024x1024 and supersample 2:
 
-| Metric | Before | After |
-|---|---|---|
-| Peak working set | 19,558 MB | **13,514 MB** |
-| Wall time | 38.7 s | 32.4 s |
-| Render time | 13.5 s | 6.6 s |
-| PNG SHA-256 | `E861C6...` | `E861C6...` (identical) |
+| Metric           | Before      | After                   |
+| ---------------- | ----------- | ----------------------- |
+| Peak working set | 19,558 MB   | **13,514 MB**           |
+| Wall time        | 38.7 s      | 32.4 s                  |
+| Render time      | 13.5 s      | 6.6 s                   |
+| PNG SHA-256      | `E861C6...` | `E861C6...` (identical) |
 
 `000001` exact is estimated at roughly 29 GB (13.5 GB mesh plus 15.5 GB quad
 table), still more free memory than the 48 GB test host had available; `--lod
@@ -116,11 +116,11 @@ aggregated scene.
 
 Measured with the client jar at 1024x1024, supersample 2, 12 threads:
 
-| LOD | Triangles | Wall | Peak working set |
-|---|---|---|---|
-| 1 (exact) | 117M | 36.6 s | 18.9 GB |
-| 2 | 14.6M | 16.4 s | 9.6 GB |
-| 4 | 1.55M | 4.0 s | 683 MB |
+| LOD       | Triangles | Wall   | Peak working set |
+| --------- | --------- | ------ | ---------------- |
+| 1 (exact) | 117M      | 36.6 s | 18.9 GB          |
+| 2         | 14.6M     | 16.4 s | 9.6 GB           |
+| 4         | 1.55M     | 4.0 s  | 683 MB           |
 
 With page streaming, exact `000001` now completes in 36.6 s and 18.9 GB, within
 the 10 minute budget on a 48 GB host. LOD remains necessary for smaller hosts.
@@ -189,13 +189,13 @@ rest.
 
 ## Risks
 
-| Risk | Impact | Mitigation |
-|---|---|---|
-| Parallel mesh changes quad order | High | Page merge in key order; byte-compare goldens |
-| `BlockCatalog` not `Sync` | Medium | Snapshot both catalogs before workers start |
-| Memory per quad still too high | High | C2 before claiming huge support |
-| LOD changes visual output | Medium | Opt-in flag, documented |
-| Time budget on 1-core | High | C4 rejects early instead of swapping |
+| Risk                             | Impact | Mitigation                                    |
+| -------------------------------- | ------ | --------------------------------------------- |
+| Parallel mesh changes quad order | High   | Page merge in key order; byte-compare goldens |
+| `BlockCatalog` not `Sync`        | Medium | Snapshot both catalogs before workers start   |
+| Memory per quad still too high   | High   | C2 before claiming huge support               |
+| LOD changes visual output        | Medium | Opt-in flag, documented                       |
+| Time budget on 1-core            | High   | C4 rejects early instead of swapping          |
 
 ## Open Questions
 

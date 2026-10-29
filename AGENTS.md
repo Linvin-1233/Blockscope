@@ -55,6 +55,7 @@ All languages:
 - Full check: `pwsh ./scripts/check.ps1` (PowerShell 7+) or
   `powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/check.ps1`
   (Windows PowerShell), or `bash ./scripts/check.sh` (Linux)
+
 ## Boundaries
 
 - Do not commit Minecraft assets, resource packs, or private `.litematic`

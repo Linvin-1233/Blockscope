@@ -79,6 +79,7 @@ stop if the win is not clear.
   - Dependencies: Task 2. Size: S.
 
 ### Checkpoint: Baseline
+
 - [x] `cargo fmt --all --check`
 - [x] `cargo clippy --workspace --all-targets -- -D warnings`
 - [x] `cargo test --workspace`
@@ -91,7 +92,7 @@ stop if the win is not clear.
     `1024^3` litematic in bounded chunks, counts occupied values, and reports
     peak allocated bytes and wall time. It does not change production APIs.
   - Verify: run it against the synthetic sparse fixture and the dense
-     `000001` fixture; compare with `validate`.
+    `000001` fixture; compare with `validate`.
   - Files: `crates/litematic/examples/` or `crates/litematic/tests/`,
     `crates/litematic/Cargo.toml` (dev-dependency only if needed).
   - Dependencies: Task 1. Size: M.
@@ -106,6 +107,7 @@ stop if the win is not clear.
   - Dependencies: Task 4. Size: XS.
 
 ### Checkpoint: Spike decision
+
 - [x] Full gate passes
 - [x] Spike numbers and decision recorded
 - [ ] Next: write a new implementation plan for `sparse-litematic` before
@@ -113,14 +115,14 @@ stop if the win is not clear.
 
 ## Risks and Mitigations
 
-| Risk | Impact | Mitigation |
-|---|---|---|
-| Global allocator sees parallel test allocations | High | One test binary, serial measured window behind a mutex |
-| Fixture generation dominates the measured peak | High | Compress before the window; stream zero words |
-| Absolute budgets vary by allocator/platform | Medium | Assert ratios where possible; use generous absolute tripwires |
-| Streamed render test is slow or host-dependent | Medium | Keep it diagnostic/ignored; do not gate default CI |
-| Sparse spike becomes a rewrite | High | Standalone probe only; stop at Task 5 unless the win is clear |
-| Existing plans are overwritten | High | New plan file; append new todo section only |
+| Risk                                            | Impact | Mitigation                                                    |
+| ----------------------------------------------- | ------ | ------------------------------------------------------------- |
+| Global allocator sees parallel test allocations | High   | One test binary, serial measured window behind a mutex        |
+| Fixture generation dominates the measured peak  | High   | Compress before the window; stream zero words                 |
+| Absolute budgets vary by allocator/platform     | Medium | Assert ratios where possible; use generous absolute tripwires |
+| Streamed render test is slow or host-dependent  | Medium | Keep it diagnostic/ignored; do not gate default CI            |
+| Sparse spike becomes a rewrite                  | High   | Standalone probe only; stop at Task 5 unless the win is clear |
+| Existing plans are overwritten                  | High   | New plan file; append new todo section only                   |
 
 ## Open Questions
 

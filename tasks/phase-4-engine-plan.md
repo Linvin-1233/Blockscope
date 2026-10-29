@@ -60,11 +60,11 @@ is needed later.
 
 Measured before the chest/piston changes on the 41k-block fixture, release build:
 
-| Case | Total | Render | Mesh | Material load | PNG |
-|---|---|---|---|---|---|
-| 1024x1024, ss2 | ~380 ms | 204 ms | 146 ms | ~185 ms | 5 ms |
-| 2048x2048, ss2 | ~1.49 s | 1100 ms | 157 ms | ~185 ms | 23 ms |
-| 4096x4096, ss1 | ~1.51 s | 1053 ms | 157 ms | ~185 ms | 83 ms |
+| Case           | Total   | Render  | Mesh   | Material load | PNG   |
+| -------------- | ------- | ------- | ------ | ------------- | ----- |
+| 1024x1024, ss2 | ~380 ms | 204 ms  | 146 ms | ~185 ms       | 5 ms  |
+| 2048x2048, ss2 | ~1.49 s | 1100 ms | 157 ms | ~185 ms       | 23 ms |
+| 4096x4096, ss1 | ~1.51 s | 1053 ms | 157 ms | ~185 ms       | 83 ms |
 
 `crates/render/src/camera.rs` and `options.rs` changed in the chest/piston work,
 so these numbers must be re-measured before they are used as a regression gate.
@@ -106,12 +106,12 @@ so these numbers must be re-measured before they are used as a regression gate.
 
 Shared snapshot, release build, 41k-block fixture, 1024x1024 at supersample 2:
 
-| Run | Mesh (snapshot + build) | Render median | Triangles |
-|---|---|---|---|
-| Baseline (live set) | 146 ms | 204 ms | 332,710 |
-| Snapshot run 1 | 151.7 ms | 207.5 ms | 359,110 |
-| Snapshot run 2 | 148.5 ms | 207.2 ms | 359,110 |
-| Snapshot run 3 | 145.9 ms | 237.0 ms | 359,110 |
+| Run                 | Mesh (snapshot + build) | Render median | Triangles |
+| ------------------- | ----------------------- | ------------- | --------- |
+| Baseline (live set) | 146 ms                  | 204 ms        | 332,710   |
+| Snapshot run 1      | 151.7 ms                | 207.5 ms      | 359,110   |
+| Snapshot run 2      | 148.5 ms                | 207.2 ms      | 359,110   |
+| Snapshot run 3      | 145.9 ms                | 237.0 ms      | 359,110   |
 
 Triangle count grew 8 percent because of the chest and piston models. Mesh cost
 per quad is unchanged, and render time stays inside run-to-run noise. A
@@ -122,10 +122,10 @@ after the pipeline switch (SHA256 `9CAFA199...`).
 
 Two jobs in one worker with the real fixture, 1024x1024 at supersample 2:
 
-| Job | Total | Parse | Mesh | Render | PNG |
-|---|---|---|---|---|---|
+| Job     | Total  | Parse | Mesh   | Render | PNG   |
+| ------- | ------ | ----- | ------ | ------ | ----- |
 | `two-1` | 412 ms | 22 ms | 147 ms | 222 ms | 14 ms |
-| `two-2` | 394 ms | 22 ms | 131 ms | 226 ms | 6 ms |
+| `two-2` | 394 ms | 22 ms | 131 ms | 226 ms | 6 ms  |
 
 No material reload between jobs. `blockscope capacity --json` on this host reports
 12 cores, 4 suggested workers, 3 threads, and a 2048 supersample-2 default tier.
@@ -136,10 +136,18 @@ WSL2 Ubuntu 24.04, release build, inside a systemd scope with
 `MemoryMax=1G` and `CPUQuota=100%`:
 
 ```json
-{"platform":"linux","cores":1,"cpuQuotaMilli":1000,
- "memoryLimitBytes":1073741824,"memoryAvailableBytes":1073233920,
- "suggestedWorkers":1,"suggestedThreads":1,
- "defaultWidth":1024,"defaultHeight":1024,"defaultSupersample":1}
+{
+  "platform": "linux",
+  "cores": 1,
+  "cpuQuotaMilli": 1000,
+  "memoryLimitBytes": 1073741824,
+  "memoryAvailableBytes": 1073233920,
+  "suggestedWorkers": 1,
+  "suggestedThreads": 1,
+  "defaultWidth": 1024,
+  "defaultHeight": 1024,
+  "defaultSupersample": 1
+}
 ```
 
 The cgroup v2 limit and CPU quota are picked up without configuration, and the
@@ -149,22 +157,22 @@ pool collapses to one worker on one thread as intended.
 
 Two workers, three threads each, real fixture, 1024x1024 at supersample 2:
 
-| Run | Wall | Per job | Cache |
-|---|---|---|---|
-| Two concurrent jobs | 1.15 s | 652 ms each | miss |
-| Sequential repeat | - | skips parse and mesh | hit (`cacheHit: true`) |
+| Run                 | Wall   | Per job              | Cache                  |
+| ------------------- | ------ | -------------------- | ---------------------- |
+| Two concurrent jobs | 1.15 s | 652 ms each          | miss                   |
+| Sequential repeat   | -      | skips parse and mesh | hit (`cacheHit: true`) |
 
 ## Risks and Mitigations
 
-| Risk | Impact | Mitigation |
-|---|---|---|
-| Uncommitted chest/piston work mixed with refactor | High | Commit the verified baseline before task M1 |
-| Lock inside the resolve hot path | High | Snapshot; perf check in M5 is a hard gate |
-| Golden PNG drift | High | Byte-compare `fixtures/golden/render/` after every task |
-| Oversubscribed threads across processes | Medium | Enforce `processes x threads <= cores` in config validation |
-| Memory growth per process | Medium | Bounded LRU, explicit `max_cached_meshes`, measure RSS |
-| Windows/Linux process differences | Medium | Long-lived pool, no spawn-per-job; confirm deploy target |
-| Worker crash loses a job | Medium | Supervisor retries once, then reports a failure |
+| Risk                                              | Impact | Mitigation                                                  |
+| ------------------------------------------------- | ------ | ----------------------------------------------------------- |
+| Uncommitted chest/piston work mixed with refactor | High   | Commit the verified baseline before task M1                 |
+| Lock inside the resolve hot path                  | High   | Snapshot; perf check in M5 is a hard gate                   |
+| Golden PNG drift                                  | High   | Byte-compare `fixtures/golden/render/` after every task     |
+| Oversubscribed threads across processes           | Medium | Enforce `processes x threads <= cores` in config validation |
+| Memory growth per process                         | Medium | Bounded LRU, explicit `max_cached_meshes`, measure RSS      |
+| Windows/Linux process differences                 | Medium | Long-lived pool, no spawn-per-job; confirm deploy target    |
+| Worker crash loses a job                          | Medium | Supervisor retries once, then reports a failure             |
 
 ## Open Questions
 

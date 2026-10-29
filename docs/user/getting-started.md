@@ -6,32 +6,24 @@ title: "Installation and Quick Start"
 
 - Windows x86_64, Linux x86_64 / aarch64, or macOS aarch64 / x86_64
 - No Rust toolchain is needed when using prebuilt binaries
-- Rust stable (edition 2024; Rust 1.85 or newer recommended) when building from
-  source
-- Optional: a Minecraft client jar, an extracted `assets/` directory, or a
-  resource pack
+- Rust stable (edition 2024; Rust 1.85 or newer recommended) when building from source
+- Optional: a Minecraft client jar, an extracted `assets/` directory, or a resource pack
 - Optional: Docker
-- At least 1 GiB of memory is recommended for a regular 1024x1024 preview.
-  Supersampling, larger images, or huge structures need more.
+- At least 1 GiB of memory is recommended for a regular 1024x1024 preview. Supersampling, larger images, or huge structures need more.
 
 ## Download prebuilt binaries (recommended)
 
-Download the installer or archive for your platform from
-[Releases](https://github.com/Linvin-1233/Blockscope/releases):
+Download the installer or archive for your platform from [Releases](https://github.com/Linvin-1233/Blockscope/releases):
 
-| Platform | Target triple | Format |
-| --- | --- | --- |
-| Linux x86_64 | `x86_64-unknown-linux-musl` | `.tar.gz` |
-| Linux aarch64 | `aarch64-unknown-linux-musl` | `.tar.gz` |
-| Windows x86_64 | `x86_64-pc-windows-msvc` | `.msi` / `.zip` |
-| macOS aarch64 | `aarch64-apple-darwin` | `.tar.gz` |
-| macOS x86_64 | `x86_64-apple-darwin` | `.tar.gz` |
+| Platform       | Target triple                | Format          |
+| -------------- | ---------------------------- | --------------- |
+| Linux x86_64   | `x86_64-unknown-linux-musl`  | `.tar.gz`       |
+| Linux aarch64  | `aarch64-unknown-linux-musl` | `.tar.gz`       |
+| Windows x86_64 | `x86_64-pc-windows-msvc`     | `.msi` / `.zip` |
+| macOS aarch64  | `aarch64-apple-darwin`       | `.tar.gz`       |
+| macOS x86_64   | `x86_64-apple-darwin`        | `.tar.gz`       |
 
-Names look like `blockscope-v0.4.1-x86_64-unknown-linux-musl.tar.gz`, and each
-file has a `.sha256` next to it with the extension removed
-(`blockscope-v0.4.1-x86_64-unknown-linux-musl.sha256`). Linux artifacts are
-linked statically against musl and the Windows artifact uses the static CRT, so
-the target machine needs no extra runtime libraries.
+Names look like `blockscope-v0.4.1-x86_64-unknown-linux-musl.tar.gz`, and each file has a `.sha256` next to it with the extension removed (`blockscope-v0.4.1-x86_64-unknown-linux-musl.sha256`). Linux artifacts are linked statically against musl and the Windows artifact uses the static CRT, so the target machine needs no extra runtime libraries.
 
 ### Linux
 
@@ -69,10 +61,7 @@ Get-Content "$name.msi.sha256"
 msiexec /i "$name.msi"
 ```
 
-It installs to `%LOCALAPPDATA%\Programs\Blockscope` and appends that directory to
-the current user's `PATH`; open a new terminal and `blockscope --version` works.
-Uninstall from Settings > Apps, which also removes the `PATH` entry. Use
-`msiexec /i "$name.msi" /qn` for a silent install.
+It installs to `%LOCALAPPDATA%\Programs\Blockscope` and appends that directory to the current user's `PATH`; open a new terminal and `blockscope --version` works. Uninstall from Settings > Apps, which also removes the `PATH` entry. Use `msiexec /i "$name.msi" /qn` for a silent install.
 
 ### Windows: portable zip
 
@@ -89,9 +78,7 @@ Expand-Archive "$name.zip" -DestinationPath .
 .\$name\blockscope.exe --version
 ```
 
-The hash printed by `Get-FileHash` must match the one in the `.sha256` file. Add
-the extracted directory to `PATH`; the examples below use `blockscope` for that
-executable.
+The hash printed by `Get-FileHash` must match the one in the `.sha256` file. Add the extracted directory to `PATH`; the examples below use `blockscope` for that executable.
 
 ## Build from source
 

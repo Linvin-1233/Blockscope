@@ -2,8 +2,7 @@
 title: "Docker"
 ---
 
-镜像只包含 `blockscope`，不包含任何 Minecraft 资产。客户端 jar、资源包和 job
-目录通过挂载提供。
+镜像只包含 `blockscope`，不包含任何 Minecraft 资产。客户端 jar、资源包和 job 目录通过挂载提供。
 
 ## 构建
 
@@ -50,8 +49,7 @@ printf '%s\n' '{"type":"shutdown"}' |
 
 ## 资源建议
 
-`capacity` 会根据 cgroup 的 CPU/内存限制给出 worker、thread 和默认分辨率建议。
-1 CPU / 1 GiB 环境建议使用单 worker、单线程和较低分辨率；更大机器再提高并发。
+`capacity` 会根据 cgroup 的 CPU/内存限制给出 worker、thread 和默认分辨率建议。 1 CPU / 1 GiB 环境建议使用单 worker、单线程和较低分辨率；更大机器再提高并发。
 
 完整部署说明见 [部署文档](/deployment)。
 

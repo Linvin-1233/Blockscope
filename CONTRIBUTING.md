@@ -60,6 +60,7 @@ pwsh ./scripts/check.ps1
 # Windows PowerShell 5.1
 powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/check.ps1
 ```
+
 `check.ps1` 在 Windows 上还会用 `x86_64-unknown-linux-gnu` 目标再跑一遍 clippy，
 用来捕获只在 Linux 编译的代码；首次运行会自动安装该 target，需要联网。
 
@@ -70,16 +71,16 @@ CI 的 test matrix 会在 Ubuntu、Windows 和 macOS 上运行同样的检查；
 
 ## 仓库结构
 
-| 目录 | 职责 |
-|---|---|
-| `crates/nbt` | NBT 解码、压缩检测、解码限制和错误码 |
+| 目录               | 职责                                                  |
+| ------------------ | ----------------------------------------------------- |
+| `crates/nbt`       | NBT 解码、压缩检测、解码限制和错误码                  |
 | `crates/litematic` | `.litematic` 容器、region、palette、block entity 解析 |
-| `crates/scene` | Scene IR、统计、诊断、manifest、hash、LOD |
-| `crates/material` | blockstate/model、资源包、纹理、tint、chest |
-| `crates/mesh` | 色块/资源包网格、面剔除、AO、OBJ/PLY 导出 |
-| `crates/render` | CPU 光栅化、tile、超采样、PNG |
-| `crates/cli` | `blockscope` 命令、serve、supervise、容量检测 |
-| `crates/*/tests` | 集成测试、黄金测试和真实文件测试 |
+| `crates/scene`     | Scene IR、统计、诊断、manifest、hash、LOD             |
+| `crates/material`  | blockstate/model、资源包、纹理、tint、chest           |
+| `crates/mesh`      | 色块/资源包网格、面剔除、AO、OBJ/PLY 导出             |
+| `crates/render`    | CPU 光栅化、tile、超采样、PNG                         |
+| `crates/cli`       | `blockscope` 命令、serve、supervise、容量检测         |
+| `crates/*/tests`   | 集成测试、黄金测试和真实文件测试                      |
 
 依赖方向应保持单向：底层数据 crate 不依赖 CLI，渲染 crate 不依赖 CLI。
 公共协议和错误码要版本化；不要把内部缓冲、临时文件或解析器内部结构直接塞进
