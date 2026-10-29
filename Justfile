@@ -250,7 +250,7 @@ bump level="patch":
     # once, so a number missed by an earlier bump fails here instead of
     # shipping stale. The download examples in docs/user/getting-started*.md
     # name the last published release on purpose and are not bumped.
-    docs=(README.md README.en.md docs/user/features.md docs/user/en/features.md)
+    docs=(README.md README.en.md docs/user/features.md docs/zh/user/features.md)
     for doc in "${docs[@]}"; do
       found=$(grep -c -F "$current" "$doc" || true)
       if [[ "$found" != "1" ]]; then

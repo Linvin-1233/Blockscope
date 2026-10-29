@@ -21,12 +21,12 @@ regresses.
 
 Baseline measured on 2026-10-28 with the current release binary:
 
-| Case | Peak working set |
-|---|---|
-| `validate 000001` (parse + scene) | 108 MB |
-| `validate 000002` (parse + scene) | 132 MB |
-| `render 000001 --stream-mesh --force-limits` | 407 MB |
-| `bench 000001 --force-limits` (full mesh, color-only) | 6.8 GB |
+| Case                                                  | Peak working set |
+| ----------------------------------------------------- | ---------------- |
+| `validate 000001` (parse + scene)                     | 108 MB           |
+| `validate 000002` (parse + scene)                     | 132 MB           |
+| `render 000001 --stream-mesh --force-limits`          | 407 MB           |
+| `bench 000001 --force-limits` (full mesh, color-only) | 6.8 GB           |
 
 The full-mesh figure is not a default CI target. The useful guards are parse +
 scene and the streamed render path; both are already low enough that a sparse
@@ -66,8 +66,7 @@ one binary so the meter only observes its own process.
 
 ## Code Style
 
-- Rust: `rustfmt`, 4 spaces, snake_case functions, PascalCase types, max width
-  100.
+- Rust: `rustfmt`, 4 spaces, snake_case functions, PascalCase types, max width 100.
 - Comments explain intent, not mechanics.
 - Test names describe the property being guarded, for example
   `sparse_peak_does_not_scale_with_bounding_volume`.

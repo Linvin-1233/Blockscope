@@ -39,16 +39,16 @@ bounding boxes and oversized decompressed NBT.
 These numbers were measured on the current release binary before writing any
 implementation. They change the priority of this module.
 
-| Case | Peak working set |
-|---|---|
-| `validate 000001` (parse + scene, 9.39M blocks) | 108 MB |
-| `validate 000002` (parse + scene, 50.65M blocks) | 132 MB |
-| `validate 000003` (parse + scene, 67.1M blocks) | 130 MB |
-| `validate 000004` (parse + scene, 67.1M blocks) | 115 MB |
-| `render 000001 --stream-mesh --force-limits` | 407 MB |
-| `bench 000001 --force-limits` (full mesh, color-only) | 6.8 GB |
-| synthetic sparse `1024^3`, 1 block, `--force-limits` | 495 MB |
-| synthetic sparse `512^3`, 1 block | rejected: region volume 134M > 100M limit |
+| Case                                                  | Peak working set                          |
+| ----------------------------------------------------- | ----------------------------------------- |
+| `validate 000001` (parse + scene, 9.39M blocks)       | 108 MB                                    |
+| `validate 000002` (parse + scene, 50.65M blocks)      | 132 MB                                    |
+| `validate 000003` (parse + scene, 67.1M blocks)       | 130 MB                                    |
+| `validate 000004` (parse + scene, 67.1M blocks)       | 115 MB                                    |
+| `render 000001 --stream-mesh --force-limits`          | 407 MB                                    |
+| `bench 000001 --force-limits` (full mesh, color-only) | 6.8 GB                                    |
+| synthetic sparse `1024^3`, 1 block, `--force-limits`  | 495 MB                                    |
+| synthetic sparse `512^3`, 1 block                     | rejected: region volume 134M > 100M limit |
 
 The 18.9 GB figure in `docs/rendering.md` is the client-jar full-mesh path, not
 the streamed render path. `--stream-mesh` already keeps the measured real

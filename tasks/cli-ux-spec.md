@@ -53,7 +53,7 @@ Not in scope: a full-screen interactive TUI, changes to `serve` /
 8. Interactive progress widgets reflow on terminal resize: a background
    watcher checks the stderr width every 200 ms and updates active spinners or
    bars so their rendered line never exceeds the new width.
-8. Progress is measured from real work units, not elapsed-time guesses:
+9. Progress is measured from real work units, not elapsed-time guesses:
    mesh pages for meshing and rasterizer tiles for full-mesh rendering.
    Streaming rasterization has no stable per-tile denominator because tiles are
    revisited by many page chunks, so it reports page progress plus a spinner
@@ -211,17 +211,17 @@ ui::outln!("{}", ui::success("OK"));
 New `crates/cli/tests/cli_ux.rs` integration tests, using the existing
 `support::run` helper and fixtures:
 
-| Test | Assertion |
-|---|---|
+| Test                                    | Assertion                                                          |
+| --------------------------------------- | ------------------------------------------------------------------ |
 | `no_args_prints_welcome_and_exits_zero` | status success, stdout has `Blockscope`, version, `render` example |
-| `welcome_is_plain_when_piped` | no `\x1b[` in captured stdout |
-| `color_always_emits_ansi` | `--color always validate` contains `\x1b[` and `OK:` |
-| `color_never_emits_no_ansi` | `--color never validate` has no `\x1b[` |
-| `json_is_never_styled` | `--color always inspect --json` parses as JSON, no `\x1b[` |
-| `help_lists_render_options` | `render --help` lists all key flags under `Options` |
-| `help_mentions_color` | top-level `--help` contains `--color` |
-| `render_piped_has_no_progress` | successful piped render leaves stderr empty |
-| `error_prefix_is_plain_when_piped` | invalid file stderr starts with `error:` and keeps the code |
+| `welcome_is_plain_when_piped`           | no `\x1b[` in captured stdout                                      |
+| `color_always_emits_ansi`               | `--color always validate` contains `\x1b[` and `OK:`               |
+| `color_never_emits_no_ansi`             | `--color never validate` has no `\x1b[`                            |
+| `json_is_never_styled`                  | `--color always inspect --json` parses as JSON, no `\x1b[`         |
+| `help_lists_render_options`             | `render --help` lists all key flags under `Options`                |
+| `help_mentions_color`                   | top-level `--help` contains `--color`                              |
+| `render_piped_has_no_progress`          | successful piped render leaves stderr empty                        |
+| `error_prefix_is_plain_when_piped`      | invalid file stderr starts with `error:` and keeps the code        |
 
 Unit tests inside `ui` cover color resolution precedence and banner content.
 

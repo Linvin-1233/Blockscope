@@ -130,17 +130,17 @@ Resource-pack materials and models are implemented in a separate slice:
 
 ## Task Index
 
-| ID | Task | Depends on | Size |
-|---|---|---|---|
-| P3-1 | AO vertex attribute | Phase 2 | M |
-| P3-2 | Render options and lighting profiles | P3-1 | S |
-| P3-3 | Orthographic camera and fit | P3-2 | M |
-| P3-4 | Tile rasterizer and compositing | P3-3 | L |
-| P3-5 | PNG encoder and `blockscope render` CLI | P3-4 | M |
-| P3-6 | Renderer tests and documentation | P3-4, P3-5 | M |
-| P3-7 | Golden PNG and performance corpus | P3-6 | M |
-| P3-8 | Parallel tiles and triangle binning | P3-4 | M |
-| P3-9 | Supersampling and multi-view CLI | P3-5 | M |
+| ID   | Task                                    | Depends on | Size |
+| ---- | --------------------------------------- | ---------- | ---- |
+| P3-1 | AO vertex attribute                     | Phase 2    | M    |
+| P3-2 | Render options and lighting profiles    | P3-1       | S    |
+| P3-3 | Orthographic camera and fit             | P3-2       | M    |
+| P3-4 | Tile rasterizer and compositing         | P3-3       | L    |
+| P3-5 | PNG encoder and `blockscope render` CLI | P3-4       | M    |
+| P3-6 | Renderer tests and documentation        | P3-4, P3-5 | M    |
+| P3-7 | Golden PNG and performance corpus       | P3-6       | M    |
+| P3-8 | Parallel tiles and triangle binning     | P3-4       | M    |
+| P3-9 | Supersampling and multi-view CLI        | P3-5       | M    |
 
 Detailed acceptance criteria live in `tasks/phase-3-todo.md`.
 
@@ -169,15 +169,15 @@ Detailed acceptance criteria live in `tasks/phase-3-todo.md`.
 
 ## Risks and Mitigations
 
-| Risk | Impact | Mitigation |
-|---|---|---|
-| Orthographic fit clips geometry | Missing edges | Bounds padding and camera span tests |
-| Translucent sorting is approximate | Local artifacts | Far-to-near tile sorting, no depth writes |
-| AO cost on large scenes | Slow mesh build | Per-vertex boundary sampling; later cache/parallelize |
-| Fixed supersampling only | Jagged thin geometry at factor 1 | Default factor 2; SSAA up to 4 |
-| f32 color precision | Banding | Straight f32 tile buffers, u8 at final PNG |
-| Large output memory | OOM | Pixel limit, internal pixel limit, per-tile buffers |
-| Tile scheduling changes output | Non-deterministic PNGs | Per-tile buffers and index-ordered merge |
+| Risk                               | Impact                           | Mitigation                                            |
+| ---------------------------------- | -------------------------------- | ----------------------------------------------------- |
+| Orthographic fit clips geometry    | Missing edges                    | Bounds padding and camera span tests                  |
+| Translucent sorting is approximate | Local artifacts                  | Far-to-near tile sorting, no depth writes             |
+| AO cost on large scenes            | Slow mesh build                  | Per-vertex boundary sampling; later cache/parallelize |
+| Fixed supersampling only           | Jagged thin geometry at factor 1 | Default factor 2; SSAA up to 4                        |
+| f32 color precision                | Banding                          | Straight f32 tile buffers, u8 at final PNG            |
+| Large output memory                | OOM                              | Pixel limit, internal pixel limit, per-tile buffers   |
+| Tile scheduling changes output     | Non-deterministic PNGs           | Per-tile buffers and index-ordered merge              |
 
 ## Open Questions
 

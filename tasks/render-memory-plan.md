@@ -38,13 +38,13 @@ them far-to-near.
 
 Same host, 1024x1024, supersample 2, 12 threads, `--force-limits`.
 
-| Case | Before | After |
-|---|---:|---:|
+| Case                                         |  Before |       After |
+| -------------------------------------------- | ------: | ----------: |
 | `000001` + client jar, streamed, memory path | 2.28 GB | **1.52 GB** |
-| `000001` + client jar, streamed, exact spill | 2.28 GB | **618 MB** |
-| `000002` + client jar, streamed | 217 MB | **216 MB** |
-| `000002` + client jar, full mesh | 3.8 GB | 3.8 GB |
-| `000001` + client jar, full mesh | 18.9 GB | unchanged |
+| `000001` + client jar, streamed, exact spill | 2.28 GB |  **618 MB** |
+| `000002` + client jar, streamed              |  217 MB |  **216 MB** |
+| `000002` + client jar, full mesh             |  3.8 GB |      3.8 GB |
+| `000001` + client jar, full mesh             | 18.9 GB |   unchanged |
 
 Default `render` without a flag now takes the streamed path for fixed LOD. The
 `000001` client-jar PNG differs from the previous f64 build by 2 pixels out of

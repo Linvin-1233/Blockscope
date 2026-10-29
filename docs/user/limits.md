@@ -4,23 +4,23 @@ title: "Limits and Security"
 
 ## Default Limits
 
-| Item | Default |
-|---|---|
-| Input file | 64 MiB, regular files only |
-| Decompressed NBT | 256 MiB |
-| NBT depth / tags | 64 / 4,000,000 |
-| NBT string / list / array | 1 MiB / 4,000,000 / 64,000,000 |
-| Total NBT allocation budget | 512 MiB |
-| Regions | 1,024 |
-| Volume per region | 100,000,000 blocks |
-| Total region volume | 200,000,000 blocks |
-| Palette / block entities / entities / ticks | 1,000,000 per region |
-| Region coordinate range | ±30,000,000 |
-| Mesh | 5,000,000 quads / 20,000,000 vertices / 65,536 pages |
-| Render pixels | 16,777,216; 33,554,432 after supersampling; 4096 per side |
-| Views per request | At most 64 |
-| Threads | At most 256 |
-| Textures | 2048x2048, 256 MiB decoded, 8 MiB per asset |
+| Item                                        | Default                                                   |
+| ------------------------------------------- | --------------------------------------------------------- |
+| Input file                                  | 64 MiB, regular files only                                |
+| Decompressed NBT                            | 256 MiB                                                   |
+| NBT depth / tags                            | 64 / 4,000,000                                            |
+| NBT string / list / array                   | 1 MiB / 4,000,000 / 64,000,000                            |
+| Total NBT allocation budget                 | 512 MiB                                                   |
+| Regions                                     | 1,024                                                     |
+| Volume per region                           | 100,000,000 blocks                                        |
+| Total region volume                         | 200,000,000 blocks                                        |
+| Palette / block entities / entities / ticks | 1,000,000 per region                                      |
+| Region coordinate range                     | ±30,000,000                                               |
+| Mesh                                        | 5,000,000 quads / 20,000,000 vertices / 65,536 pages      |
+| Render pixels                               | 16,777,216; 33,554,432 after supersampling; 4096 per side |
+| Views per request                           | At most 64                                                |
+| Threads                                     | At most 256                                               |
+| Textures                                    | 2048x2048, 256 MiB decoded, 8 MiB per asset               |
 
 Mesh limits are further reduced by the available-memory budget.
 
@@ -33,25 +33,19 @@ Mesh limits are further reduced by the available-memory budget.
 - mesh quads, vertices, and pages
 - render pixel limits
 
-It does not disable the thread, texture, NBT-depth, NBT-tag, or 4096-pixel
-per-side limits. The option can exhaust memory; use it only with trusted input.
+It does not disable the thread, texture, NBT-depth, NBT-tag, or 4096-pixel per-side limits. The option can exhaust memory; use it only with trusted input.
 
 ## Security Boundary
 
 - `serve`/`supervise` communicate over stdio only; there is no network listener
-- Inputs must be regular files; directories, FIFOs, devices, and oversized files
-  are rejected
-- Input paths and output directories are controlled by the caller; run the
-  process as a dedicated low-privilege user
-- Do not expose the service to untrusted clients without validating paths and
-  resource packs
-- Resource packs and client jars are supplied by the deployer; the repository
-  does not distribute Minecraft assets
+- Inputs must be regular files; directories, FIFOs, devices, and oversized files are rejected
+- Input paths and output directories are controlled by the caller; run the process as a dedicated low-privilege user
+- Do not expose the service to untrusted clients without validating paths and resource packs
+- Resource packs and client jars are supplied by the deployer; the repository does not distribute Minecraft assets
 
 ## Error Codes
 
-See [Engine protocol v2](/engine-protocol) for the full error
-table and retryability. Common errors:
+See [Engine protocol v2](/engine-protocol) for the full error table and retryability. Common errors:
 
 - `INPUT_TOO_LARGE`: input or resource limit exceeded
 - `INVALID_REQUEST`: malformed request, relative path, or non-regular file

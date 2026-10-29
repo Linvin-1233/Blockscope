@@ -2,32 +2,20 @@
 title: "Features and Limitations"
 ---
 
-Blockscope is a headless Rust image-rendering engine that turns
-Minecraft `.litematic` projections into PNG images. It is designed for general
-backend services, batch tools, and automation pipelines.
+Blockscope is a headless Rust image-rendering engine that turns Minecraft `.litematic` projections into PNG images. It is designed for general backend services, batch tools, and automation pipelines.
 
-The current workspace version is `0.4.1` and supports Windows, Linux, and macOS. The
-repository contains parsing, materials, meshing, CPU rasterization, a CLI, and a
-stdio service. It does not contain a chat-platform or bot adapter.
+The current workspace version is `0.4.1` and supports Windows, Linux, and macOS. The repository contains parsing, materials, meshing, CPU rasterization, a CLI, and a stdio service. It does not contain a chat-platform or bot adapter.
 
 ## Features
 
-- Parse `.litematic` v1-v7: metadata, regions, palettes, packed block states,
-  block entities, entities, and pending ticks
-- Build a canonical Scene IR, material statistics, diagnostics, deterministic
-  manifests, and SHA-256 hashes
-- Built-in color catalog for common blocks, partial shapes, and fluids without
-  a resource pack
-- Resource packs: blockstates, models, parent chains, multipart, UVs, rotation,
-  tint, cutout/translucent layers, PNG textures, and overlays
+- Parse `.litematic` v1-v7: metadata, regions, palettes, packed block states, block entities, entities, and pending ticks
+- Build a canonical Scene IR, material statistics, diagnostics, deterministic manifests, and SHA-256 hashes
+- Built-in color catalog for common blocks, partial shapes, and fluids without a resource pack
+- Resource packs: blockstates, models, parent chains, multipart, UVs, rotation, tint, cutout/translucent layers, PNG textures, and overlays
 - Built-in chest body/lid/lock model and entity textures
 - Mesh export: OBJ and colored PLY
-- Optional `--greedy-mesh` coplanar merging for large flat or repetitive
-  surfaces
-- CPU orthographic camera, tiled rasterization, `flat-v1` / `simple-ao-v1`
-  lighting, and PNG output
-- Optional offscreen `wgpu` rasterization (`--features gpu`, `--backend gpu`
-  or `auto`); the CPU path remains the default and the byte-exact reference
+- Optional `--greedy-mesh` coplanar merging for large flat or repetitive surfaces
+- CPU orthographic camera, tiled rasterization, `flat-v1` / `simple-ao-v1` lighting, and PNG output
 - Supersampling 1-4, multi-view output, parallel tiles, and paged streaming
 - LOD with an explicit fixed `2..=16` factor; no automatic factor
 - `serve` worker and `supervise` process pool over newline-delimited JSON
@@ -36,10 +24,8 @@ stdio service. It does not contain a chat-platform or bot adapter.
 
 ## Current Limitations
 
-- No chat-platform or bot adapter; this repository provides only the renderer
-  and stdio protocol
-- No general entity models, entity animations, block-entity text/icons, banner
-  patterns, or skull skins
+- No chat-platform or bot adapter; this repository provides only the renderer and stdio protocol
+- No general entity models, entity animations, block-entity text/icons, banner patterns, or skull skins
 - Tint is a fixed plains color; biome colormaps are not read
 - No shadows, full light propagation, emissive bloom, or mipmaps
 - GPU output varies by vendor and driver, is not byte-exact, and is not part

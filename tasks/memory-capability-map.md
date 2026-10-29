@@ -6,9 +6,9 @@ This map splits the two requested experiments into independently verifiable
 modules. The second depends on the first for measurement and regression
 protection.
 
-| Module id | Responsibility | Depends on |
-|---|---|---|
-| `memory-baseline` | Allocation-peak harness, sparse/dense fixtures, budgets, and a recorded baseline for litematic parse and scene construction | — |
+| Module id          | Responsibility                                                                                                                | Depends on        |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| `memory-baseline`  | Allocation-peak harness, sparse/dense fixtures, budgets, and a recorded baseline for litematic parse and scene construction   | —                 |
 | `sparse-litematic` | Compact/sparse litematic states plus a two-pass streaming reader that avoids the dense `BlockStates` array for sparse regions | `memory-baseline` |
 
 Build order: `memory-baseline` -> `sparse-litematic`

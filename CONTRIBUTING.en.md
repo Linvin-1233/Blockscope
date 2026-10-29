@@ -73,16 +73,16 @@ a rule really needs to change, explain why in the pull request.
 
 ## Repository Layout
 
-| Path | Responsibility |
-|---|---|
-| `crates/nbt` | NBT decoding, compression detection, limits, error codes |
+| Path               | Responsibility                                                |
+| ------------------ | ------------------------------------------------------------- |
+| `crates/nbt`       | NBT decoding, compression detection, limits, error codes      |
 | `crates/litematic` | `.litematic` container, region, palette, block entity parsing |
-| `crates/scene` | Scene IR, statistics, diagnostics, manifest, hash, LOD |
-| `crates/material` | Blockstates/models, resource packs, textures, tint, chest |
-| `crates/mesh` | Color-block/pack meshes, culling, AO, OBJ/PLY export |
-| `crates/render` | CPU rasterization, tiles, supersampling, PNG |
-| `crates/cli` | `blockscope` commands, serve, supervise, capacity detection |
-| `crates/*/tests` | Integration, golden, and real-file tests |
+| `crates/scene`     | Scene IR, statistics, diagnostics, manifest, hash, LOD        |
+| `crates/material`  | Blockstates/models, resource packs, textures, tint, chest     |
+| `crates/mesh`      | Color-block/pack meshes, culling, AO, OBJ/PLY export          |
+| `crates/render`    | CPU rasterization, tiles, supersampling, PNG                  |
+| `crates/cli`       | `blockscope` commands, serve, supervise, capacity detection   |
+| `crates/*/tests`   | Integration, golden, and real-file tests                      |
 
 Dependencies should flow in one direction: data crates do not depend on the CLI,
 and the render crate does not depend on the CLI. Public protocols and error codes

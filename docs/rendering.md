@@ -1,12 +1,8 @@
 # Rendering and PNG Output
 
-Blockscope renders the mesh to an RGBA PNG with an orthographic camera. The
-default and reference path is a CPU tile rasterizer; builds can opt into an
-offscreen `wgpu` backend. No Minecraft client or window is required on either
-path.
+Phase 3 renders the Phase 2 mesh to an RGBA PNG on the CPU. It uses an orthographic camera and a tile rasterizer. No GPU or Minecraft client is required.
 
-Textures are optional: without a resource pack the renderer uses flat block
-colors; with one it samples the pack textures. See `docs/textures.md`.
+Textures are optional: without a resource pack the renderer uses flat block colors; with one it samples the pack textures. See `docs/textures.md`.
 
 ## Pipeline
 
@@ -73,9 +69,7 @@ byte-exact golden PNG suite; the CPU backend remains the reference for goldens.
 
 - Orthographic projection.
 - Default preset: `isometric_preview_v1`, yaw 45°, elevation 30°.
-- Yaw follows the reference Litematic viewer: yaw 0 looks from +Z (south),
-  yaw 45 looks from the south-west, and yaw 225 looks from the north-east.
-  The default view therefore shows the south and west faces of the structure.
+- Yaw follows the reference Litematic viewer: yaw 0 looks from +Z (south), yaw 45 looks from the south-west, and yaw 225 looks from the north-east. The default view therefore shows the south and west faces of the structure.
 - The camera looks at the center of the scene bounds.
 - The scene is fitted with padding; default padding is 16 px.
 - World positions are `MeshPage.origin + page-local vertex`.
@@ -92,11 +86,7 @@ up      = cross(right, forward)
 
 ## Mesh Inputs
 
-The mesh builder splits the scene into 16x16x16 pages and can build pages in
-parallel (`--threads`, `0` uses all cores). Pages are merged in origin order, so
-output is byte-identical to a single-threaded build. Both the asset-backed and
-color-block paths resolve states into an immutable snapshot before workers
-start, because the mutable catalogs are not `Sync`.
+The mesh builder splits the scene into 16x16x16 pages and can build pages in parallel (`--threads`, `0` uses all cores). Pages are merged in origin order, so output is byte-identical to a single-threaded build. Both the asset-backed and color-block paths resolve states into an immutable snapshot before workers start, because the mutable catalogs are not `Sync`.
 
 The rasterizer consumes the Phase 2 mesh:
 
@@ -109,42 +99,19 @@ The rasterizer consumes the Phase 2 mesh:
 
 ### Fluid and redstone surfaces
 
-Water and lava use a surface built from the neighboring fluid columns rather
-than the cached per-state box. The mesher computes four top corner heights with
-vanilla's weighted averaging, hides faces shared with the same fluid, and
-promotes a column to a full block when the same fluid sits above it. A flowing
-channel therefore becomes one continuous slope, and internal translucent faces
-no longer introduce seams. The resting heights are `8/9` for source and falling
-levels and `(8-level)/9` for levels 1-7.
+Water and lava use a surface built from the neighboring fluid columns rather than the cached per-state box. The mesher computes four top corner heights with vanilla's weighted averaging, hides faces shared with the same fluid, and promotes a column to a full block when the same fluid sits above it. A flowing channel therefore becomes one continuous slope, and internal translucent faces no longer introduce seams. The resting heights are `8/9` for source and falling levels and `(8-level)/9` for levels 1-7.
 
-Waterlogged blocks keep their own model and add the same shaped water layer.
-This covers stairs, slabs, walls, leaves, signs, coral, and the always-water
-kelp/seagrass blocks; waterlogged full opaque blocks skip the layer because it
-would be hidden. Bubble columns use the fluid surface directly.
+Waterlogged blocks keep their own model and add the same shaped water layer. This covers stairs, slabs, walls, leaves, signs, coral, and the always-water kelp/seagrass blocks; waterlogged full opaque blocks skip the layer because it would be hidden. Bubble columns use the fluid surface directly.
 
-Redstone wire resolves to a flat dust plane. Textured renders tint it through
-the pack model's `tintindex`; the built-in color catalog uses the same
-`power=0..15` gradient, so redstone remains readable without a resource pack.
-The gradient spreads the low-power steps apart so power 0 and 1 are visibly
-different.
+Redstone wire resolves to a flat dust plane. Textured renders tint it through the pack model's `tintindex`; the built-in color catalog uses the same `power=0..15` gradient, so redstone remains readable without a resource pack. The gradient spreads the low-power steps apart so power 0 and 1 are visibly different.
 
 ### Greedy merging
 
-`--greedy-mesh` runs a conservative merge pass after face culling. It only
-combines axis-aligned unit faces that share the same normal direction, plane,
-texture, color, render layer, shade flag, uniform ambient-occlusion value, and
-UV mapping. Translucent faces are never merged because their draw order matters.
+`--greedy-mesh` runs a conservative merge pass after face culling. It only combines axis-aligned unit faces that share the same normal direction, plane, texture, color, render layer, shade flag, uniform ambient-occlusion value, and UV mapping. Translucent faces are never merged because their draw order matters.
 
-Textured merges are capped at seven blocks per axis so Q12 UVs stay inside
-`i16`; untextured faces can merge across a whole 16-block page. Plane merging is
-page-local, so a flat surface is split at 16-block boundaries.
+Textured merges are capped at seven blocks per axis so Q12 UVs stay inside `i16`; untextured faces can merge across a whole 16-block page. Plane merging is page-local, so a flat surface is split at 16-block boundaries.
 
-The pass is opt-in: random-palette stress scenes see less than 1% fewer quads
-and pay extra mesh time, while large flat or repetitive builds can drop quads
-by about 28x on a full textured 16x16 page (up to 49x for a 7x7 rectangle) and
-up to 256x for untextured pages. Merged quads may change a small number of edge
-pixels because rasterization and UV rounding differ from the original
-per-block quads.
+The pass is opt-in: random-palette stress scenes see less than 1% fewer quads and pay extra mesh time, while large flat or repetitive builds can drop quads by about 28x on a full textured 16x16 page (up to 49x for a 7x7 rectangle) and up to 256x for untextured pages. Merged quads may change a small number of edge pixels because rasterization and UV rounding differ from the original per-block quads.
 
 Backface culling uses the camera forward vector:
 
@@ -152,243 +119,130 @@ Backface culling uses the camera forward vector:
 dot(quad_normal, camera_forward) >= 0 -> cull
 ```
 
-Cross-plant quads are emitted as double-sided pairs, so one side survives the
-cull.
+Cross-plant quads are emitted as double-sided pairs, so one side survives the cull.
 
 ## Rasterizer
 
-- The image is split into square tiles, at most 64x64. The target is about
-  1024 tiles, so small outputs use smaller tiles (32px at a 1024x1024 internal
-  image, 8px at 256x256); `tiles` therefore stays independent of worker count.
+- The image is split into square tiles, at most 64x64. The target is about 1024 tiles, so small outputs use smaller tiles (32px at a 1024x1024 internal image, 8px at 256x256); `tiles` therefore stays independent of worker count.
 - Each tile owns an RGBA f32 color buffer and an f64 depth buffer.
 - Triangles are rasterized with edge functions and barycentric weights.
 - Depth is interpolated linearly, which is correct for orthographic projection.
 - Opaque and cutout triangles run first and write depth.
 - Cutout fragments with alpha `< 0.5` are discarded.
-- Textured fragments sample the texture, multiply by tint, face shade, and AO,
-  then apply the same cutout/translucent rules.
-- Translucent triangles are sorted far-to-near per tile and blended without
-  writing depth.
-- Solid backgrounds are filled before rasterization; transparent backgrounds
-  start at `[0, 0, 0, 0]`.
-- Final RGBA8 conversion clamps and rounds; fully transparent pixels are written
-  as zero RGB.
+- Textured fragments sample the texture, multiply by tint, face shade, and AO, then apply the same cutout/translucent rules.
+- Translucent triangles are sorted far-to-near per tile and blended without writing depth.
+- Solid backgrounds are filled before rasterization; transparent backgrounds start at `[0, 0, 0, 0]`.
+- Final RGBA8 conversion clamps and rounds; fully transparent pixels are written as zero RGB.
 
 ### Row spans
 
-Each edge function is affine in screen x on a fixed scanline, so the rasterizer
-solves the three zero crossings to bound the row, then walks the two endpoints
-in with the exact per-pixel edge test. A row only visits the pixels inside the
-triangle instead of the whole bounding box. Barycentric weights, depth, and
-color interpolation still use the same expressions in the same order, so
-accepted fragments are bit-identical while most rejected pixels are never
-visited. `pixelsTested` counts the fragments that remain after this clipping.
+Each edge function is affine in screen x on a fixed scanline, so the rasterizer solves the three zero crossings to bound the row, then walks the two endpoints in with the exact per-pixel edge test. A row only visits the pixels inside the triangle instead of the whole bounding box. Barycentric weights, depth, and color interpolation still use the same expressions in the same order, so accepted fragments are bit-identical while most rejected pixels are never visited. `pixelsTested` counts the fragments that remain after this clipping.
 
 ### Untextured triangles
 
-The triangle loop is monomorphized on whether the quad has a texture. The
-untextured specialization drops the per-pixel texture-sample branch and UV
-interpolation entirely. On the 77.6M-quad color-only fixture, the 1024x1024
-supersample-2 render dropped from 4.1 s to 3.9 s with identical output.
+The triangle loop is monomorphized on whether the quad has a texture. The untextured specialization drops the per-pixel texture-sample branch and UV interpolation entirely. On the 77.6M-quad color-only fixture, the 1024x1024 supersample-2 render dropped from 4.1 s to 3.9 s with identical output.
 
 ### Block entity NBT
 
-The renderer never reads block entity contents, so `mesh`, `bench`, and `render`
-skip the `TileEntities` payload while decoding. `inspect`, `validate`, and
-`stats` keep it by default; pass `--ignore-block-entity-nbt` to skip it there
-too. Skipping does not allocate the payload, and if the NBT stream ends inside
-`TileEntities`, the block data parsed before it is kept and the missing block
-entities become an empty list. This makes container-heavy schematics renderable
-without decompressing gigabytes of book text.
+The renderer never reads block entity contents, so `mesh`, `bench`, and `render` skip the `TileEntities` payload while decoding. `inspect`, `validate`, and `stats` keep it by default; pass `--ignore-block-entity-nbt` to skip it there too. Skipping does not allocate the payload, and if the NBT stream ends inside `TileEntities`, the block data parsed before it is kept and the missing block entities become an empty list. This makes container-heavy schematics renderable without decompressing gigabytes of book text.
 
 ### Compact mesh attributes
 
-The mesh stores fixed-point attributes instead of full floats. Texture
-coordinates are Q12 (`i16`); the builder emits UVs on a 1/16 or 1/32 grid for the
-tested material sets, so the round trip is exact. Ambient occlusion is one of
-four levels. Quads also share their color, normal, texture, and shade, which the
-builder already emits once per quad. Reconstruction uses the same float
-expressions as before, so rendered output is bit-identical.
+The mesh stores fixed-point attributes instead of full floats. Texture coordinates are Q12 (`i16`); the builder emits UVs on a 1/16 or 1/32 grid for the tested material sets, so the round trip is exact. Ambient occlusion is one of four levels. Quads also share their color, normal, texture, and shade, which the builder already emits once per quad. Reconstruction uses the same float expressions as before, so rendered output is bit-identical.
 
-| Structure | Before | After |
-|---|---|---|
-| `Vertex` | 36 B | 16 B |
-| `Quad` | 148 B | 88 B |
-| projected quad table entry | 200 B | 128 B |
-| translucent triangle | 160 B | 112 B |
+| Structure                  | Before | After |
+| -------------------------- | ------ | ----- |
+| `Vertex`                   | 36 B   | 16 B  |
+| `Quad`                     | 148 B  | 88 B  |
+| projected quad table entry | 200 B  | 128 B |
+| translucent triangle       | 160 B  | 112 B |
 
 ### Geometry table
 
-Opaque and cutout geometry is projected once per quad and stored in a compact
-quad table (about 128 bytes per quad: four screen points, one color and shade
-pair, four AO levels, four Q12 UVs, texture id, layer). Triangles are formed
-only while a tile rasterizes a quad, so the render table is roughly half the
-size of storing two full triangles per quad. Translucent triangles are kept
-separately because they need a per-tile depth sort. Output stays byte-identical.
+Opaque and cutout geometry is projected once per quad and stored in a compact quad table (about 128 bytes per quad: four screen points, one color and shade pair, four AO levels, four Q12 UVs, texture id, layer). Triangles are formed only while a tile rasterizes a quad, so the render table is roughly half the size of storing two full triangles per quad. Translucent triangles are kept separately because they need a per-tile depth sort. Output stays byte-identical.
 
-Measured on the 370x370 fixture at 1024x1024 and supersample 2: peak memory
-dropped from 19.6 GB to 6.3 GB and render time from 13.5 s to 4.0 s; the PNG
-hash did not change.
+Measured on the 370x370 fixture at 1024x1024 and supersample 2: peak memory dropped from 19.6 GB to 6.3 GB and render time from 13.5 s to 4.0 s; the PNG hash did not change.
 
 ### Page streaming
 
-When the projected quad table would be larger than the persistent tile
-buffers, the rasterizer streams mesh pages instead. It projects a chunk of
-pages, bins them to the tiles they touch, renders those tiles into buffers that
-stay resident for the whole image, and drops the chunk. Only one chunk of
-geometry is alive at a time. Output is byte-identical to the table path.
+When the projected quad table would be larger than the persistent tile buffers, the rasterizer streams mesh pages instead. It projects a chunk of pages, bins them to the tiles they touch, renders those tiles into buffers that stay resident for the whole image, and drops the chunk. Only one chunk of geometry is alive at a time. Output is byte-identical to the table path.
 
-Chunks are sized by projected quad count rather than page count, because page
-sizes differ by orders of magnitude between meshes; a page-count cap would spawn
-a worker scope per handful of fine-grained pages. Within a chunk, scoped workers
-project contiguous page slices and bin the result; the projection workers are
-joined, then the touched tiles are rasterized in parallel. Slice and part order
-follow page order, which keeps the draw order and therefore the output
-deterministic, and a projection panic propagates instead of leaving a barrier
-waiting forever.
+Chunks are sized by projected quad count rather than page count, because page sizes differ by orders of magnitude between meshes; a page-count cap would spawn a worker scope per handful of fine-grained pages. Within a chunk, scoped workers project contiguous page slices and bin the result; the projection workers are joined, then the touched tiles are rasterized in parallel. Slice and part order follow page order, which keeps the draw order and therefore the output deterministic, and a projection panic propagates instead of leaving a barrier waiting forever.
 
-Historical full-mesh comparison, measured before the review fixes on the test
-host at 1024x1024 and supersample 2:
+Historical full-mesh comparison, measured before the review fixes on the test host at 1024x1024 and supersample 2:
 
-| Scene | Peak working set | Wall | Render |
-|---|---|---|---|
-| `000002` exact | 6.3 GB | 30.4 s | 4.0 s |
-| `000001` exact | 18.9 GB | 36.6 s | 10.1 s |
+| Scene          | Peak working set | Wall   | Render |
+| -------------- | ---------------- | ------ | ------ |
+| `000002` exact | 6.3 GB           | 30.4 s | 4.0 s  |
+| `000001` exact | 18.9 GB          | 36.6 s | 10.1 s |
 
-Both used to need the full per-quad table (13.5 GB and roughly 45 GB
-respectively). A small-scene equality test forces streaming and compares RGBA
-and statistics against the table path.
+Both used to need the full per-quad table (13.5 GB and roughly 45 GB respectively). A small-scene equality test forces streaming and compares RGBA and statistics against the table path.
 
 ### Mesh page cache
 
-Culling and ambient occlusion used to resolve the same block and its neighbours
-through the region index and the material catalog for every model quad. The
-builder now resolves a 16x16x16 page plus its one-block border once, then serves
-culling and AO from an array. Each region palette is also resolved to an
-immutable material table up front, so the inner loop indexes by palette id
-instead of hashing a block-state key and cloning a model `Arc`.
+Culling and ambient occlusion used to resolve the same block and its neighbours through the region index and the material catalog for every model quad. The builder now resolves a 16x16x16 page plus its one-block border once, then serves culling and AO from an array. Each region palette is also resolved to an immutable material table up front, so the inner loop indexes by palette id instead of hashing a block-state key and cloning a model `Arc`.
 
-The grid also caches one occlusion bit per cell and converts culling and AO
-offsets to flat index deltas, so the inner loop does not re-check page bounds or
-chase the palette table. A full-cube block whose six neighbours all occlude is
-skipped without visiting its model quads. Equal states are assigned one
-canonical id across regions, so the existing same-state culling still works
-across region and page boundaries. Region order and y/z/x block order are
-unchanged; mesh statistics and PNG output stay byte-identical for dense scenes.
+The grid also caches one occlusion bit per cell and converts culling and AO offsets to flat index deltas, so the inner loop does not re-check page bounds or chase the palette table. A full-cube block whose six neighbours all occlude is skipped without visiting its model quads. Equal states are assigned one canonical id across regions, so the existing same-state culling still works across region and page boundaries. Region order and y/z/x block order are unchanged; mesh statistics and PNG output stay byte-identical for dense scenes.
 
-Page discovery scans the packed block stream once and indexes only pages that
-contain a non-air block. Sparse structures therefore no longer scan empty pages
-or count them against `max_pages`; a scene with no air keeps the bounding-box
-fast path. `blocksVisited` now counts cells in indexed pages, so an all-air mesh
-reports zero visited blocks.
+Page discovery scans the packed block stream once and indexes only pages that contain a non-air block. Sparse structures therefore no longer scan empty pages or count them against `max_pages`; a scene with no air keeps the bounding-box fast path. `blocksVisited` now counts cells in indexed pages, so an all-air mesh reports zero visited blocks.
 
-Each worker estimates the next page's capacity from the median of the last
-eight quads-per-non-air-block ratios plus a 15% margin. Growth adds a quarter of
-the current capacity instead of doubling, and a page that still ends up far
-below its reservation is shrunk. On `000001` the mesh pass dropped from
-4.0-4.3 s to 3.1-3.2 s and the resident mesh from 10.7 GB to 7.9 GB; `000002`
-dropped from 310 MB to 261 MB while the mesh pass moved from 0.20-0.21 s to
-about 0.22 s.
+Each worker estimates the next page's capacity from the median of the last eight quads-per-non-air-block ratios plus a 15% margin. Growth adds a quarter of the current capacity instead of doubling, and a page that still ends up far below its reservation is shrunk. On `000001` the mesh pass dropped from 4.0-4.3 s to 3.1-3.2 s and the resident mesh from 10.7 GB to 7.9 GB; `000002` dropped from 310 MB to 261 MB while the mesh pass moved from 0.20-0.21 s to about 0.22 s.
 
-Measured on the test host with the color-only catalog, 1024x1024, supersample 2,
-12 threads:
+Measured on the test host with the color-only catalog, 1024x1024, supersample 2, 12 threads:
 
-| Scene | Before mesh | After mesh | Before/after render | Peak working set |
-|---|---|---|---|---|
-| `000001` exact, 77.6M quads | 17.3-20.4 s | 5.7-5.9 s | 4.6 s / 4.0 s | 7.16 GB / 7.16 GB |
-| `000002` exact, 50.7M blocks | 11.7 s | 0.24-0.25 s | 0.21 s / 0.19 s | 471 MB / 497 MB |
+| Scene                        | Before mesh | After mesh  | Before/after render | Peak working set  |
+| ---------------------------- | ----------- | ----------- | ------------------- | ----------------- |
+| `000001` exact, 77.6M quads  | 17.3-20.4 s | 5.7-5.9 s   | 4.6 s / 4.0 s       | 7.16 GB / 7.16 GB |
+| `000002` exact, 50.7M blocks | 11.7 s      | 0.24-0.25 s | 0.21 s / 0.19 s     | 471 MB / 497 MB   |
 
-The page cache costs about 53 KB per worker and does not change the mesh
-representation, so peak memory is still dominated by the resident `Mesh`. The
-PNG SHA-256 values for both exact fixtures and the `000001` LOD 4 render were
-unchanged.
+The page cache costs about 53 KB per worker and does not change the mesh representation, so peak memory is still dominated by the resident `Mesh`. The PNG SHA-256 values for both exact fixtures and the `000001` LOD 4 render were unchanged.
 
 ### Streaming mesh construction
 
-`--stream-mesh` builds 32-page chunks, renders them into the resident tile
-buffers, and drops the chunk before building the next one. The full `Mesh` is
-never materialized. The default is `auto`, which streams like `on`;
-`--stream-mesh=off` opts back into the full mesh, and `--stream-mesh` or
-`--stream-mesh=on` forces streaming. Multiple views rebuild the streamed mesh
-once per view.
+`--stream-mesh` builds 32-page chunks, renders them into the resident tile buffers, and drops the chunk before building the next one. The full `Mesh` is never materialized. The default is `auto`, which streams like `on`; `--stream-mesh=off` opts back into the full mesh, and `--stream-mesh` or `--stream-mesh=on` forces streaming. Multiple views rebuild the streamed mesh once per view.
 
-Translucent triangles stay in memory below 262,144 entries. Above that, the
-streamed renderer writes exact 76-byte records to temporary bucket files and
-processes one bucket at a time, so the tile sort still produces the same image
-without retaining every triangle. The temporary directory is deleted at the end
-of the render.
+Translucent triangles stay in memory below 262,144 entries. Above that, the streamed renderer writes exact 76-byte records to temporary bucket files and processes one bucket at a time, so the tile sort still produces the same image without retaining every triangle. The temporary directory is deleted at the end of the render.
 
-Measured end to end on the test host (parse + mesh + render + PNG, 1024x1024,
-supersample 2, 12 threads, color-only materials). Both columns were re-measured
-after the review fixes on 2026-10-28:
+Measured end to end on the test host (parse + mesh + render + PNG, 1024x1024, supersample 2, 12 threads, color-only materials). Both columns were re-measured after the review fixes on 2026-10-28:
 
-| Scene | Peak working set (full mesh / streamed) | Wall (full mesh / streamed) |
-|---|---|---|
-| `000001` exact | 7.68 GB / **433-435 MB** | 11.94 s / **11.1-11.4 s** |
-| `000002` exact | 461 MB / **182 MB** | 0.78 s / **1.39 s** |
+| Scene          | Peak working set (full mesh / streamed) | Wall (full mesh / streamed) |
+| -------------- | --------------------------------------- | --------------------------- |
+| `000001` exact | 7.68 GB / **433-435 MB**                | 11.94 s / **11.1-11.4 s**   |
+| `000002` exact | 461 MB / **182 MB**                     | 0.78 s / **1.39 s**         |
 
-The `000001` color stream was measured three times; the variation is host noise,
-not a review regression (the pre-review binary measured 11.65-11.75 s). The
-streamed and full-mesh PNG SHA-256 values are identical for both fixtures; for
-`000001` the streamed hash is
-`0D7F4FE90A6EA7637890EBE786109C98C1420DC8EDA9C9F238B13B1072B6610A`.
+The `000001` color stream was measured three times; the variation is host noise, not a review regression (the pre-review binary measured 11.65-11.75 s). The streamed and full-mesh PNG SHA-256 values are identical for both fixtures; for `000001` the streamed hash is `0D7F4FE90A6EA7637890EBE786109C98C1420DC8EDA9C9F238B13B1072B6610A`.
 
 ### Triangle binning
 
-Before rasterization, each triangle is inserted into every tile its screen-space
-bounding box covers. A tile only visits its own candidate list instead of the
-whole mesh. Bins preserve triangle order, so rendering stays deterministic.
+Before rasterization, each triangle is inserted into every tile its screen-space bounding box covers. A tile only visits its own candidate list instead of the whole mesh. Bins preserve triangle order, so rendering stays deterministic.
 
 ### Parallel tiles
 
-Tiles are independent. The rasterizer takes work from a shared atomic cursor and
-spawns up to `threads` scoped workers; each worker owns its tile color and depth
-buffers and returns a finished tile. Results are sorted by tile index before
-assembly, so pixel output and statistics do not depend on scheduling order.
+Tiles are independent. The rasterizer takes work from a shared atomic cursor and spawns up to `threads` scoped workers; each worker owns its tile color and depth buffers and returns a finished tile. Results are sorted by tile index before assembly, so pixel output and statistics do not depend on scheduling order.
 
-The tiling is an implementation detail: every pixel sees the same candidate
-quads in the same order, so shrinking tiles does not change the image. The
-rasterizer therefore targets about 1024 tiles instead of always using 64x64. A
-fixed 64px tile leaves only 16 tiles at 256x256 and 64 at 512x512; with 12
-workers the slowest runs two tiles while the rest idle, and small previews came
-out slower than 1024x1024. At a 1024x1024 internal image this yields 32px tiles,
-which measured faster than 64px; at 2048x2048 it keeps 64px, which measured
-faster than 32px. Measured on the 77.6M-quad fixture at 12 threads:
+The tiling is an implementation detail: every pixel sees the same candidate quads in the same order, so shrinking tiles does not change the image. The rasterizer therefore targets about 1024 tiles instead of always using 64x64. A fixed 64px tile leaves only 16 tiles at 256x256 and 64 at 512x512; with 12 workers the slowest runs two tiles while the rest idle, and small previews came out slower than 1024x1024. At a 1024x1024 internal image this yields 32px tiles, which measured faster than 64px; at 2048x2048 it keeps 64px, which measured faster than 32px. Measured on the 77.6M-quad fixture at 12 threads:
 
-| Output | Tiles before/after | Render before/after |
-|---|---|---|
-| 256x256, ss1 | 16 / 1024 | 5.7-6.4 s / **3.1-3.2 s** |
-| 512x512, ss1 | 64 / 1024 | 4.5-4.6 s / **3.1-3.2 s** |
-| 512x512, ss2 | 256 / 1024 | 3.8 s / **3.2 s** |
-| 1024x1024, ss1 | 256 / 1024 | 3.7 s / **3.2 s** |
-| 1024x1024, ss2 | 1024 / 1024 | 4.1 s / **3.9 s** |
+| Output         | Tiles before/after | Render before/after       |
+| -------------- | ------------------ | ------------------------- |
+| 256x256, ss1   | 16 / 1024          | 5.7-6.4 s / **3.1-3.2 s** |
+| 512x512, ss1   | 64 / 1024          | 4.5-4.6 s / **3.1-3.2 s** |
+| 512x512, ss2   | 256 / 1024         | 3.8 s / **3.2 s**         |
+| 1024x1024, ss1 | 256 / 1024         | 3.7 s / **3.2 s**         |
+| 1024x1024, ss2 | 1024 / 1024        | 4.1 s / **3.9 s**         |
 
-The 1024x1024/ss2 row keeps the same tiling; its difference comes from the
-textured/untextured triangle specialization described below.
+The 1024x1024/ss2 row keeps the same tiling; its difference comes from the textured/untextured triangle specialization described below.
 
-The `tiles` statistic reports the effective tiling. It stays independent of the
-worker count because the target is fixed.
+The `tiles` statistic reports the effective tiling. It stays independent of the worker count because the target is fixed.
 
 `threads = 0` chooses `available_parallelism()`. The default is 0.
 
 ### Parallel views
 
-When a complete mesh is available and a request has multiple yaw angles, views
-render concurrently. The `threads` budget is split across the views in a batch,
-so `12` threads and two views means about six threads per view. Outputs keep the
-requested view order. Batches are also capped by a 256 MiB output-byte budget,
-and each view is written and released before the next batch. At 1024x1024 and
-2048x2048 the thread budget still decides the batch size, so normal parallelism
-is unchanged; very large outputs trade concurrent views for bounded memory.
-Streaming mesh mode remains sequential and rebuilds the mesh per view.
+When a complete mesh is available and a request has multiple yaw angles, views render concurrently. The `threads` budget is split across the views in a batch, so `12` threads and two views means about six threads per view. Outputs keep the requested view order. Batches are also capped by a 256 MiB output-byte budget, and each view is written and released before the next batch. At 1024x1024 and 2048x2048 the thread budget still decides the batch size, so normal parallelism is unchanged; very large outputs trade concurrent views for bounded memory. Streaming mesh mode remains sequential and rebuilds the mesh per view.
 
 ### Supersampling
 
-`supersample` renders at `width * factor` by `height * factor`, then box-filters
-down to the requested output size. The filter works in premultiplied alpha so
-transparent edges do not darken. Supported factors are 1-4; default is 2.
-`max_supersampled_pixels` limits the internal buffer separately from the output
-pixel limit.
+`supersample` renders at `width * factor` by `height * factor`, then box-filters down to the requested output size. The filter works in premultiplied alpha so transparent edges do not darken. Supported factors are 1-4; default is 2. `max_supersampled_pixels` limits the internal buffer separately from the output pixel limit.
 
 ## Lighting
 
@@ -396,8 +250,7 @@ Two profiles are available:
 
 ### `flat-v1`
 
-All face orientations use the same brightness. AO is ignored. This is the
-fastest and most uniform profile.
+All face orientations use the same brightness. AO is ignored. This is the fastest and most uniform profile.
 
 ### `simple-ao-v1`
 
@@ -406,39 +259,31 @@ shade = 0.55 + 0.45 * max(dot(normal, light_dir), 0)
 color = block_color * shade * vertex_ao
 ```
 
-`light_dir` is a fixed normalized direction `[1, 2, 1] / sqrt(6)`. Vertex AO is
-computed in the mesh builder from the three neighboring cells at boundary
-corners. Interior and cross quads default to `ao = 1.0`.
+`light_dir` is a fixed normalized direction `[1, 2, 1] / sqrt(6)`. Vertex AO is computed in the mesh builder from the three neighboring cells at boundary corners. Interior and cross quads default to `ao = 1.0`.
 
-This is an approximation. It does not run Minecraft sky/block light propagation,
-shadows, or biome tinting. It is stable and deterministic.
+This is an approximation. It does not run Minecraft sky/block light propagation, shadows, or biome tinting. It is stable and deterministic.
 
 ## Options
 
-| Option | Default |
-|---|---|
-| width | 1024 |
-| height | 1024 |
-| yaw | 45° |
-| elevation | 30° |
-| background | transparent |
-| lighting | simple-ao-v1 |
-| tile size (maximum; targets ~1024 tiles) | 64 |
-| padding | 16 px |
-| supersample | 2 |
-| threads | 0 (auto) |
-| texture filter | nearest |
-| backend | cpu |
-| max pixels | 16,777,216 |
-| max supersampled pixels | 33,554,432 |
+| Option                                   | Default      |
+| ---------------------------------------- | ------------ |
+| width                                    | 1024         |
+| height                                   | 1024         |
+| yaw                                      | 45°          |
+| elevation                                | 30°          |
+| background                               | transparent  |
+| lighting                                 | simple-ao-v1 |
+| tile size (maximum; targets ~1024 tiles) | 64           |
+| padding                                  | 16 px        |
+| supersample                              | 2            |
+| threads                                  | 0 (auto)     |
+| texture filter                           | nearest      |
+| max pixels                               | 16,777,216   |
+| max supersampled pixels                  | 33,554,432   |
 
-Validation rejects zero dimensions, dimensions above 4096, elevation beyond
-±89.9°, non-finite values, padding that leaves no drawable area, and outputs
-above the pixel limit.
+Validation rejects zero dimensions, dimensions above 4096, elevation beyond ±89.9°, non-finite values, padding that leaves no drawable area, and outputs above the pixel limit.
 
-For CLI rendering flags, multi-view output naming, and options reference, see
-[CLI Reference - render](./user/cli.md). Resource limits and
-`--force-limits` behavior are detailed in [Limits and Security](./user/limits.md).
+For CLI rendering flags, multi-view output naming, and options reference, see [CLI Reference - render](./user/cli.md). Resource limits and `--force-limits` behavior are detailed in [Limits and Security](./user/limits.md).
 
 ## Benchmark
 
@@ -447,13 +292,9 @@ cargo run -p blockscope-cli --release -- bench path\to\model.litematic --iterati
 cargo run -p blockscope-cli --release -- bench path\to\model.litematic --width 2048 --height 2048 --supersample 2 --json
 ```
 
-`blockscope bench` parses and meshes once, then renders and PNG-encodes
-`--iterations` times. It reports min/median/mean/max for render, PNG, and their
-sum, plus mesh and render counters, buffer sizes, and peak RSS on Linux and
-macOS (`null` on Windows and other platforms).
+`blockscope bench` parses and meshes once, then renders and PNG-encodes `--iterations` times. It reports min/median/mean/max for render, PNG, and their sum, plus mesh and render counters, buffer sizes, and peak RSS on Linux and macOS (`null` on Windows and other platforms).
 
-Allocation-peak baselines and the streamed-versus-full-mesh diagnostic live in
-[Performance Baselines](./performance.md).
+Allocation-peak baselines and the streamed-versus-full-mesh diagnostic live in [Performance Baselines](./performance.md).
 
 For rasterizer-only scaling, use the synthetic example:
 
@@ -468,20 +309,13 @@ It prints single-thread, two-thread, and auto-thread timings. With
 and resolve. See [Performance Baselines](./performance.md) for measured GPU and
 CPU comparisons.
 
-Reference run on a 12-core Windows host (`tile_bench` synthetic scene, 96,882
-quads, 1024x1024 output, supersample 2, median of 3): 1 thread 300 ms, 2 threads
-174 ms, auto threads 81 ms. Treat these as a scaling sanity check, not a CI
-threshold.
+Reference run on a 12-core Windows host (`tile_bench` synthetic scene, 96,882 quads, 1024x1024 output, supersample 2, median of 3): 1 thread 300 ms, 2 threads 174 ms, auto threads 81 ms. Treat these as a scaling sanity check, not a CI threshold.
 
 Measured and rejected on the same host:
 
-- Replacing `chunks_mut(..).skip(row_start)` with a pre-sliced row iterator:
-  within run-to-run noise.
-- Greedy merging on the 77.6M-quad stress fixture: 77.58M to 77.45M quads
-  (-0.16%) for about 1 s more mesh time, so it stays opt-in.
-- Front-to-back opaque ordering: pixel writes are about 12% of render time
-  (supersample 1 vs 2 on the same scene), so sorting cost is unlikely to pay
-  back.
+- Replacing `chunks_mut(..).skip(row_start)` with a pre-sliced row iterator: within run-to-run noise.
+- Greedy merging on the 77.6M-quad stress fixture: 77.58M to 77.45M quads (-0.16%) for about 1 s more mesh time, so it stays opt-in.
+- Front-to-back opaque ordering: pixel writes are about 12% of render time (supersample 1 vs 2 on the same scene), so sorting cost is unlikely to pay back.
 
 ## Render Statistics
 
@@ -495,46 +329,25 @@ Measured and rejected on the same host:
 - textured triangle count;
 - pixels tested (fragments inside the clipped row spans) and pixels written.
 
-`tiles`, `pixelsTested`, and `pixelsWritten` are CPU rasterizer counters. The GPU
-backend reports zero for them; use `triangles`, the layer counts, and timings
-instead.
-
-Golden PNGs for cube, partial shapes, water, negative coordinates, AO, textured
-cube, stairs, cutout, glass, and chest live in `fixtures/golden/render/`.
-Regenerate them with `UPDATE_GOLDEN=1` after an intentional renderer change.
-Textured goldens use project-owned synthetic assets only.
+Golden PNGs for cube, partial shapes, water, negative coordinates, AO, textured cube, stairs, cutout, glass, and chest live in `fixtures/golden/render/`. Regenerate them with `UPDATE_GOLDEN=1` after an intentional renderer change. Textured goldens use project-owned synthetic assets only.
 
 ## Level of Detail
 
-`--lod N` (N in 2..=16) aggregates the parsed scene into N-sized cells before
-meshing. Each cell keeps the most frequent non-air state; ties use canonical
-state order and overlapping regions keep the later region. The result is an
-ordinary scene in LOD units, so meshing and rendering are unchanged.
+`--lod N` (N in 2..=16) aggregates the parsed scene into N-sized cells before meshing. Each cell keeps the most frequent non-air state; ties use canonical state order and overlapping regions keep the later region. The result is an ordinary scene in LOD units, so meshing and rendering are unchanged.
 
-LOD is an approximation: block entities, entities, and pending ticks are
-dropped, and small details disappear. It is opt-in and off by default. Values
-above `1` print a detail-loss warning, and there is no automatic factor: data
-layer aggregation cannot preserve redstone and other block-level mechanics, so
-choosing a factor implicitly would change the output without consent.
+LOD is an approximation: block entities, entities, and pending ticks are dropped, and small details disappear. It is opt-in and off by default. Values above `1` print a detail-loss warning, and there is no automatic factor: data layer aggregation cannot preserve redstone and other block-level mechanics, so choosing a factor implicitly would change the output without consent.
 
-Measured on the 9.4M-block stress fixture (211x211x211, 1024x1024, supersample
-2, 12 threads, client jar):
+Measured on the 9.4M-block stress fixture (211x211x211, 1024x1024, supersample 2, 12 threads, client jar):
 
-| LOD | Triangles | Wall | Peak working set |
-|---|---|---|---|
-| 1 (exact) | 117M | 36.6 s | 18.9 GB |
-| 2 | 14.6M | 16.4 s | 9.6 GB |
-| 4 | 1.55M | 4.0 s | 683 MB |
+| LOD       | Triangles | Wall   | Peak working set |
+| --------- | --------- | ------ | ---------------- |
+| 1 (exact) | 117M      | 36.6 s | 18.9 GB          |
+| 2         | 14.6M     | 16.4 s | 9.6 GB           |
+| 4         | 1.55M     | 4.0 s  | 683 MB           |
 
-Aggregation is parallel over output rows and produces the same scene as the
-single-threaded path. On the test host, the LOD 2 pass for `000001` dropped from
-0.63 s to 0.21 s; the scan stage alone dropped from 0.54 s to 0.07 s on 12
-threads. LOD 8 for `000002` dropped from 1.2 s to 0.20 s.
+Aggregation is parallel over output rows and produces the same scene as the single-threaded path. On the test host, the LOD 2 pass for `000001` dropped from 0.63 s to 0.21 s; the scan stage alone dropped from 0.54 s to 0.07 s on 12 threads. LOD 8 for `000002` dropped from 1.2 s to 0.20 s.
 
-For oversized schematics, LOD 4 is the practical default; LOD 2 keeps more
-detail at a large memory cost. Use these factors only for previews; a scene
-that must preserve mechanics needs face culling, lazy meshing, or frustum
-pruning instead of aggregation.
+For oversized schematics, LOD 4 is the practical default; LOD 2 keeps more detail at a large memory cost. Use these factors only for previews; a scene that must preserve mechanics needs face culling, lazy meshing, or frustum pruning instead of aggregation.
 
 ## Known Limitations
 
@@ -542,17 +355,10 @@ pruning instead of aggregation.
 - Textures require a user-provided resource pack or client jar.
 - No mipmaps; nearest or bilinear sampling only.
 - No shadows, full light propagation, or emissive bloom.
-- Fluid surfaces use the still texture; flow animation and the water overlay are
-  not reproduced.
-- The built-in redstone dust model does not fold connection directions into its
-  flat plane; textured renders use the pack model for that.
-- Translucent sorting is per tile and approximate on the CPU; the GPU path uses
-  one global order, so the two backends can differ on intersecting translucent
-  surfaces.
-- The GPU backend is opt-in and offscreen; there is no windowing or surface
-  support. It needs a hardware adapter, and `--stream-mesh` is CPU-only.
-- GPU output is vendor-dependent and not byte-exact against the CPU goldens.
-- PNG encoding runs on the calling thread on both backends.
+- Fluid surfaces use the still texture; flow animation and the water overlay are not reproduced.
+- The built-in redstone dust model does not fold connection directions into its flat plane; textured renders use the pack model for that.
+- Translucent sorting is per tile and approximate.
+- CPU-only; tiles are parallel and mesh pages are built in parallel, but PNG encoding runs on the calling thread.
 - Texture coordinates are Q12 fixed point; UVs outside [-8, 8) are clamped.
 - Color management is approximate; output is treated as sRGB.
 - Golden PNGs cover small synthetic scenes, not large real structures.
@@ -560,11 +366,4 @@ pruning instead of aggregation.
 
 ## Determinism
 
-On the CPU backend, given the same Scene, Mesh, options, and renderer build, the
-RGBA buffer and PNG bytes are deterministic. Triangle order follows page/quad
-order, translucent sorting is stable, and the worker count does not change the
-output. Statistics are accumulated in tile order after workers join.
-
-GPU output is repeatable on one adapter and driver, but it is not guaranteed to
-be bit-identical across vendors, drivers, or adapter generations. Use
-`--backend cpu` when byte-exact output or golden comparison matters.
+Given the same Scene, Mesh, options, and renderer build, the RGBA buffer and PNG bytes are deterministic. Triangle order follows page/quad order, translucent sorting is stable, and the worker count does not change the output. Statistics are accumulated in tile order after workers join.
