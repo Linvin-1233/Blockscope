@@ -85,7 +85,6 @@ fn help_lists_render_options() {
         "--yaw",
         "--elevation",
         "--threads",
-        "--lod",
         "--stream-mesh",
         "--terminal-protocol",
         "--client-jar",

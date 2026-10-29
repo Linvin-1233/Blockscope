@@ -3,7 +3,7 @@ use crate::ui::{self, ACCENT, HEADER, MUTED, WARNING};
 use crate::{
     AssetArgs, CliError, GEOMETRY_IGNORES_BLOCK_ENTITY_NBT, LimitArgs, MeshOptionArgs,
     PreparedScene, apply_render_limits, load_materials, load_scene, mesh_limits, parse_background,
-    parse_lod, parse_texture_filter, warn_forced, warn_lod,
+    parse_texture_filter, warn_forced,
 };
 use clap::Args;
 use litematic_render::terminal::enable_windows_virtual_terminal;
@@ -52,8 +52,7 @@ Examples:
   blockscope render model.litematic --output out.png
   blockscope render model.litematic --width 2048 --height 2048 --supersample 2
   blockscope render model.litematic --views 45,225 --threads 8
-  blockscope render model.litematic --terminal --no-file
-  blockscope render huge.litematic --output huge.png --lod 4")]
+  blockscope render model.litematic --terminal --no-file")]
 pub(crate) struct RenderArgs {
     file: PathBuf,
     /// Output PNG path.
@@ -84,9 +83,6 @@ pub(crate) struct RenderArgs {
     /// Rasterizer worker threads; 0 selects available parallelism.
     #[arg(long, default_value_t = 0, value_name = "N")]
     threads: u32,
-    /// Level of detail: 1 disables it, 2-16 aggregates N-sized cells.
-    #[arg(long, default_value = "1", value_name = "FACTOR")]
-    lod: String,
     /// Comma-separated yaw angles, for example 45,225.
     #[arg(long, value_name = "LIST")]
     views: Option<String>,
@@ -129,8 +125,6 @@ pub(crate) struct RenderArgs {
 pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
     let started = Instant::now();
     warn_forced(args.limits.force_limits);
-    let lod = parse_lod(&args.lod)?;
-    warn_lod(lod);
     let background = parse_background(&args.background)?;
     let lighting = LightingProfile::parse(&args.lighting).ok_or_else(|| {
         CliError::input(format!(
@@ -202,14 +196,11 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
     materials_stage.finish();
 
     let limits = mesh_limits(args.limits.force_limits);
-    let (scene, snapshot, mesh, factor, lod_ms, mut mesh_ms_total) = if stream_mesh {
-        let lod_started = Instant::now();
-        let scene = crate::apply_lod(scene, lod, args.threads)?;
-        let lod_ms = lod_started.elapsed().as_secs_f64() * 1000.0;
+    let (scene, snapshot, mesh, mut mesh_ms_total) = if stream_mesh {
         let snapshot = materials
             .as_ref()
             .map(|materials| crate::material_snapshot(&scene, materials));
-        (scene, snapshot, None, lod, lod_ms, 0.0)
+        (scene, snapshot, None, 0.0)
     } else {
         let bar = progress.bar("Building mesh");
         let prepared = {
@@ -217,7 +208,6 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
             crate::prepare_scene_with_progress(
                 scene,
                 materials.as_ref(),
-                lod,
                 &limits,
                 args.threads,
                 args.mesh.options(),
@@ -230,11 +220,9 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
             scene,
             mesh,
             snapshot,
-            factor,
-            lod_ms,
             mesh_ms,
         } = prepared;
-        (scene, snapshot, Some(mesh), factor, lod_ms, mesh_ms)
+        (scene, snapshot, Some(mesh), mesh_ms)
     };
 
     let mut results = Vec::with_capacity(view_count);
@@ -421,9 +409,6 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
         ui::outln!(
             "{MUTED}timings:{MUTED:#} parse {parse_ms:.1} ms, mesh {mesh_ms_total:.1} ms, total {total_ms:.1} ms"
         );
-        if factor > 1 {
-            ui::outln!("{MUTED}lod:{MUTED:#} {lod_ms:.1} ms {MUTED}(factor {factor}){MUTED:#}");
-        }
         if let Some(snapshot) = &snapshot {
             let diagnostics = snapshot.diagnostics();
             ui::outln!(

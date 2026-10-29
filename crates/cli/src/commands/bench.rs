@@ -2,8 +2,8 @@ use crate::ui::progress::Progress;
 use crate::ui::{self, ACCENT, BOLD, MUTED};
 use crate::{
     AssetArgs, CliError, GEOMETRY_IGNORES_BLOCK_ENTITY_NBT, LimitArgs, MeshOptionArgs,
-    PreparedScene, apply_render_limits, load_materials, load_scene, mesh_limits, parse_lod,
-    parse_texture_filter, warn_forced, warn_lod,
+    PreparedScene, apply_render_limits, load_materials, load_scene, mesh_limits,
+    parse_texture_filter, warn_forced,
 };
 use clap::Args;
 use litematic_render::{
@@ -36,9 +36,6 @@ pub(crate) struct BenchArgs {
     /// Rasterizer worker threads; 0 selects available parallelism.
     #[arg(long, default_value_t = 0, value_name = "N")]
     threads: u32,
-    /// Level of detail: 1 disables it, 2-16 aggregates N-sized cells.
-    #[arg(long, default_value = "1", value_name = "FACTOR")]
-    lod: String,
     /// Number of render iterations.
     #[arg(long, default_value_t = 3, value_name = "N")]
     iterations: u32,
@@ -94,8 +91,6 @@ pub(crate) fn run(args: BenchArgs) -> Result<(), CliError> {
     )?;
     parse_stage.finish();
     let parse_ms = parse_started.elapsed().as_secs_f64() * 1000.0;
-    let lod = parse_lod(&args.lod)?;
-    warn_lod(lod);
 
     let bar = progress.bar("Building mesh");
     let prepared = {
@@ -103,7 +98,6 @@ pub(crate) fn run(args: BenchArgs) -> Result<(), CliError> {
         crate::prepare_scene_with_progress(
             scene,
             materials.as_ref(),
-            lod,
             &mesh_limits(args.limits.force_limits),
             args.threads,
             args.mesh.options(),
@@ -116,8 +110,6 @@ pub(crate) fn run(args: BenchArgs) -> Result<(), CliError> {
         scene,
         mesh,
         snapshot,
-        factor,
-        lod_ms,
         mesh_ms,
     } = prepared;
 
@@ -211,9 +203,7 @@ pub(crate) fn run(args: BenchArgs) -> Result<(), CliError> {
             "height": options.height,
             "supersample": options.supersample,
             "threads": options.threads,
-            "lod": factor,
             "parseMs": parse_ms,
-            "lodMs": lod_ms,
             "meshMs": mesh_ms,
             "renderMs": timing_json(&render),
             "pngMs": timing_json(&png),
@@ -248,9 +238,6 @@ pub(crate) fn run(args: BenchArgs) -> Result<(), CliError> {
             }
         );
         ui::outln!("{MUTED}parse:{MUTED:#} {parse_ms:.2} ms");
-        if factor > 1 {
-            ui::outln!("{MUTED}lod:{MUTED:#} {lod_ms:.2} ms {MUTED}(factor {factor}){MUTED:#}");
-        }
         ui::outln!("{MUTED}mesh:{MUTED:#} {mesh_ms:.2} ms");
         print_timing("render", &render);
         print_timing("png", &png);

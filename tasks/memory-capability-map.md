@@ -28,7 +28,7 @@ The 18.9 GB peak reported for the 9.4M-block exact render is dominated by the
 mesh and projected-quad tables, not by parsing. `sparse-litematic` targets
 large bounding boxes with low occupancy and oversized decompressed NBT. It does
 not promise a reduction of the dense exact-render peak; that remains the job of
-`--stream-mesh`, compact attributes, and LOD.
+`--stream-mesh`, compact attributes, and resolution controls.
 
 A 2026-10-28 baseline on the current release binary measured parse+scene at
 108-132 MB for the 9.4M-67M-block fixtures and streamed render at 407 MB for

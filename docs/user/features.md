@@ -17,7 +17,6 @@ The current workspace version is `0.4.1` and supports Windows, Linux, and macOS.
 - Optional `--greedy-mesh` coplanar merging for large flat or repetitive surfaces
 - CPU orthographic camera, tiled rasterization, `flat-v1` / `simple-ao-v1` lighting, and PNG output
 - Supersampling 1-4, multi-view output, parallel tiles, and paged streaming
-- LOD with an explicit fixed `2..=16` factor; no automatic factor
 - `serve` worker and `supervise` process pool over newline-delimited JSON
 - Capacity detection, memory budgets, mesh/render limits, and stable error codes
 - Golden manifest/PNG, concurrency, and protocol tests
@@ -28,7 +27,6 @@ The current workspace version is `0.4.1` and supports Windows, Linux, and macOS.
 - No general entity models, entity animations, block-entity text/icons, banner patterns, or skull skins
 - Tint is a fixed plains color; biome colormaps are not read
 - No shadows, full light propagation, emissive bloom, or mipmaps
-- LOD drops block entities, entities, and pending ticks
 - Resource packs, client jars, and private `.litematic` files are not committed
 - No network listener; `serve`/`supervise` communicate over stdio only
 

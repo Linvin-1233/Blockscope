@@ -16,7 +16,7 @@
 - 修复解析、渲染、材质、CLI、协议或文档问题
 - 增加测试、基准和可复现的最小 fixture
 - 改进错误信息、诊断和日志
-- 优化大结构、LOD、内存和渲染性能
+- 优化大结构、内存和渲染性能
 - 补充格式、协议和部署文档
 
 如果你准备做较大的功能或接口变更，请先开 Issue 说明目标和范围，避免在未对齐
@@ -75,7 +75,7 @@ CI 的 test matrix 会在 Ubuntu、Windows 和 macOS 上运行同样的检查；
 | ------------------ | ----------------------------------------------------- |
 | `crates/nbt`       | NBT 解码、压缩检测、解码限制和错误码                  |
 | `crates/litematic` | `.litematic` 容器、region、palette、block entity 解析 |
-| `crates/scene`     | Scene IR、统计、诊断、manifest、hash、LOD             |
+| `crates/scene`     | Scene IR、统计、诊断、manifest、hash                  |
 | `crates/material`  | blockstate/model、资源包、纹理、tint、chest           |
 | `crates/mesh`      | 色块/资源包网格、面剔除、AO、OBJ/PLY 导出             |
 | `crates/render`    | CPU 光栅化、tile、超采样、PNG                         |

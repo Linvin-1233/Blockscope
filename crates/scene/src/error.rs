@@ -7,8 +7,6 @@ pub enum SceneErrorCode {
     BoundsOverflow,
     RegionLayoutMismatch,
     StatisticsOverflow,
-    InvalidLodFactor,
-    LodAggregationFailed,
 }
 
 impl SceneErrorCode {
@@ -18,8 +16,6 @@ impl SceneErrorCode {
             Self::BoundsOverflow => "BOUNDS_OVERFLOW",
             Self::RegionLayoutMismatch => "REGION_LAYOUT_MISMATCH",
             Self::StatisticsOverflow => "STATISTICS_OVERFLOW",
-            Self::InvalidLodFactor => "INVALID_LOD_FACTOR",
-            Self::LodAggregationFailed => "LOD_AGGREGATION_FAILED",
         }
     }
 }

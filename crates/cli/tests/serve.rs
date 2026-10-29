@@ -37,6 +37,10 @@ fn send(stdin: &mut ChildStdin, value: &Value) {
 }
 
 fn fixture(dir: &std::path::Path) -> std::path::PathBuf {
+    fixture_named(dir, "serve")
+}
+
+fn fixture_named(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
     let region = support::region_with_palette(
         "main",
         [0, 0, 0],
@@ -52,7 +56,7 @@ fn fixture(dir: &std::path::Path) -> std::path::PathBuf {
         7,
         None,
         3700,
-        &support::metadata("serve", [1, 1, 1], 1, 1, 1),
+        &support::metadata(name, [1, 1, 1], 1, 1, 1),
         &[region],
     );
 
@@ -70,7 +74,7 @@ fn serve_renders_two_jobs_and_shuts_down() {
     let (mut child, mut stdin, mut lines) = start();
     let hello = read_json(&mut lines);
     assert_eq!(hello["type"], "hello");
-    assert_eq!(hello["protocolVersion"], 2);
+    assert_eq!(hello["protocolVersion"], 3);
     assert!(hello["suggestedWorkers"].as_u64().unwrap() >= 1);
     assert!(hello["defaultTier"]["width"].as_u64().unwrap() >= 1);
 
@@ -147,13 +151,16 @@ fn serve_reuses_cached_scene_and_mesh() {
 #[test]
 fn serve_cache_evicts_to_stay_within_its_byte_budget() {
     let dir = tempfile::tempdir().unwrap();
-    let input = fixture(dir.path());
+    let first_input = fixture(dir.path());
+    let second_dir = dir.path().join("second");
+    std::fs::create_dir(&second_dir).unwrap();
+    let second_input = fixture_named(&second_dir, "serve-second");
     let out_dir = dir.path().join("out");
 
     let (mut child, mut stdin, mut lines) = start_with(&["--cache", "2", "--cache-bytes", "1"]);
     let _hello = read_json(&mut lines);
 
-    let request = |id: &str, lod: u32| {
+    let request = |id: &str, input: &std::path::Path| {
         json!({
             "type": "render",
             "id": id,
@@ -162,18 +169,17 @@ fn serve_cache_evicts_to_stay_within_its_byte_budget() {
             "width": 64,
             "height": 64,
             "supersample": 1,
-            "lod": lod,
             "outputDir": out_dir.display().to_string(),
         })
     };
 
-    send(&mut stdin, &request("byte-1", 1));
+    send(&mut stdin, &request("byte-1", &first_input));
     assert_eq!(read_json(&mut lines)["cacheHit"], false);
-    send(&mut stdin, &request("byte-1-repeat", 1));
+    send(&mut stdin, &request("byte-1-repeat", &first_input));
     assert_eq!(read_json(&mut lines)["cacheHit"], true);
-    send(&mut stdin, &request("byte-2", 2));
+    send(&mut stdin, &request("byte-2", &second_input));
     assert_eq!(read_json(&mut lines)["cacheHit"], false);
-    send(&mut stdin, &request("byte-3", 1));
+    send(&mut stdin, &request("byte-3", &first_input));
     assert_eq!(read_json(&mut lines)["cacheHit"], false);
 
     send(&mut stdin, &json!({ "type": "shutdown" }));
@@ -253,81 +259,6 @@ fn serve_multi_view_keeps_output_order() {
     assert_eq!(outputs[1]["yaw"], 225.0);
     assert!(outputs[0]["path"].as_str().unwrap().ends_with("-45.png"));
     assert!(outputs[1]["path"].as_str().unwrap().ends_with("-225.png"));
-
-    send(&mut stdin, &json!({ "type": "shutdown" }));
-    assert_eq!(read_json(&mut lines)["type"], "bye");
-    assert!(child.wait().unwrap().success());
-}
-
-#[test]
-fn serve_cache_separates_lod_levels() {
-    let dir = tempfile::tempdir().unwrap();
-    let input = fixture(dir.path());
-    let out_dir = dir.path().join("out");
-
-    let (mut child, mut stdin, mut lines) = start();
-    let _hello = read_json(&mut lines);
-
-    let request = |id: &str, lod: u32| {
-        json!({
-            "type": "render",
-            "id": id,
-            "input": { "path": input.display().to_string() },
-            "views": [45],
-            "width": 64,
-            "height": 64,
-            "supersample": 1,
-            "lod": lod,
-            "outputDir": out_dir.display().to_string(),
-        })
-    };
-
-    send(&mut stdin, &request("lod2-a", 2));
-    let first = read_json(&mut lines);
-    assert_eq!(first["ok"], true, "{first}");
-    assert_eq!(first["lod"], 2);
-    assert_eq!(first["cacheHit"], false);
-
-    send(&mut stdin, &request("lod2-b", 2));
-    let second = read_json(&mut lines);
-    assert_eq!(second["cacheHit"], true);
-    assert_eq!(second["lod"], 2);
-
-    send(&mut stdin, &request("lod4", 4));
-    let other = read_json(&mut lines);
-    assert_eq!(other["ok"], true, "{other}");
-    assert_eq!(other["lod"], 4);
-    assert_eq!(other["cacheHit"], false);
-
-    send(&mut stdin, &json!({ "type": "shutdown" }));
-    assert_eq!(read_json(&mut lines)["type"], "bye");
-    assert!(child.wait().unwrap().success());
-}
-
-#[test]
-fn serve_rejects_auto_lod() {
-    let dir = tempfile::tempdir().unwrap();
-    let input = fixture(dir.path());
-    let out_dir = dir.path().join("out");
-
-    let (mut child, mut stdin, mut lines) = start();
-    let _hello = read_json(&mut lines);
-
-    let request = json!({
-        "type": "render",
-        "id": "auto-1",
-        "input": { "path": input.display().to_string() },
-        "views": [45],
-        "width": 64,
-        "height": 64,
-        "supersample": 1,
-        "lod": "auto",
-        "outputDir": out_dir.display().to_string(),
-    });
-    send(&mut stdin, &request);
-    let result = read_json(&mut lines);
-    assert_eq!(result["ok"], false, "{result}");
-    assert_eq!(result["error"]["code"], "INVALID_RENDER_OPTIONS");
 
     send(&mut stdin, &json!({ "type": "shutdown" }));
     assert_eq!(read_json(&mut lines)["type"], "bye");

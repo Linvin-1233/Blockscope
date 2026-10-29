@@ -16,7 +16,7 @@ Read these first:
 - Fix parsing, rendering, material, CLI, protocol, or documentation issues
 - Add tests, benchmarks, and minimal reproducible fixtures
 - Improve errors, diagnostics, and logs
-- Optimize large structures, LOD, memory, and rendering performance
+- Optimize large structures, memory, and rendering performance
 - Expand format, protocol, and deployment documentation
 
 For a large feature or interface change, open an issue first to align on the
@@ -77,7 +77,7 @@ a rule really needs to change, explain why in the pull request.
 | ------------------ | ------------------------------------------------------------- |
 | `crates/nbt`       | NBT decoding, compression detection, limits, error codes      |
 | `crates/litematic` | `.litematic` container, region, palette, block entity parsing |
-| `crates/scene`     | Scene IR, statistics, diagnostics, manifest, hash, LOD        |
+| `crates/scene`     | Scene IR, statistics, diagnostics, manifest, hash             |
 | `crates/material`  | Blockstates/models, resource packs, textures, tint, chest     |
 | `crates/mesh`      | Color-block/pack meshes, culling, AO, OBJ/PLY export          |
 | `crates/render`    | CPU rasterization, tiles, supersampling, PNG                  |

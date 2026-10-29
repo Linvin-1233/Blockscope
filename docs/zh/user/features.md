@@ -17,7 +17,6 @@ Blockscope 是一个把 Minecraft `.litematic` 投影文件渲染成 PNG 的无�
 - 可选 `--greedy-mesh` 共面合并，降低大平面和重复结构的 quad 数
 - CPU 正交相机、tile 光栅化、`flat-v1` / `simple-ao-v1` 光照、PNG 输出
 - 超采样 1-4、多视角、并行 tile、分页流式渲染
-- LOD 固定因子 `2..=16`，必须显式选择，不再自动降级
 - `serve` 长驻 worker 和 `supervise` 多进程调度，使用 newline-delimited JSON
 - 容量检测、内存预算、mesh/render 上限和稳定错误码
 - 黄金 manifest/PNG、并发和协议测试
@@ -28,7 +27,6 @@ Blockscope 是一个把 Minecraft `.litematic` 投影文件渲染成 PNG 的无�
 - 不渲染通用实体模型、实体动画、block entity 文本/图标、banner pattern 或 skull skin
 - 材质 tint 使用固定 plains 色，不读取 biome colormap
 - 没有阴影、完整光照传播、emissive bloom 或 mipmap
-- LOD 会丢弃 block entities、entities 和 pending ticks
 - 资源包、客户端 jar 和私有 `.litematic` 不随仓库提交
 - 没有网络端口；`serve`/`supervise` 只通过 stdio 与上层服务通信
 

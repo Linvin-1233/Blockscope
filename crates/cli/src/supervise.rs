@@ -196,7 +196,6 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
             "queueLimit": queue_limit,
             "cacheEntries": spec.cache,
             "cacheBytes": spec.cache_bytes,
-            "defaultLod": 1,
             "suggestedMaxQuads": capacity.suggested_max_quads,
             "timeoutSeconds": timeout.map(|value| value.as_secs()),
             "memoryLimitPerWorkerBytes": memory_limit,
@@ -481,13 +480,11 @@ fn dispatch(
             remember_sticky(sticky, &job.hash, index);
         }
 
-        let line = job
-            .hash
-            .split_once(':')
-            .map(|(hash, _)| hash)
-            .filter(|hash| !hash.is_empty())
-            .map(|hash| inject_input_hash(&job.line, hash))
-            .unwrap_or_else(|| job.line.clone());
+        let line = if job.hash.is_empty() {
+            job.line.clone()
+        } else {
+            inject_input_hash(&job.line, &job.hash)
+        };
         let worker = &mut pool[index];
         if writeln!(worker.stdin, "{line}")
             .and_then(|_| worker.stdin.flush())
@@ -724,9 +721,8 @@ fn read_stdin(tx: SyncSender<Event>) {
                     .pointer("/input/hash")
                     .and_then(Value::as_str)
                     .filter(|hash| !hash.is_empty())
-                    .map(|hash| hash.to_ascii_lowercase());
-                let lod = value.get("lod").and_then(Value::as_u64).unwrap_or(1);
-                let hash = hash.map(|hash| format!("{hash}:{lod}")).unwrap_or_default();
+                    .map(|hash| hash.to_ascii_lowercase())
+                    .unwrap_or_default();
                 if tx
                     .send(Event::Request(Job {
                         id,
@@ -760,7 +756,7 @@ fn route_key(line: &str) -> String {
         return String::new();
     };
 
-    let hash = value
+    value
         .pointer("/input/path")
         .and_then(Value::as_str)
         .and_then(|path| {
@@ -771,10 +767,7 @@ fn route_key(line: &str) -> String {
             .ok()
         })
         .map(|bytes| litematic_scene::sha256(&bytes).to_hex())
-        .unwrap_or_default();
-    let lod = value.get("lod").and_then(Value::as_u64).unwrap_or(1);
-
-    format!("{hash}:{lod}")
+        .unwrap_or_default()
 }
 
 fn write_error(out: &mut impl Write, id: &str, code: &str, message: &str) -> Result<(), CliError> {

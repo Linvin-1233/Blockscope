@@ -146,7 +146,7 @@ Measured on the test host with the color-only catalog, 1024x1024, supersample 2,
 | `000001` exact, 77.6M quads  | 17.3-20.4 s | 5.7-5.9 s   | 4.6 s / 4.0 s       | 7.16 GB / 7.16 GB |
 | `000002` exact, 50.7M blocks | 11.7 s      | 0.24-0.25 s | 0.21 s / 0.19 s     | 471 MB / 497 MB   |
 
-The page cache costs about 53 KB per worker and does not change the mesh representation, so peak memory is still dominated by the resident `Mesh`. The PNG SHA-256 values for both exact fixtures and the `000001` LOD 4 render were unchanged.
+The page cache costs about 53 KB per worker and does not change the mesh representation, so peak memory is still dominated by the resident `Mesh`. The PNG SHA-256 values for both exact fixtures were unchanged.
 
 ### Streaming mesh construction
 
@@ -276,24 +276,6 @@ Measured and rejected on the same host:
 - pixels tested (fragments inside the clipped row spans) and pixels written.
 
 Golden PNGs for cube, partial shapes, water, negative coordinates, AO, textured cube, stairs, cutout, glass, and chest live in `fixtures/golden/render/`. Regenerate them with `UPDATE_GOLDEN=1` after an intentional renderer change. Textured goldens use project-owned synthetic assets only.
-
-## Level of Detail
-
-`--lod N` (N in 2..=16) aggregates the parsed scene into N-sized cells before meshing. Each cell keeps the most frequent non-air state; ties use canonical state order and overlapping regions keep the later region. The result is an ordinary scene in LOD units, so meshing and rendering are unchanged.
-
-LOD is an approximation: block entities, entities, and pending ticks are dropped, and small details disappear. It is opt-in and off by default. Values above `1` print a detail-loss warning, and there is no automatic factor: data layer aggregation cannot preserve redstone and other block-level mechanics, so choosing a factor implicitly would change the output without consent.
-
-Measured on the 9.4M-block stress fixture (211x211x211, 1024x1024, supersample 2, 12 threads, client jar):
-
-| LOD       | Triangles | Wall   | Peak working set |
-| --------- | --------- | ------ | ---------------- |
-| 1 (exact) | 117M      | 36.6 s | 18.9 GB          |
-| 2         | 14.6M     | 16.4 s | 9.6 GB           |
-| 4         | 1.55M     | 4.0 s  | 683 MB           |
-
-Aggregation is parallel over output rows and produces the same scene as the single-threaded path. On the test host, the LOD 2 pass for `000001` dropped from 0.63 s to 0.21 s; the scan stage alone dropped from 0.54 s to 0.07 s on 12 threads. LOD 8 for `000002` dropped from 1.2 s to 0.20 s.
-
-For oversized schematics, LOD 4 is the practical default; LOD 2 keeps more detail at a large memory cost. Use these factors only for previews; a scene that must preserve mechanics needs face culling, lazy meshing, or frustum pruning instead of aggregation.
 
 ## Known Limitations
 

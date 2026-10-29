@@ -13,7 +13,7 @@ See [Installation and Quick Start](./getting-started.md) for building `blockscop
 | `stats`     | Print block/material statistics                                                                             |
 | `mesh`      | Build a mesh and optionally export OBJ or PLY                                                               |
 | `render`    | Render PNG output or display directly in the terminal                                                       |
-| `bench`     | Measure parse, LOD, mesh, render, and PNG timings                                                           |
+| `bench`     | Measure parse, mesh, render, and PNG timings                                                                |
 | `materials` | Report resource-pack coverage for the scene                                                                 |
 | `capacity`  | Print detected CPU/memory capacity and suggested worker/thread settings                                     |
 | `serve`     | Long-lived worker over the stdio JSON protocol                                                              |
@@ -40,8 +40,8 @@ blockscope render model.litematic --output out.png \
 blockscope render model.litematic --output out.png --views 45,225
 
 # Huge structures
-blockscope render huge.litematic --output huge.png --lod 4
-blockscope render huge.litematic --output huge.png --lod 1 --stream-mesh
+blockscope render huge.litematic --output huge.png --stream-mesh
+blockscope render huge.litematic --output huge.png --stream-mesh --greedy-mesh
 
 # Material coverage
 blockscope materials model.litematic --client-jar client.jar --json
@@ -74,7 +74,6 @@ Terminal images are fitted to the visible grid: when the rendered pixel size wou
 | `--background transparent\|#RRGGBB[AA]`                        | Background; default transparent                                                                                                   |
 | `--lighting flat-v1\|simple-ao-v1`                             | Lighting profile; default `simple-ao-v1`                                                                                          |
 | `--threads <N>`                                                | Mesh/rasterizer threads; `0` uses available parallelism, capped at 256                                                            |
-| `--lod 1\|2-16`                                                | LOD factor; default `1` (disabled); values above 1 print a detail-loss warning                                                    |
 | `--stream-mesh [auto\|on\|off]`                                | Build and render mesh in page chunks without retaining the full mesh; default `auto`; `off` retains the full mesh                 |
 | `--greedy-mesh`                                                | Merge coplanar unit faces with identical material and lighting; useful for large flat or repetitive surfaces, disabled by default |
 | `--force-limits`                                               | Raises input, scene, mesh, and pixel caps; can exhaust memory                                                                     |
@@ -114,7 +113,6 @@ The wordmark steps down with the terminal width and height: an 82-column banner,
 ## See Also
 
 - [Materials and Resource Packs](./materials.md)
-- [LOD and Large Structures](./lod.md)
 - [Limits and Security](./limits.md)
 - [Service Mode](./service.md)
 - [中文](/zh/user/cli)

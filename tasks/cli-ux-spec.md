@@ -185,7 +185,7 @@ ui::outln!("{}", ui::success("OK"));
 ### Progress
 
 - Long commands (`render`, `bench`, `mesh`, `materials`) show progress on
-  stderr: parse, LOD, materials, mesh, render, PNG write.
+  stderr: parse, materials, mesh, render, PNG write.
 - Meshing reports `completed_pages / total_pages` from the mesh builder.
   The full-mesh and streaming builders both expose page totals.
 - Full-mesh rendering reports `completed_tiles / total_tiles` from the

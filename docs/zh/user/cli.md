@@ -13,7 +13,7 @@ title: "CLI 命令"
 | `stats`     | 输出方块/材料统计                                                               |
 | `mesh`      | 构建网格，可导出 OBJ 或 PLY                                                     |
 | `render`    | 渲染 PNG 或直接在终端中显示图像                                                 |
-| `bench`     | 测量 parse、LOD、mesh、render、PNG 各阶段耗时                                   |
+| `bench`     | 测量 parse、mesh、render、PNG 各阶段耗时                                        |
 | `materials` | 检查资源包对当前模型的覆盖率                                                    |
 | `capacity`  | 输出 CPU/内存容量和建议的 worker/thread 配置                                    |
 | `serve`     | 长驻 worker，使用 stdio JSON 协议                                               |
@@ -40,8 +40,8 @@ blockscope render model.litematic --output out.png \
 blockscope render model.litematic --output out.png --views 45,225
 
 # 超大结构
-blockscope render huge.litematic --output huge.png --lod 4
-blockscope render huge.litematic --output huge.png --lod 1 --stream-mesh
+blockscope render huge.litematic --output huge.png --stream-mesh
+blockscope render huge.litematic --output huge.png --stream-mesh --greedy-mesh
 
 # 材质覆盖率
 blockscope materials model.litematic --client-jar client.jar --json
@@ -74,7 +74,6 @@ blockscope preview model.litematic -t
 | `--background transparent\|#RRGGBB[AA]`                        | 背景，默认透明                                                        |
 | `--lighting flat-v1\|simple-ao-v1`                             | 光照配置，默认 `simple-ao-v1`                                         |
 | `--threads <N>`                                                | mesh/rasterizer 线程数，`0` 使用可用并行度，最多 256                  |
-| `--lod 1\|2-16`                                                | LOD 因子，默认 `1`（关闭）；大于 1 时会打印细节损失警告               |
 | `--stream-mesh [auto\|on\|off]`                                | 按页构建并渲染网格，不保留完整 Mesh；默认 `auto`，`off` 保留完整 Mesh |
 | `--greedy-mesh`                                                | 合并同材质、同光照的共面单位面；适合大平面和重复结构，默认关闭        |
 | `--force-limits`                                               | 提高输入、场景、网格和像素上限；可能耗尽内存                          |
@@ -114,7 +113,6 @@ blockscope preview model.litematic -t
 ## 相关文档
 
 - [材质与资源包](./materials.md)
-- [LOD 与大结构](./lod.md)
 - [限制与安全](./limits.md)
 - [服务模式](./service.md)
 - [English](/user/cli)

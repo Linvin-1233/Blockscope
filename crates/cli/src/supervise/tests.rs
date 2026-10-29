@@ -46,20 +46,18 @@ fn cache_budget_follows_the_per_worker_memory_limit() {
 }
 
 #[test]
-fn route_key_hashes_regular_files_and_preserves_lod() {
+fn route_key_hashes_regular_files() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("input.litematic");
     std::fs::write(&path, b"data").unwrap();
     let line = json!({
         "type": "render",
         "input": { "path": path },
-        "lod": 2,
     })
     .to_string();
 
     let key = route_key(&line);
-    assert!(key.ends_with(":2"), "{key}");
-    assert_eq!(key.len(), 66, "{key}");
+    assert_eq!(key.len(), 64, "{key}");
 }
 
 #[test]
@@ -114,5 +112,5 @@ fn route_key_returns_empty_hash_for_unreadable_paths() {
     })
     .to_string();
 
-    assert_eq!(route_key(&line), ":1");
+    assert_eq!(route_key(&line), "");
 }

@@ -16,7 +16,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 const DEFAULT_SIZE: u32 = 1024;
 const DEFAULT_SUPERSAMPLE: u32 = 2;
 const DEFAULT_ELEVATION: f32 = 30.0;
@@ -44,8 +44,6 @@ pub struct ServeArgs {
 #[derive(Clone)]
 struct CachedScene {
     hash: String,
-    lod_key: String,
-    lod: u32,
     scene: Arc<Scene>,
     mesh: Arc<Mesh>,
     snapshot: Option<Arc<MaterialSnapshot>>,
@@ -68,13 +66,6 @@ struct ServeContext<'a> {
 enum Message {
     Render(Box<RenderRequest>),
     Shutdown,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum LodRequest {
-    Factor(u32),
-    Text(String),
 }
 
 #[derive(Debug, Deserialize)]
@@ -102,8 +93,6 @@ struct RenderRequest {
     format: Option<String>,
     #[serde(default)]
     threads: Option<u32>,
-    #[serde(default)]
-    lod: Option<LodRequest>,
     output_dir: PathBuf,
 }
 
@@ -220,7 +209,6 @@ fn hello(capacity: &Capacity, cache_bytes: u64) -> Value {
         "suggestedWorkers": capacity.suggested_workers,
         "suggestedThreads": capacity.suggested_threads,
         "suggestedMaxQuads": capacity.suggested_max_quads,
-        "defaultLod": 1,
         "defaultTier": {
             "width": capacity.default_width,
             "height": capacity.default_height,
@@ -342,28 +330,6 @@ fn process(
     }
 
     let limits = crate::decode_limits(context.force_limits, context.ignore_block_entity_nbt);
-    let lod_mode = match request.lod.as_ref() {
-        None => 1,
-        Some(LodRequest::Factor(factor)) => {
-            if !(1..=crate::LOD_MAX).contains(factor) {
-                return Err(CliError::input(format!(
-                    "INVALID_RENDER_OPTIONS: lod must be between 1 and {}",
-                    crate::LOD_MAX
-                )));
-            }
-            *factor
-        }
-        Some(LodRequest::Text(text)) => {
-            return Err(CliError::input(format!(
-                "INVALID_RENDER_OPTIONS: invalid lod '{text}', expected 1-16"
-            )));
-        }
-    };
-    if lod_mode > 1 {
-        static LOD_WARNING: std::sync::Once = std::sync::Once::new();
-        LOD_WARNING.call_once(|| crate::warn_lod(lod_mode));
-    }
-    let lod_key = lod_mode.to_string();
 
     // A caller-supplied hash is an identity, so a cache hit must not re-read the
     // file. The supervisor already hashes inputs for routing and forwards it.
@@ -374,19 +340,16 @@ fn process(
         .map(|hash| hash.to_ascii_lowercase());
     let cached = requested_hash
         .as_deref()
-        .and_then(|hash| take_cached(cache, hash, &lod_key));
+        .and_then(|hash| take_cached(cache, hash));
 
-    let (scene, mesh, snapshot, factor, parse_ms, lod_ms, mesh_ms, cache_hit, input_hash) =
+    let (scene, mesh, snapshot, parse_ms, mesh_ms, cache_hit, input_hash) =
         if let Some(entry) = cached {
             let input_hash = entry.hash.clone();
-            let factor = entry.lod;
             let scene = Arc::clone(&entry.scene);
             let mesh = Arc::clone(&entry.mesh);
             let snapshot = entry.snapshot.clone();
             cache.insert(0, entry);
-            (
-                scene, mesh, snapshot, factor, 0.0, 0.0, 0.0, true, input_hash,
-            )
+            (scene, mesh, snapshot, 0.0, 0.0, true, input_hash)
         } else {
             let input = crate::read_file_limited(&request.input.path, limits.max_input_bytes)?;
             let input_hash = sha256(&input).to_hex();
@@ -399,15 +362,12 @@ fn process(
                 )));
             }
 
-            if let Some(entry) = take_cached(cache, &input_hash, &lod_key) {
-                let factor = entry.lod;
+            if let Some(entry) = take_cached(cache, &input_hash) {
                 let scene = Arc::clone(&entry.scene);
                 let mesh = Arc::clone(&entry.mesh);
                 let snapshot = entry.snapshot.clone();
                 cache.insert(0, entry);
-                (
-                    scene, mesh, snapshot, factor, 0.0, 0.0, 0.0, true, input_hash,
-                )
+                (scene, mesh, snapshot, 0.0, 0.0, true, input_hash)
             } else {
                 let parse_started = Instant::now();
                 let file = LitematicFile::parse_bytes(
@@ -422,7 +382,6 @@ fn process(
                 let prepared = crate::prepare_scene(
                     scene,
                     context.materials,
-                    lod_mode,
                     &context.mesh_limits,
                     request.threads.unwrap_or(context.default_threads),
                     context.mesh_options,
@@ -431,8 +390,6 @@ fn process(
                     scene,
                     mesh,
                     snapshot,
-                    factor,
-                    lod_ms,
                     mesh_ms,
                 } = prepared;
 
@@ -441,8 +398,6 @@ fn process(
                 let snapshot = snapshot.map(Arc::new);
                 let entry = CachedScene {
                     hash: input_hash.clone(),
-                    lod_key,
-                    lod: factor,
                     scene: Arc::clone(&scene),
                     mesh: Arc::clone(&mesh),
                     snapshot: snapshot.clone(),
@@ -450,9 +405,7 @@ fn process(
                 };
                 cache_insert(cache, entry, context.cache_limit, context.cache_bytes);
 
-                (
-                    scene, mesh, snapshot, factor, parse_ms, lod_ms, mesh_ms, false, input_hash,
-                )
+                (scene, mesh, snapshot, parse_ms, mesh_ms, false, input_hash)
             }
         };
 
@@ -515,12 +468,10 @@ fn process(
         "ok": true,
         "inputHash": input_hash,
         "sceneHash": scene.scene_hash().to_hex(),
-        "lod": factor,
         "cacheHit": cache_hit,
         "outputs": outputs,
         "timings": {
             "parseMs": parse_ms,
-            "lodMs": lod_ms,
             "meshMs": mesh_ms,
             "renderMs": render_total,
             "pngMs": png_total,
@@ -582,10 +533,10 @@ fn cache_budget(requested: u64, capacity: &Capacity) -> u64 {
     }
 }
 
-fn take_cached(cache: &mut Vec<CachedScene>, hash: &str, lod_key: &str) -> Option<CachedScene> {
+fn take_cached(cache: &mut Vec<CachedScene>, hash: &str) -> Option<CachedScene> {
     let index = cache
         .iter()
-        .position(|entry| entry.hash.eq_ignore_ascii_case(hash) && entry.lod_key == lod_key)?;
+        .position(|entry| entry.hash.eq_ignore_ascii_case(hash))?;
     Some(cache.remove(index))
 }
 

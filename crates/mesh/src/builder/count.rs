@@ -8,8 +8,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::thread;
 /// Count the quads a mesh would contain without allocating geometry.
 ///
-/// Stops as soon as `limits` would be exceeded and returns `Ok(None)`, so an
-/// auto-LOD caller can reject a factor without paying for a full build. Greedy
+/// Stops as soon as `limits` would be exceeded and returns `Ok(None)`, so a
+/// caller can reject an oversized mesh without paying for a full build. Greedy
 /// merging is not applied; with [`MeshBuildOptions::GREEDY`] the count is an
 /// upper bound on the merged mesh.
 pub fn count_mesh_quads<C>(

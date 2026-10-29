@@ -42,7 +42,7 @@ The worker prints one `hello` line after materials are ready, then accepts jobs.
 - `supervise` injects the hash it computed for routing, so repeated inputs also take the no-read cache path
 - An empty `views` array defaults to `[45]`; at most 64 angles are accepted; multiple views render concurrently when a complete mesh is available
 - Output files are `{id}.png` or `{id}-{yaw}.png`; callers must keep `id` and `outputDir` unique across concurrent jobs. Duplicate ids or yaw values overwrite the same path
-- Full fields, results, and error codes are in [Engine protocol v2](/engine-protocol)
+- Full fields, results, and error codes are in [Engine protocol v3](/engine-protocol)
 
 ## Supervisor
 
@@ -76,7 +76,7 @@ Use `serve` and `supervise` only with trusted callers. Input paths, output direc
 
 ## See Also
 
-- [Engine protocol v2](/engine-protocol)
+- [Engine protocol v3](/engine-protocol)
 - [Docker](./docker.md)
 - [Troubleshooting](./troubleshooting.md)
 - [中文](/zh/user/service)
