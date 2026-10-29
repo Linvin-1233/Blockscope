@@ -149,6 +149,5 @@ blockscope render model.litematic --output out.png --assets /path/to/assets
 
 - [CLI Reference](./cli.md)
 - [Materials and Resource Packs](./materials.md)
-- [LOD and Large Structures](./lod.md)
 - [Troubleshooting](./troubleshooting.md)
 - [中文](/zh/user/getting-started)

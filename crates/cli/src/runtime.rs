@@ -13,15 +13,12 @@ use litematic_render::{
     Background, RenderOptions, RenderOutput, TileProgress, render_mesh, render_mesh_with_progress,
     render_mesh_with_textures, render_mesh_with_textures_and_progress,
 };
-use litematic_scene::{Scene, aggregate_with_threads};
+use litematic_scene::Scene;
 use std::path::Path;
 use std::time::Instant;
 
-/// Upper bound for mesh, LOD, and rasterizer worker threads.
+/// Upper bound for mesh and rasterizer worker threads.
 pub(crate) const MAX_THREADS: u32 = 256;
-
-/// Largest data-layer aggregation factor accepted by `--lod`.
-pub(crate) const LOD_MAX: u32 = 16;
 
 /// Upper bound for the number of yaw angles in one render request.
 pub(crate) const MAX_VIEWS: usize = 64;
@@ -347,56 +344,26 @@ pub(crate) fn parse_background(value: &str) -> Result<Background, CliError> {
     Ok(Background::Solid(color))
 }
 
-pub(crate) fn parse_lod(value: &str) -> Result<u32, CliError> {
-    let factor = value.parse::<u32>().map_err(|_| {
-        CliError::input(format!(
-            "INVALID_RENDER_OPTIONS: invalid lod '{value}', expected 1-16"
-        ))
-    })?;
-    if !(1..=LOD_MAX).contains(&factor) {
-        return Err(CliError::input(format!(
-            "INVALID_RENDER_OPTIONS: lod must be between 1 and {LOD_MAX}"
-        )));
-    }
-    Ok(factor)
-}
-
-/// Warn because data-layer aggregation cannot preserve redstone and other
-/// block-level mechanics.
-pub(crate) fn warn_lod(lod: u32) {
-    if lod > 1 {
-        crate::ui::errln!(
-            "{}warning:{:#} Enabling LOD will result in a significant loss of detail",
-            crate::ui::WARNING,
-            crate::ui::WARNING
-        );
-    }
-}
-
 pub(crate) struct PreparedScene {
     pub(crate) scene: Scene,
     pub(crate) mesh: Mesh,
     pub(crate) snapshot: Option<MaterialSnapshot>,
-    pub(crate) factor: u32,
-    pub(crate) lod_ms: f64,
     pub(crate) mesh_ms: f64,
 }
 
 pub(crate) fn prepare_scene(
     scene: Scene,
     materials: Option<&MaterialSet>,
-    lod: u32,
     limits: &MeshLimits,
     threads: u32,
     options: MeshBuildOptions,
 ) -> Result<PreparedScene, CliError> {
-    prepare_scene_with_progress(scene, materials, lod, limits, threads, options, None)
+    prepare_scene_with_progress(scene, materials, limits, threads, options, None)
 }
 
 pub(crate) fn prepare_scene_with_progress(
     scene: Scene,
     materials: Option<&MaterialSet>,
-    lod: u32,
     limits: &MeshLimits,
     threads: u32,
     options: MeshBuildOptions,
@@ -407,10 +374,6 @@ pub(crate) fn prepare_scene_with_progress(
             "INVALID_RENDER_OPTIONS: threads must be at most {MAX_THREADS}"
         )));
     }
-
-    let lod_started = Instant::now();
-    let scene = apply_lod(scene, lod, threads)?;
-    let lod_ms = lod_started.elapsed().as_secs_f64() * 1000.0;
 
     let mesh_started = Instant::now();
     let snapshot = materials.map(|materials| material_snapshot(&scene, materials));
@@ -428,17 +391,8 @@ pub(crate) fn prepare_scene_with_progress(
         scene,
         mesh,
         snapshot,
-        factor: lod,
-        lod_ms,
         mesh_ms,
     })
-}
-
-pub(crate) fn apply_lod(scene: Scene, lod: u32, threads: u32) -> Result<Scene, CliError> {
-    if lod <= 1 {
-        return Ok(scene);
-    }
-    aggregate_with_threads(&scene, lod, threads).map_err(CliError::from)
 }
 
 /// Geometry commands never read block entity contents.

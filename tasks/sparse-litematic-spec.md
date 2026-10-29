@@ -142,7 +142,7 @@ Methods: `volume`, `bits`, `get`, `iter_occupied`, `counts`, `heap_bytes`, and
 `hash_canonical_words`.
 
 `Region.states` becomes `RegionStates`. `PackedIndices` stays public and remains
-the dense constructor used by tests, LOD, and fixtures. Add `From<PackedIndices>`
+the dense constructor used by tests and fixtures. Add `From<PackedIndices>`
 and a dense `RegionStates::from_values` helper so existing callers migrate with
 minimal churn.
 
@@ -184,9 +184,8 @@ parser rather than changing the error.
 - `statistics` uses `counts()` so a sparse region is O(occupied), not O(volume).
 - `mesh::view` uses `iter_occupied` for sparse page occupancy; dense keeps the
   current sequential scan.
-- `mesh::page` and `lod` keep using `get(index)`. Sparse `get` is a binary search
-  over occupied entries; it is only used when the region is sparse.
-- LOD output stays dense, so downstream code is unchanged.
+- `mesh::page` keeps using `get(index)`. Sparse `get` is a binary search over
+  occupied entries; it is only used when the region is sparse.
 - CLI `load_scene` uses the compact reader for all commands once parity is
   proven. Keep `BLOCKSCOPE_DENSE_PARSE=1` as a debugging fallback until the
   module is complete.
@@ -217,8 +216,8 @@ result in `docs/performance.md`.
 
 ### S1: `RegionStates` wrapper
 
-Add the enum with only `Dense`. Migrate `Region`, `Scene`, mesh, LOD, statistics,
-manifest, and tests. No behavior change; all hashes and goldens must be
+Add the enum with only `Dense`. Migrate `Region`, `Scene`, mesh, statistics, manifest, and
+tests. No behavior change; all hashes and goldens must be
 identical.
 
 ### S2: `SparseIndices`
@@ -236,8 +235,8 @@ diagnostics, block entities, scene hash, and manifest JSON.
 ### S4: CLI wiring
 
 Use the compact path in `load_scene`, keep the env fallback, and measure the
-existing real fixtures with `bench`. Verify `--stream-mesh`, LOD, multi-view,
-and the stdio service still produce identical results.
+existing real fixtures with `bench`. Verify `--stream-mesh`, multi-view, and the stdio service still produce
+identical results.
 
 ### S5: Budgets and docs
 
@@ -251,7 +250,7 @@ document the representation and fallback.
 - **Property:** sparse and dense states produce the same canonical word stream
   and the same scene hash for the same values.
 - **Integration:** every existing litematic fixture parses through both paths;
-  compare `Scene` fields, manifest JSON, and rendered PNG SHA-256 at LOD 1.
+  compare `Scene` fields, manifest JSON, and rendered PNG SHA-256.
 - **Memory:** `memory-baseline` sparse scaling assertion passes; dense peak
   regression stays within 5 percent.
 - **Performance:** record parse wall time and peak for `000001`, `000002`, and a
@@ -281,8 +280,8 @@ document the representation and fallback.
   multiple of the `512^3` peak.
 - Dense `256^3` peak regression is at most 5 percent; dense parse wall time
   regression is at most 10 percent.
-- Scene hash, manifest JSON, diagnostics, and LOD 1 PNG SHA-256 are identical to
-  the dense parser for all committed fixtures.
+- Scene hash, manifest JSON, diagnostics, and PNG SHA-256 are identical to the
+  dense parser for all committed fixtures.
 - The full workspace gate and the focused memory oracle pass.
 - `docs/performance.md` contains the before/after table and the exact commands.
 
@@ -293,7 +292,7 @@ document the representation and fallback.
    untouched? Proposed: change `Region.states`; it is the smaller long-term
    surface.
 2. Which target matters more: sparse bounding-box memory or dense exact-render
-   peak? Proposed: sparse only; dense exact stays with `--stream-mesh` and LOD.
+   peak? Proposed: sparse only; dense exact stays with `--stream-mesh` and resolution controls.
 3. Is a two-pass gzip read (roughly 2x decompression CPU) acceptable for large
    sparse files if the compact path is only used above a size threshold?
    Proposed: yes, with a measured threshold and a dense fallback.

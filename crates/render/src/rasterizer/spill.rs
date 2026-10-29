@@ -44,7 +44,7 @@ impl TranslucentStore {
         {
             return Err(io::Error::new(
                 io::ErrorKind::Unsupported,
-                "translucent spill requires a filesystem; lower lod",
+                "translucent spill requires a filesystem",
             ));
         }
         match &mut self.state {

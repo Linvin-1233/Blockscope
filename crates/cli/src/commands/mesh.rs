@@ -2,7 +2,7 @@ use crate::ui::progress::Progress;
 use crate::ui::{self, ACCENT, MUTED};
 use crate::{
     CliError, GEOMETRY_IGNORES_BLOCK_ENTITY_NBT, LimitArgs, MeshOptionArgs, PreparedScene,
-    load_scene, mesh_limits, parse_lod, warn_forced, warn_lod,
+    load_scene, mesh_limits, warn_forced,
 };
 use clap::Args;
 use litematic_mesh::{MeshStatistics, write_obj, write_ply};
@@ -30,9 +30,6 @@ pub(crate) struct MeshArgs {
     /// Mesh worker threads; 0 selects available parallelism.
     #[arg(long, default_value_t = 0, value_name = "N")]
     threads: u32,
-    /// Level of detail: 1 disables it, 2-16 aggregates N-sized cells.
-    #[arg(long, default_value = "1", value_name = "FACTOR")]
-    lod: String,
     #[command(flatten)]
     mesh: MeshOptionArgs,
     #[command(flatten)]
@@ -49,15 +46,12 @@ pub(crate) fn run(args: MeshArgs) -> Result<(), CliError> {
         GEOMETRY_IGNORES_BLOCK_ENTITY_NBT,
     )?;
     parse_stage.finish();
-    let lod = parse_lod(&args.lod)?;
-    warn_lod(lod);
     let bar = progress.bar("Building mesh");
     let prepared = {
         let update = |done, total| bar.update(done, total);
         crate::prepare_scene_with_progress(
             scene,
             None,
-            lod,
             &mesh_limits(args.limits.force_limits),
             args.threads,
             args.mesh.options(),

@@ -105,12 +105,11 @@ cf deploy --prebuilt
 | `width`, `height`  | 512            | 1 to 1024; `width * height` at most 1,048,576 |
 | `supersample`      | 1              | 1 or 2                                        |
 | `yaw`, `elevation` | 45, 30         | Degrees; elevation within ±89.9               |
-| `lod`              | 1              | 1 to 16                                       |
 | `background`       | transparent    | `#RRGGBB` or `#RRGGBBAA`                      |
 | `lighting`         | `simple-ao-v1` | `simple-ao-v1` or `flat-v1`                   |
 
 ```bash
-curl -X POST "https://<worker>/render?width=512&lod=1" \
+curl -X POST "https://<worker>/render?width=512" \
   --data-binary @build.litematic \
   -o render.png
 ```
@@ -121,7 +120,7 @@ Successful responses are `image/png`. Errors are JSON:
 {
   "code": "MESH_LIMIT_EXCEEDED",
   "message": "...",
-  "hint": "lower lod"
+  "hint": null
 }
 ```
 
@@ -145,7 +144,7 @@ Host the UI separately (Cloudflare Pages, a static bucket, or another Worker) an
     const file = document.querySelector("#file").files[0];
     if (!file) return;
 
-    const response = await fetch(`${endpoint}?width=512&height=512&lod=1`, {
+    const response = await fetch(`${endpoint}?width=512&height=512`, {
       method: "POST",
       headers: { "content-type": "application/octet-stream" },
       body: file,
@@ -162,4 +161,4 @@ Host the UI separately (Cloudflare Pages, a static bucket, or another Worker) an
 </script>
 ```
 
-Keep the frontend out of this crate: it is a separate deployment artifact. Send the file as the raw request body (not `multipart/form-data`) and read the response as a blob. For large structures, expose the `lod` and `width`/`height` controls so callers can stay within the CPU and pixel budgets.
+Keep the frontend out of this crate: it is a separate deployment artifact. Send the file as the raw request body (not `multipart/form-data`) and read the response as a blob. For large structures, expose the `width`/`height` controls so callers can stay within the CPU and pixel budgets.

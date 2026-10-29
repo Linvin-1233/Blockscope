@@ -1,8 +1,8 @@
-# Engine Protocol (v2)
+# Engine Protocol (v3)
 
 Wire protocol between an upper-layer service/supervisor and a standalone renderer process. The goal is one transport that behaves the same on Linux and Windows, with a single job in flight per process.
 
-**Status:** Implemented for `blockscope serve` and `blockscope supervise` (protocol v2).
+**Status:** Implemented for `blockscope serve` and `blockscope supervise` (protocol v3).
 
 ## Transport
 
@@ -12,7 +12,7 @@ Wire protocol between an upper-layer service/supervisor and a standalone rendere
 - No BOM, no pretty printing, no multi-line objects.
 - `stdout` carries protocol messages only. Logs and diagnostics go to `stderr`.
 - Standard input is read as raw bytes and decoded as UTF-8; do not route it through a console code page.
-- v2 uses no sockets. stdio is identical across supported platforms and needs no port allocation, firewall rule, or named-pipe path.
+- v3 uses no sockets. stdio is identical across supported platforms and needs no port allocation, firewall rule, or named-pipe path.
 
 ## Lifecycle
 
@@ -35,7 +35,7 @@ supervisor                          worker
 ### Messages
 
 ```json
-{"type":"hello","protocolVersion":2,"engineVersion":"0.4.1","platform":"windows","cores":12,
+{"type":"hello","protocolVersion":3,"engineVersion":"0.4.1","platform":"windows","cores":12,
  "cpuQuota":null,"memoryLimitBytes":51401564160,"memoryAvailableBytes":21526179840,
  "suggestedWorkers":4,"suggestedThreads":3,"suggestedMaxQuads":54313181,
  "cacheBytes":10763089920,
@@ -65,10 +65,9 @@ supervisor                          worker
 | `lighting`      | string   | `simple-ao-v1` | `flat-v1` or `simple-ao-v1`                                                                                                                            |
 | `background`    | string   | `transparent`  | `transparent`, `#RRGGBB`, or `#RRGGBBAA`                                                                                                               |
 | `textureFilter` | string   | `nearest`      | `nearest` or `linear`                                                                                                                                  |
-| `format`        | string   | `png`          | `png` only in v2                                                                                                                                       |
+| `format`        | string   | `png`          | `png` only in v3                                                                                                                                       |
 | `outputDir`     | string   | required       | Absolute directory; created if missing                                                                                                                 |
 | `threads`       | integer  | `0`            | Mesh and rasterizer threads; `0` uses all cores, capped at 256                                                                                         |
-| `lod`           | integer  | `1`            | `1` disables; `2..=16` is a fixed factor; values above 1 lose detail                                                                                   |
 | `elevation`     | number   | `30`           | Degrees, `-89.9..=89.9`                                                                                                                                |
 
 `width * height` must not exceed 16,777,216 output pixels. Supersampling multiplies both sides, so the internal image must not exceed 33,554,432 pixels. The worker validates all render options and creates `outputDir` before parsing the input or building a mesh.
@@ -121,7 +120,6 @@ Paths must be absolute. The worker rejects relative paths with `INVALID_REQUEST`
   "ok": true,
   "inputHash": "578cffa3...",
   "sceneHash": "fc8e1419...",
-  "lod": 1,
   "cacheHit": false,
   "outputs": [
     {
@@ -136,7 +134,6 @@ Paths must be absolute. The worker rejects relative paths with `INVALID_REQUEST`
   ],
   "timings": {
     "parseMs": 24.1,
-    "lodMs": 0.0,
     "meshMs": 148.2,
     "renderMs": 409.0,
     "pngMs": 10.4,
@@ -153,9 +150,8 @@ Paths must be absolute. The worker rejects relative paths with `INVALID_REQUEST`
 
 - `outputs` preserves `views` order, one entry per view.
 - Output files are `{id}.png` for a single view and `{id}-{yaw}.png` for multiple views. Callers must use a unique `id` (and `outputDir`) per job; duplicate ids or duplicate yaw values intentionally overwrite the same path.
-- `cacheHit` is `true` when the worker reused a parsed scene and mesh for the same `inputHash` **and** `lod`; `parseMs`, `lodMs`, and `meshMs` are then `0`. When the request includes `input.hash`, a cache hit is resolved before reading the file. The supervisor fills `input.hash` with the hash it computed for routing when the caller omitted it.
-- `sceneHash` describes the scene that was rendered. With `lod > 1` it is the aggregated scene, not the original projection.
-- `lod` echoes the effective factor. The first request with `lod > 1` logs a detail-loss warning to stderr; the value itself is always explicit.
+- `cacheHit` is `true` when the worker reused a parsed scene and mesh for the same `inputHash`; `parseMs` and `meshMs` are then `0`. When the request includes `input.hash`, a cache hit is resolved before reading the file. The supervisor fills `input.hash` with the hash it computed for routing when the caller omitted it.
+- `sceneHash` describes the scene that was rendered.
 - `timings` are wall-clock aggregates for the whole job.
 - `statistics` is advisory; consumers must not depend on fields beyond `triangles`.
 
@@ -191,7 +187,7 @@ Paths must be absolute. The worker rejects relative paths with `INVALID_REQUEST`
 | `MEMORY_LIMIT`                | yes       | Worker exceeded its per-worker memory ceiling                                                   |
 | `PNG_ENCODE_FAILED`           | maybe     | Encoder failure; retry once                                                                     |
 | `TEMP_STORAGE_FAILED`         | yes       | Translucent spill could not create, write, or read its temporary bucket files                   |
-| `TRANSLUCENT_BUDGET_EXCEEDED` | no        | Translucent geometry exceeded the in-memory budget on a target without spill storage; lower LOD |
+| `TRANSLUCENT_BUDGET_EXCEEDED` | no        | Translucent geometry exceeded the in-memory budget on a target without spill storage            |
 | `IO_ERROR`                    | maybe     | Input or output file access failed                                                              |
 | `INTERNAL_ERROR`              | maybe     | Bug; retry once, then report                                                                    |
 | `TIMEOUT`                     | yes       | Emitted by the supervisor, not the engine                                                       |
@@ -207,7 +203,7 @@ Parser errors also pass through their stable `LitematicErrorCode` names, such as
 ```json
 {
   "type": "hello",
-  "protocolVersion": 2,
+  "protocolVersion": 3,
   "engineVersion": "0.4.1",
   "platform": "linux",
   "cores": 4,
@@ -219,7 +215,6 @@ Parser errors also pass through their stable `LitematicErrorCode` names, such as
   "timeoutSeconds": 60,
   "memoryLimitPerWorkerBytes": 3650722201,
   "suggestedMaxQuads": 17000000,
-  "defaultLod": 1,
   "defaultTier": { "width": 2048, "height": 2048, "supersample": 2 }
 }
 ```
@@ -267,7 +262,7 @@ The engine must never depend on a console: no colour codes, no interactive promp
 - Removing fields, renaming fields, or changing defaults is breaking.
 - Requests do not carry `protocolVersion`; clients compare the value in `hello` before sending jobs. An unknown request `type` returns `INVALID_REQUEST` and leaves the worker running.
 
-## Non-goals for v2
+## Non-goals for v3
 
 - Cancellation of a running job.
 - Streaming or progressive output.

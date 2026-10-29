@@ -7,6 +7,17 @@
 
 ## [Unreleased]
 
+### 变更
+
+- 完全移除 LOD。`render`、`mesh` 和 `bench` 不再接受 `--lod`，
+  `serve`/`supervise` 请求不再包含 `lod` 字段。数据层聚合会丢弃
+  block entities、entities 和 pending ticks，无法保留红石等方块级机制，因此
+  删除 scene LOD 模块、警告和文档。大结构请改用 `--stream-mesh`、
+  `--greedy-mesh` 和分辨率控制。
+- `render --stream-mesh=auto` 现在等价于 `on`，始终按页流式构建网格。
+- `serve`/`supervise` 协议版本提升到 3：请求和结果中不再有 `lod` 与 `lodMs`，
+  supervisor 的 hello 不再有 `defaultLod`，缓存仅按 `inputHash` 命中。
+
 ## [0.4.1] - 2026-10-29
 
 ### 新增

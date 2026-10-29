@@ -1,6 +1,7 @@
 # Phase 5 Plan: Huge Structures
 
-**Status:** C1-C6 implemented. This plan covers the extreme fixtures.
+**Status:** C1-C2 and C4-C6 implemented. C3 (LOD) was removed by issue #19.
+This plan covers the extreme fixtures.
 
 ## Measured baseline
 
@@ -33,9 +34,10 @@ Consequences:
 
 - The default 5M cap is the correct behaviour on small machines; this file is
   far outside it.
-- Even a 32 GB host is marginal without level of detail.
+- Even a 32 GB host is marginal without reduced resolution or streaming.
 - 77.6M quads at roughly 0.5 to 1 second per million triangles cannot meet a
-  10 minute budget without LOD, regardless of mesh parallelization.
+  10 minute budget without reducing the workload, regardless of mesh
+  parallelization.
 
 The other extreme fixtures are 5 to 7 times larger in volume, so default limits
 reject them in minutes with multi-gigabyte memory. `all_ones_nbt_10GB.litematic`
@@ -94,43 +96,8 @@ Measured on `000002` at 1024x1024 and supersample 2:
 | PNG SHA-256      | `E861C6...` | `E861C6...` (identical) |
 
 `000001` exact is estimated at roughly 29 GB (13.5 GB mesh plus 15.5 GB quad
-table), still more free memory than the 48 GB test host had available; `--lod
-auto` keeps choosing LOD 2.
-
-### C3: Level of detail (implemented)
-
-`000001` emits 77.6M quads with the color-only catalog and 118.6M with the
-client jar, so exact rendering needs more than 13 GB before the triangle table.
-`litematic_scene::aggregate` merges cells in a pure data layer, and `--lod N`
-(2..=16) applies it after parsing:
-
-- Each cell keeps the most frequent non-air state; ties use canonical order.
-- Later regions win overlaps, matching the mesh builder.
-- Output is an ordinary `Scene`, so the mesh builder and renderer are unchanged.
-- Block entities, entities, and pending ticks are dropped.
-- Off by default; opt-in for extreme schematics.
-
-Wiring: `render`, `bench`, and `mesh` take `--lod`; the serve protocol carries
-`lod` and keys its cache by `(inputHash, lod)`; `sceneHash` in the result is the
-aggregated scene.
-
-Measured with the client jar at 1024x1024, supersample 2, 12 threads:
-
-| LOD       | Triangles | Wall   | Peak working set |
-| --------- | --------- | ------ | ---------------- |
-| 1 (exact) | 117M      | 36.6 s | 18.9 GB          |
-| 2         | 14.6M     | 16.4 s | 9.6 GB           |
-| 4         | 1.55M     | 4.0 s  | 683 MB           |
-
-With page streaming, exact `000001` now completes in 36.6 s and 18.9 GB, within
-the 10 minute budget on a 48 GB host. LOD remains necessary for smaller hosts.
-The LOD 2 pass itself dropped from 0.63 s to 0.21 s after aggregation was
-parallelized.
-
-LOD 4 meets the 10 minute budget with a large margin. LOD 2 is viable on a
-16 GB host but not on a small VPS. The render for LOD 4 reports 18 missing
-models and 4 missing textures out of 9,190 resolved states; no magenta blocks
-appear in the output.
+table), still more free memory than the 48 GB test host had available. Streaming
+and resolution controls are the remaining options for hosts below that.
 
 ### C4: Capacity-aware admission (implemented)
 
@@ -139,32 +106,24 @@ appear in the output.
 - The default mesh cap is the lower of 5,000,000 quads and that budget, so a
   small container rejects oversized schematics before allocating render
   buffers. `--force-limits` remains the explicit override.
-- `--lod auto` uses the same budget to choose a factor.
 
 Measured on the test host: 27 GB free produced a 54.3M quad budget. `000002`
-exact (19.9M quads) is now chosen automatically; `000001` (118.6M quads with
-the client jar) falls back to LOD 2, and `000001` exact succeeds when forced.
+exact (19.9M quads) fits; `000001` (118.6M quads with the client jar) is
+rejected unless `--force-limits` is used.
 
 **Acceptance:** a 2 GiB worker rejects `000001` with the mesh cap and no OOM;
-the same job succeeds with `--force-limits` and `--lod` on a larger machine.
+the same job succeeds with `--force-limits` on a larger machine.
 
-### C5: Compact attributes and parallel aggregation (implemented)
+### C5: Compact attributes (implemented)
 
-- LOD aggregation splits output rows across workers. Palette ids are assigned
-  in a serial pass over the chosen per-cell state ids, so the scene, palette
-  order, and packed indices are identical to the single-threaded path.
 - Mesh UVs are Q12 fixed point (`i16`) and ambient occlusion is a 2-bit level.
   Both reconstruct the exact previous float values on the measured fixtures.
 - `Vertex` drops from 44 to 36 bytes and `Quad` from 180 to 148 bytes.
 - The projected quad table stores one RGBA color, one shade factor, four AO
   levels, and Q12 UVs per quad: 200 to 128 bytes. Translucent triangles drop
   from 160 to 112 bytes.
-- Aggregation: `000001` LOD 2 0.63 s to 0.21 s (scan stage 0.54 s to 0.07 s),
-  LOD 4 1.74 s to 0.19 s, LOD 8 0.63 s to 0.15 s; `000002` LOD 2 1.8 s to
-  0.42 s, LOD 8 1.2 s to 0.20 s.
 - Memory: `000001` exact 23.1 to 18.9 GB, `000002` exact 7.5 to 6.3 GB.
-- PNG SHA-256 is unchanged for `000001` exact, `000002` exact, and `000001`
-  auto (LOD 2).
+- PNG SHA-256 is unchanged for `000001` exact and `000002` exact.
 
 ### C6: Container NBT is ignored for geometry (implemented)
 
@@ -184,8 +143,7 @@ with a 22 MB peak, instead of failing with `TRUNCATED_INPUT`.
 
 C1, C2, C3, C4, C5, and C6 are implemented. Exact rendering covers scenes that
 fit the budget, streaming keeps memory near the mesh size, compact attributes
-shrink that mesh, container NBT is skipped for geometry, and LOD covers the
-rest.
+shrink that mesh, and container NBT is skipped for geometry.
 
 ## Risks
 
@@ -194,18 +152,13 @@ rest.
 | Parallel mesh changes quad order | High   | Page merge in key order; byte-compare goldens |
 | `BlockCatalog` not `Sync`        | Medium | Snapshot both catalogs before workers start   |
 | Memory per quad still too high   | High   | C2 before claiming huge support               |
-| LOD changes visual output        | Medium | Opt-in flag, documented                       |
 | Time budget on 1-core            | High   | C4 rejects early instead of swapping          |
 
 ## Open Questions
 
 - What is the target machine for the extreme fixtures (RAM, cores)?
-- What minimum LOD quality is acceptable: block majority, or "any non-air wins"?
-- Should LOD be allowed automatically when a job would exceed the memory
-  budget, or always be explicit?
 
 ## Answers so far
 
 - Extreme jobs may use all available device resources.
-- LOD is allowed.
 - The wall-clock budget for one huge image is 10 minutes.

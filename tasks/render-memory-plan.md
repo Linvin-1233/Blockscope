@@ -22,9 +22,7 @@ them far-to-near.
 ### A: Automatic mesh streaming
 
 - `render` now accepts `--stream-mesh[=auto|on|off]`, default `auto`.
-- `auto` streams fixed-LOD renders and keeps the full mesh for `--lod auto`.
-- `off` restores the full-mesh path; `on` forces streaming and still rejects
-  `--lod auto`.
+- `auto` and `on` always stream pages; `off` restores the full-mesh path.
 - Existing `--stream-mesh` without a value means `on`.
 
 ### B: Compact translucent triangles
@@ -46,7 +44,7 @@ Same host, 1024x1024, supersample 2, 12 threads, `--force-limits`.
 | `000002` + client jar, full mesh             |  3.8 GB |      3.8 GB |
 | `000001` + client jar, full mesh             | 18.9 GB |   unchanged |
 
-Default `render` without a flag now takes the streamed path for fixed LOD. The
+Default `render` without a flag now takes the streamed path. The
 `000001` client-jar PNG differs from the previous f64 build by 2 pixels out of
 1,048,576 (maximum channel delta 4); golden fixtures remain byte-identical.
 
@@ -54,7 +52,7 @@ Default `render` without a flag now takes the streamed path for fixed LOD. The
 
 - `cargo test -p litematic-render` (unit, golden PNG, golden textures, render)
 - `cargo test -p blockscope-cli --test cli` (streamed vs full, default auto vs
-  full, auto-LOD rejection)
+  full)
 - `cargo fmt --all --check`
 - `cargo clippy --workspace --all-targets -- -D warnings`
 - `cargo test --workspace`

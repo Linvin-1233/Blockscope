@@ -455,7 +455,6 @@ mod tests {
         let error = match prepare_scene(
             one_block_scene(),
             None,
-            1,
             &MeshLimits::default(),
             100_000,
             MeshBuildOptions::default(),

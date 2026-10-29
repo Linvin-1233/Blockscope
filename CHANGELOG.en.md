@@ -8,6 +8,19 @@ User-facing changes are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Remove LOD entirely. `render`, `mesh`, and `bench` no longer accept `--lod`,
+  and `serve`/`supervise` requests no longer have a `lod` field. Data-layer
+  aggregation drops block entities, entities, and pending ticks and cannot
+  preserve redstone or other block-level mechanics, so the scene LOD module,
+  warning, and docs are gone. Use `--stream-mesh`, `--greedy-mesh`, and
+  resolution controls for large structures instead.
+- `render --stream-mesh=auto` is now equivalent to `on`; it always streams pages.
+- The `serve`/`supervise` protocol version is now 3: `lod` and `lodMs` are gone
+  from requests and results, `defaultLod` is gone from the supervisor hello, and
+  cache entries are keyed by `inputHash` only.
+
 ## [0.4.1] - 2026-10-29
 
 ### Added

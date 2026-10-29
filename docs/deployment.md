@@ -66,7 +66,7 @@ Expected output: `cores: 1`, `cpuQuotaMilli: 1000`, `memoryLimitBytes: 107374182
 
 ## Capacity reference
 
-`blockscope capacity` also reports `suggestedMaxQuads`: 80 percent of available memory divided by roughly 400 bytes per quad. The default mesh cap is the lower of 5,000,000 quads and that budget, so a 1 GiB container rejects oversized schematics earlier than a 32 GiB host. `--force-limits` bypasses the cap; there is no automatic LOD, so choose an explicit `--lod` when a scene cannot fit.
+`blockscope capacity` also reports `suggestedMaxQuads`: 80 percent of available memory divided by roughly 400 bytes per quad. The default mesh cap is the lower of 5,000,000 quads and that budget, so a 1 GiB container rejects oversized schematics earlier than a 32 GiB host. `--force-limits` bypasses the cap and is only appropriate for trusted input on a host with enough memory.
 
 | Machine                 | workers | threads | default tier | peak RSS per worker |
 | ----------------------- | ------- | ------- | ------------ | ------------------- |

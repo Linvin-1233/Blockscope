@@ -18,7 +18,7 @@ use litematic_render::{
     Background, LightingProfile, RenderError, RenderOptions, render_mesh,
     render_mesh_with_textures, write_png,
 };
-use litematic_scene::{Scene, aggregate_with_threads};
+use litematic_scene::Scene;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -39,7 +39,6 @@ const MAX_DIMENSION: u32 = 1024;
 const MAX_MESH_QUADS: usize = 200_000;
 const MAX_MESH_VERTICES: usize = 800_000;
 const MAX_MESH_PAGES: usize = 8_000;
-const MAX_LOD: u32 = 16;
 
 /// Parsed pack state reused by every request in an isolate. Static assets are
 /// immutable for a deployment, so a path change replaces the entry.
@@ -65,7 +64,6 @@ struct QueryOptions {
     supersample: Option<u32>,
     yaw: Option<f32>,
     elevation: Option<f32>,
-    lod: Option<u32>,
     background: Option<String>,
     lighting: Option<String>,
 }
@@ -133,7 +131,7 @@ impl ApiError {
             status: 422,
             code: error.code.as_str().to_string(),
             message: error.message,
-            hint: Some("lower lod"),
+            hint: None,
         }
     }
 
@@ -144,10 +142,7 @@ impl ApiError {
             _ => 422,
         };
         let hint = match error.code {
-            litematic_render::RenderErrorCode::TempStorageFailed => {
-                Some("lower lod; check temporary storage")
-            }
-            litematic_render::RenderErrorCode::TranslucentBudgetExceeded => Some("lower lod"),
+            litematic_render::RenderErrorCode::TempStorageFailed => Some("check temporary storage"),
             _ => None,
         };
         Self {
@@ -155,15 +150,6 @@ impl ApiError {
             code: error.code.as_str().to_string(),
             message: error.message,
             hint,
-        }
-    }
-
-    fn from_scene(error: litematic_scene::SceneError) -> Self {
-        Self {
-            status: 422,
-            code: error.code.as_str().to_string(),
-            message: error.message,
-            hint: None,
         }
     }
 
@@ -401,13 +387,6 @@ fn prepare_render(
         return Err(ApiError::bad_request("supersample must be 1 or 2"));
     }
 
-    let lod = query.lod.unwrap_or(1);
-    if !(1..=MAX_LOD).contains(&lod) {
-        return Err(ApiError::bad_request(format!(
-            "lod must be between 1 and {MAX_LOD}"
-        )));
-    }
-
     let background = match query.background.as_deref() {
         None | Some("transparent") => Background::Transparent,
         Some(value) => Background::Solid(Rgba::from_hex(value).map_err(ApiError::bad_request)?),
@@ -434,11 +413,6 @@ fn prepare_render(
     let file = LitematicFile::parse_bytes(input, &decode_limits, &scene_limits)
         .map_err(ApiError::from_litematic)?;
     let scene = file.into_scene().map_err(ApiError::from_litematic)?;
-    let scene = if lod > 1 {
-        aggregate_with_threads(&scene, lod, 1).map_err(ApiError::from_scene)?
-    } else {
-        scene
-    };
 
     let mesh_limits = MeshLimits {
         max_pages: MAX_MESH_PAGES,

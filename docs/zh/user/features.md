@@ -19,7 +19,6 @@ Blockscope 是一个把 Minecraft `.litematic` 投影文件渲染成 PNG 的无�
 - 可选离屏 `wgpu` 光栅化（`--features gpu`，`--backend gpu` 或 `auto`）；CPU
   仍是默认后端和逐字节参考
 - 超采样 1-4、多视角、并行 tile、分页流式渲染
-- LOD 固定因子 `2..=16`，必须显式选择，不再自动降级
 - `serve` 长驻 worker 和 `supervise` 多进程调度，使用 newline-delimited JSON
 - 容量检测、内存预算、mesh/render 上限和稳定错误码
 - 黄金 manifest/PNG、并发和协议测试

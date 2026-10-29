@@ -45,7 +45,7 @@ It does not disable the thread, texture, NBT-depth, NBT-tag, or 4096-pixel per-s
 
 ## Error Codes
 
-See [Engine protocol v2](/engine-protocol) for the full error table and retryability. Common errors:
+See [Engine protocol v3](/engine-protocol) for the full error table and retryability. Common errors:
 
 - `INPUT_TOO_LARGE`: input or resource limit exceeded
 - `INVALID_REQUEST`: malformed request, relative path, or non-regular file

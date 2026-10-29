@@ -105,7 +105,7 @@ fn body_lines(layout: BodyLayout, version: &str, width: u16) -> Vec<String> {
             format!("    {MUTED}${MUTED:#} blockscope inspect model.litematic --json"),
             String::new(),
             format!("  {BOLD}Commands{BOLD:#}"),
-            format!("    {ACCENT}render{ACCENT:#}     PNG or terminal graphics, multi-view, LOD"),
+            format!("    {ACCENT}render{ACCENT:#}     PNG or terminal graphics, multi-view"),
             format!("    {ACCENT}inspect{ACCENT:#}    Manifest, bounds, statistics, scene hash"),
             format!("    {ACCENT}serve{ACCENT:#}      Long-lived JSON worker over stdio"),
             String::new(),
