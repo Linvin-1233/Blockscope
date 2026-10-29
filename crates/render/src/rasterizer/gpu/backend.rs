@@ -335,7 +335,8 @@ pub(super) fn render(
         options.width,
         options.height,
         options.supersample,
-        options.threads as usize,
+        // Match the CPU path: 0 means available parallelism, not one thread.
+        worker_count(options.threads, options.height as usize),
     );
     Ok(RenderOutput {
         width: options.width,
