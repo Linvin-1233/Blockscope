@@ -3,7 +3,7 @@
   <!--
     Per-user MSI: installs under %LOCALAPPDATA%\Programs\Blockscope, appends the
     directory to the user PATH, and removes both on uninstall. No admin rights
-    are required. Version and binary directory come from build-msi.ps1.
+    are required. Version and binary directory come from `cargo xtask build-msi`.
   -->
   <Package
       Name="Blockscope"

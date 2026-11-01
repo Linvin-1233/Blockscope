@@ -51,18 +51,17 @@ cargo test --workspace
 # 使用 just
 just check
 
-# Linux
-bash ./scripts/check.sh
-
-# Windows PowerShell 7+
-pwsh ./scripts/check.ps1
-
-# Windows PowerShell 5.1
-powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/check.ps1
+# 或直接运行 xtask
+cargo xtask check
 ```
 
-`check.ps1` 在 Windows 上还会用 `x86_64-unknown-linux-gnu` 目标再跑一遍 clippy，
-用来捕获只在 Linux 编译的代码；首次运行会自动安装该 target，需要联网。
+`just check` 与 CI 的 test matrix 完全一致，在 Ubuntu、Windows 和 macOS 上运行
+同一套检查。额外的跨平台检查用 `just check-all`：其中 `check-linux` 会用
+`x86_64-unknown-linux-gnu` 目标再跑一遍 clippy 以捕获只在 Linux 编译的代码，
+首次运行会自动安装该 target，需要联网；`check-wasm` 检查 Worker 的 wasm 目标。
+
+仓库自动化位于 `xtask` crate，通过 `cargo xtask <命令>` 运行；新增任务请加到
+该 crate 中，而不是另起脚本。
 
 CI 的 test matrix 会在 Ubuntu、Windows 和 macOS 上运行同样的检查；container
 和 MSI 任务分别在 Ubuntu 和 Windows 上运行。不要通过跳过测试、删除断言、
@@ -143,14 +142,12 @@ MINECRAFT_CLIENT_JAR=/path/to/client.jar \
   cargo test -p litematic-render --test real_materials -- --ignored
 ```
 
-Windows PowerShell：
+Windows 上环境变量语法不同，可以直接传入路径（`just test-real-litematic D:\path\to\fixtures`）：
 
-```powershell
-$env:LITEMATIC_FIXTURES_DIR = "D:\path\to\fixtures"
-cargo test -p litematic-core --test real_files -- --ignored
-
-$env:MINECRAFT_CLIENT_JAR = "D:\path\to\client.jar"
-cargo test -p litematic-material --test real_jar -- --ignored
+```bash
+# 该命令同时适用于 Windows、Linux 和 macOS
+cargo xtask test-real litematic --path /path/to/fixtures
+cargo xtask test-real jar --path /path/to/client.jar
 ```
 
 真实样本、客户端 jar 和渲染产物不要提交。
@@ -164,14 +161,9 @@ cargo test -p litematic-material --test real_jar -- --ignored
 # Linux/macOS
 UPDATE_GOLDEN=1 cargo test -p blockscope-cli --test golden
 UPDATE_GOLDEN=1 cargo test -p litematic-render --test golden_png
-```
 
-```powershell
-# Windows PowerShell
-$env:UPDATE_GOLDEN = "1"
-cargo test -p blockscope-cli --test golden
-cargo test -p litematic-render --test golden_png
-Remove-Item Env:UPDATE_GOLDEN
+# 或使用 xtask（所有平台）
+cargo xtask golden-update
 ```
 
 更新后请检查 `fixtures/golden/` 的 diff，确认变化符合预期；不要在没有说明的

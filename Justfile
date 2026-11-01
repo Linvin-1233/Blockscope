@@ -26,19 +26,8 @@ clippy-fix:
     cargo clippy --workspace --all-targets --fix --allow-dirty --allow-staged
 
 # Cross-target Clippy for Linux to catch platform-specific code (e.g. cgroups, RSS)
-[unix]
 check-linux:
-    @if command -v rustup >/dev/null 2>&1; then \
-        if ! rustup target list --installed | grep -q "^x86_64-unknown-linux-gnu$"; then \
-            echo "Installing x86_64-unknown-linux-gnu target..."; \
-            rustup target add x86_64-unknown-linux-gnu; \
-        fi; \
-    fi
-    cargo clippy --workspace --all-targets --target x86_64-unknown-linux-gnu -- -D warnings
-
-[windows]
-check-linux:
-    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-linux.ps1
+    cargo xtask check-linux
 
 # Run tests across all workspace crates
 test *args:
@@ -53,42 +42,22 @@ test-ignored *args:
     cargo test --workspace -- --ignored {{ args }}
 
 # Run real .litematic fixture tests (requires LITEMATIC_FIXTURES_DIR env var or directory argument)
-[unix]
 test-real-litematic dir=env_var_or_default("LITEMATIC_FIXTURES_DIR", "") *args:
-    LITEMATIC_FIXTURES_DIR="{{ dir }}" cargo test -p litematic-core --test real_files -- --ignored {{ args }}
-
-[windows]
-test-real-litematic dir=env_var_or_default("LITEMATIC_FIXTURES_DIR", "") *args:
-    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-real.ps1 -Type litematic -Path "{{ dir }}" -Args "{{ args }}"
+    cargo xtask test-real litematic --path "{{ dir }}" -- {{ args }}
 
 # Run real client JAR texture extraction tests (requires MINECRAFT_CLIENT_JAR env var or jar path argument)
-[unix]
 test-real-jar jar=env_var_or_default("MINECRAFT_CLIENT_JAR", "") *args:
-    MINECRAFT_CLIENT_JAR="{{ jar }}" cargo test -p litematic-material --test real_jar -- --ignored {{ args }}
-    MINECRAFT_CLIENT_JAR="{{ jar }}" cargo test -p litematic-render --test real_materials -- --ignored {{ args }}
+    cargo xtask test-real jar --path "{{ jar }}" -- {{ args }}
 
-[windows]
-test-real-jar jar=env_var_or_default("MINECRAFT_CLIENT_JAR", "") *args:
-    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-real.ps1 -Type jar -Path "{{ jar }}" -Args "{{ args }}"
-
-# Run standard quality gate: format check, clippy, and tests (matches scripts/check.sh)
-check: fmt-check clippy test
+# Run standard quality gate: format check, clippy, and tests (same as CI)
+check:
+    cargo xtask check
 
 # Build the Cloudflare Workers bundle into .cloudflare/output/v0
-[unix]
 worker:
-    ./scripts/build-worker.sh
-
-[windows]
-worker:
-    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-worker.ps1
+    cargo xtask worker
 
 # Deploy the prebuilt Cloudflare Worker
-[unix]
-worker-deploy: worker
-    cf deploy --prebuilt
-
-[windows]
 worker-deploy: worker
     cf deploy --prebuilt
 
@@ -124,67 +93,39 @@ bench-tile *args:
     cargo run --release -p litematic-render --example tile_bench {{ args }}
 
 # Regenerate golden test manifests and reference PNGs
-[unix]
 golden-update:
-    UPDATE_GOLDEN=1 cargo test -p blockscope-cli --test golden
-    UPDATE_GOLDEN=1 cargo test -p litematic-render --test golden_png
-
-[windows]
-golden-update:
-    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/golden-update.ps1
+    cargo xtask golden-update
 
 # Build local Docker container image
 docker-build tag="blockscope:local":
     docker build -t {{ tag }} .
 
 # Run capacity and protocol smoke tests inside Docker container (matches CI)
-[unix]
 docker-smoke tag="blockscope:local":
-    docker run --rm --cpus=1 --memory=1g {{ tag }} capacity --json
-    printf '{"type":"shutdown"}\n' | docker run --rm -i --cpus=1 --memory=1g {{ tag }} serve
-
-[windows]
-docker-smoke tag="blockscope:local":
-    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/docker-smoke.ps1 -Tag "{{ tag }}"
+    cargo xtask docker-smoke --tag "{{ tag }}"
 
 # Build release CLI binary with static CRT (Windows: +crt-static)
-[unix]
 build-static:
-    RUSTFLAGS="-C target-feature=+crt-static" cargo build --release --locked -p blockscope-cli --bin blockscope
-
-# Build release CLI binary with static CRT (Windows: +crt-static)
-[windows]
-build-static:
-    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-static.ps1
+    cargo xtask build-static
 
 # Build Windows MSI installer package (Windows only)
 [windows]
 build-msi out="out/blockscope-msi-check.msi" bin_dir="target/release" version="":
-    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-msi.ps1 -Output "{{ out }}" -BinDir "{{ bin_dir }}" -Version "{{ version }}"
+    cargo xtask build-msi --output "{{ out }}" --bin-dir "{{ bin_dir }}" --version "{{ version }}"
 
 # Test MSI installer lifecycle: install, verify, uninstall, cleanup (Windows only)
 [windows]
 test-msi msi="out/blockscope-msi-check.msi" log_dir="out":
-    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-msi.ps1 -Msi "{{ msi }}" -LogDir "{{ log_dir }}"
+    cargo xtask test-msi --msi "{{ msi }}" --log-dir "{{ log_dir }}"
 
 # Verify that a git tag matches the version in Cargo.toml
-[unix]
 verify-tag tag:
-    @tag="{{ tag }}"; \
-    tag="${tag#v}"; \
-    ver=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1); \
-    if [ -z "$ver" ]; then echo "Cannot read version from Cargo.toml"; exit 1; fi; \
-    if [ "$tag" != "$ver" ]; then echo "Tag {{ tag }} does not match workspace version $ver"; exit 1; fi; \
-    echo "Tag {{ tag }} matches workspace version $ver"
-
-[windows]
-verify-tag tag:
-    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-tag.ps1 -Tag "{{ tag }}"
+    cargo xtask verify-tag "{{ tag }}"
 
 # Package and upload MSI release asset to GitHub Release (Windows only)
 [windows]
 release-msi tag:
-    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release-msi.ps1 -Tag "{{ tag }}"
+    cargo xtask release-msi --tag "{{ tag }}"
 
 # A bump raises the workspace version, refreshes Cargo.lock, updates every
 # document that states the current version, and promotes the `[Unreleased]`
@@ -223,7 +164,7 @@ bump level="patch":
     fi
 
     # Cargo.toml is the only version source: every crate inherits
-    # version.workspace, and verify-tag, build-msi.ps1, and the release
+    # version.workspace, and verify-tag, build-msi, and the release
     # workflow all read this line.
     current=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
     if [[ ! "$current" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then

@@ -46,25 +46,22 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-Or run the repository script or `just`:
+Or run `just` directly:
 
 ```bash
-# Using just
 just check
-
-# Linux
-bash ./scripts/check.sh
-
-# Windows PowerShell 7+
-pwsh ./scripts/check.ps1
-
-# Windows PowerShell 5.1
-powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/check.ps1
+# or without just
+cargo xtask check
 ```
 
-On Windows, `check.ps1` also runs clippy against the `x86_64-unknown-linux-gnu`
-target so Linux-only code is linted locally; the first run installs that target
-and needs network access.
+`just check` matches the CI test matrix, which runs the same checks on Ubuntu,
+Windows, and macOS. Use `just check-all` for the extra gates: `check-linux` runs
+clippy against the `x86_64-unknown-linux-gnu` target to lint Linux-only code
+(the first run installs that target and needs network access), and `check-wasm`
+checks the Worker's wasm target.
+
+Repository automation lives in the `xtask` crate and runs as
+`cargo xtask <command>`. New tasks belong there, not in separate scripts.
 
 The CI test matrix runs the same checks on Ubuntu, Windows, and macOS; the
 container and MSI jobs run on Ubuntu and Windows respectively. Do not skip tests,
@@ -147,14 +144,13 @@ MINECRAFT_CLIENT_JAR=/path/to/client.jar \
   cargo test -p litematic-render --test real_materials -- --ignored
 ```
 
-Windows PowerShell:
+Windows uses different environment-variable syntax; pass the path as an
+argument instead (`just test-real-litematic D:\path\to\fixtures`):
 
-```powershell
-$env:LITEMATIC_FIXTURES_DIR = "D:\path\to\fixtures"
-cargo test -p litematic-core --test real_files -- --ignored
-
-$env:MINECRAFT_CLIENT_JAR = "D:\path\to\client.jar"
-cargo test -p litematic-material --test real_jar -- --ignored
+```bash
+# The command works the same on Windows, Linux, and macOS
+cargo xtask test-real litematic --path /path/to/fixtures
+cargo xtask test-real jar --path /path/to/client.jar
 ```
 
 Do not commit real fixtures, client jars, or rendered artifacts.
@@ -168,14 +164,9 @@ a rendering/format change is intentional:
 # Linux/macOS
 UPDATE_GOLDEN=1 cargo test -p blockscope-cli --test golden
 UPDATE_GOLDEN=1 cargo test -p litematic-render --test golden_png
-```
 
-```powershell
-# Windows PowerShell
-$env:UPDATE_GOLDEN = "1"
-cargo test -p blockscope-cli --test golden
-cargo test -p litematic-render --test golden_png
-Remove-Item Env:UPDATE_GOLDEN
+# Or xtask, on any platform
+cargo xtask golden-update
 ```
 
 Review the `fixtures/golden/` diff and confirm that every change is expected.
