@@ -53,7 +53,7 @@ pub fn build(output: &str, bin_dir: &str, version: Option<&str>) -> Result<()> {
         )));
     }
 
-    let target = root().join(output);
+    let target = native_separators(&root().join(output));
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -75,7 +75,7 @@ pub fn build(output: &str, bin_dir: &str, version: Option<&str>) -> Result<()> {
 pub fn test(msi: Option<&str>, log_dir: Option<&str>) -> Result<()> {
     require_windows("test-msi")?;
 
-    let msi = root().join(msi.unwrap_or("out/blockscope-msi-check.msi"));
+    let msi = native_separators(&root().join(msi.unwrap_or("out/blockscope-msi-check.msi")));
     if !msi.is_file() {
         return Err(Error::message(format!("MSI not found: {}", msi.display())));
     }
@@ -162,6 +162,16 @@ pub fn release(tag: &str, triple: &str) -> Result<()> {
     run(Command::new("gh")
         .args(["release", "upload", tag, &msi, &checksum, "--clobber"])
         .current_dir(root()))
+}
+
+// Joining a forward-slash argument onto the repository root leaves a mixed path
+// such as `D:\repo\out/pkg.msi`, which the Windows Installer database API
+// rejects. Rebuilding the path from components emits the native separator.
+fn native_separators(path: &Path) -> PathBuf {
+    path.components().fold(PathBuf::new(), |mut native, part| {
+        native.push(part);
+        native
+    })
 }
 
 fn msiexec(action: &str, verb: &str, msi: &Path, log: &Path) -> Result<()> {
@@ -269,5 +279,18 @@ impl Toolchain {
             .arg(program)
             .output()
             .is_ok_and(|output| output.status.success())
+    }
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::native_separators;
+    use std::path::Path;
+
+    #[test]
+    fn converts_forward_slashes_to_the_windows_separator() {
+        let native = native_separators(Path::new("out/stage/blockscope.msi"));
+
+        assert_eq!(native.to_string_lossy(), "out\\stage\\blockscope.msi");
     }
 }
