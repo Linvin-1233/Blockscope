@@ -9,6 +9,7 @@ members = [
   "crates/render",
   "crates/cli",
   "crates/worker",
+  "xtask",
 ]
 
 [workspace.package]

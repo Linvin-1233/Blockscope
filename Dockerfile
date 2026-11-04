@@ -5,6 +5,7 @@ WORKDIR /src
 
 COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY crates ./crates
+COPY xtask ./xtask
 
 RUN cargo build --release -p blockscope-cli
 

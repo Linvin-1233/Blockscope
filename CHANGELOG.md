@@ -9,6 +9,8 @@
 
 ### 变更
 
+- 仓库自动化改用 Rust 的 `xtask` crate（`cargo xtask <命令>`），
+  移除按平台重复的 PowerShell/Bash 脚本，CI 不再安装 Node。
 - 完全移除 LOD。`render`、`mesh` 和 `bench` 不再接受 `--lod`，
   `serve`/`supervise` 请求不再包含 `lod` 字段。数据层聚合会丢弃
   block entities、entities 和 pending ticks，无法保留红石等方块级机制，因此

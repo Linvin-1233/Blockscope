@@ -10,6 +10,9 @@ User-facing changes are recorded here. The format follows
 
 ### Changed
 
+- Repository automation now lives in the Rust `xtask` crate (`cargo xtask
+  <command>`), replacing the per-platform PowerShell/Bash scripts; CI no longer
+  installs Node.
 - Remove LOD entirely. `render`, `mesh`, and `bench` no longer accept `--lod`,
   and `serve`/`supervise` requests no longer have a `lod` field. Data-layer
   aggregation drops block entities, entities, and pending ticks and cannot

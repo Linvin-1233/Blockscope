@@ -10,47 +10,37 @@ Static assets are bundled with each Worker version. To change the pack, rebuild 
 
 ## Deploy
 
-Prerequisites: Rust, the `wasm32-unknown-unknown` target, `worker-build` 0.8.7, and an authenticated `cf` CLI.
+Prerequisites: Rust, the `wasm32-unknown-unknown` target, and an authenticated `cf` CLI. `cargo xtask worker` installs `worker-build` 0.8.7 on first use.
 
 ```bash
 rustup target add wasm32-unknown-unknown
-cargo install worker-build --version 0.8.7 --locked
-./scripts/build-worker.sh
+cargo xtask worker
 cf deploy --prebuilt
 ```
 
-`build-worker.sh` writes the Cloudflare Build Output to `.cloudflare/output/v0`. If the account has more than one account, set `CLOUDFLARE_ACCOUNT_ID` before deploying. `just worker` and `just worker-deploy` run the same commands.
-
-On Windows PowerShell, use the native script instead; `just worker` dispatches to it on Windows:
-
-```powershell
-rustup target add wasm32-unknown-unknown
-cargo install worker-build --version 0.8.7 --locked
-./scripts/build-worker.ps1
-cf deploy --prebuilt
-```
+`cargo xtask worker` writes the Cloudflare Build Output to `.cloudflare/output/v0` and runs the same way on Windows, Linux, and macOS. If the account has more than one account, set `CLOUDFLARE_ACCOUNT_ID` before deploying. `just worker` and `just worker-deploy` run the same commands.
 
 ### Bundle a resource pack
 
 Put the pack at `pack.zip` in the repository root, or point at it explicitly:
 
 ```bash
-RESOURCE_PACK=~/packs/vanilla.zip ./scripts/build-worker.sh
+RESOURCE_PACK=~/packs/vanilla.zip cargo xtask worker
 cf deploy --prebuilt
 ```
 
-On Windows PowerShell:
+On Windows PowerShell, set the environment variable first:
 
 ```powershell
 $env:RESOURCE_PACK = "C:\packs\vanilla.zip"
-./scripts/build-worker.ps1
+cargo xtask worker
 cf deploy --prebuilt
 ```
 
 The build copies the pack to the Worker's `assets/` directory, enables the `ASSETS` binding, and exposes it internally at `/pack.zip`. The committed default is `RESOURCE_PACK_PATH=/pack.zip`; override the URL without moving the file:
 
 ```bash
-RESOURCE_PACK_PATH=/packs/vanilla.zip ./scripts/build-worker.sh
+RESOURCE_PACK_PATH=/packs/vanilla.zip cargo xtask worker
 ```
 
 `pack.zip` is ignored by git. Do not commit Minecraft assets. If the file is missing, the build produces a color-only Worker and logs a warning.
@@ -82,7 +72,7 @@ Edit `crates/worker/worker.config.json`:
 Or override at build time without editing the file:
 
 ```bash
-ENDPOINT=/api/render ALLOWED_ORIGIN=https://example.com ./scripts/build-worker.sh
+ENDPOINT=/api/render ALLOWED_ORIGIN=https://example.com cargo xtask worker
 ```
 
 `ENDPOINT` must start with `/`. `ALLOWED_ORIGIN` controls the CORS header for the render and health routes. Setting `RESOURCE_PACK_PATH` to an empty string disables texture loading and forces color-only output. `runWorkerFirst` keeps the pack off the public asset routes; the Worker reads it through `ASSETS`.
@@ -92,7 +82,7 @@ ENDPOINT=/api/render ALLOWED_ORIGIN=https://example.com ./scripts/build-worker.s
 The Workers Free plan uses a 10 ms CPU limit and rejects custom limits. Small previews can finish, but larger structures need a paid plan. On a paid plan, add a CPU limit at build time:
 
 ```bash
-CPU_MS=30000 ./scripts/build-worker.sh
+CPU_MS=30000 cargo xtask worker
 cf deploy --prebuilt
 ```
 

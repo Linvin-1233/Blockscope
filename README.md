@@ -60,7 +60,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-或运行 `scripts/check.ps1` / `scripts/check.sh`。请勿提交 Minecraft 资产、
+或运行 `just check` / `cargo xtask check`。请勿提交 Minecraft 资产、
 私有 `.litematic` 或资源包。
 
 ## 许可证

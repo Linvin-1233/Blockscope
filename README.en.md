@@ -64,7 +64,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
-Or run `scripts/check.ps1` / `scripts/check.sh`. Do not commit Minecraft assets,
+Or run `just check` / `cargo xtask check`. Do not commit Minecraft assets,
 private `.litematic` files, or resource packs.
 
 ## License

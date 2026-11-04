@@ -52,9 +52,8 @@ All languages:
 - Test: `cargo test --workspace`
 - Format check: `cargo fmt --all --check`
 - Lint: `cargo clippy --workspace --all-targets -- -D warnings`
-- Full check: `pwsh ./scripts/check.ps1` (PowerShell 7+) or
-  `powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/check.ps1`
-  (Windows PowerShell), or `bash ./scripts/check.sh` (Linux)
+- Full check: `just check` or `cargo xtask check`
+- Repository automation: the `xtask` crate, run as `cargo xtask <command>`
 
 ## Boundaries
 
