@@ -6,8 +6,21 @@
 //! larger quad cannot reproduce per-corner variation at the original cell
 //! boundaries.
 
-use crate::{MeshStatistics, NO_TEXTURE, Quad, RenderLayer, UV_SCALE};
+use crate::{MeshStatistics, NO_TEXTURE, RenderLayer, UV_SCALE, Vertex};
 use std::collections::HashMap;
+
+/// A quad before page packing. Greedy merging works on float vertices and the
+/// builder then packs the result into [`crate::Quad`].
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct PendingQuad {
+    pub vertices: [Vertex; 4],
+    pub normal: [f32; 3],
+    pub color: [u8; 4],
+    pub ao: [u8; 4],
+    pub texture: u16,
+    pub layer: RenderLayer,
+    pub shade: bool,
+}
 
 const PAGE: usize = 16;
 const CELLS: usize = PAGE * PAGE;
@@ -71,7 +84,7 @@ fn normal_axis(normal: [f32; 3]) -> Option<(usize, i8)> {
     Some((axis, if normal[axis] > 0.0 { 1 } else { -1 }))
 }
 
-fn unit_face(quad: &Quad) -> Option<FaceInfo> {
+fn unit_face(quad: &PendingQuad) -> Option<FaceInfo> {
     let (axis, sign) = normal_axis(quad.normal)?;
     for (index, value) in quad.normal.iter().enumerate() {
         let expected = if index == axis { f32::from(sign) } else { 0.0 };
@@ -136,7 +149,7 @@ fn unit_face(quad: &Quad) -> Option<FaceInfo> {
     })
 }
 
-fn uniform_ao(quad: &Quad) -> bool {
+fn uniform_ao(quad: &PendingQuad) -> bool {
     quad.ao.iter().all(|value| *value == quad.ao[0])
 }
 
@@ -148,7 +161,13 @@ fn layer_index(layer: RenderLayer) -> usize {
     }
 }
 
-fn merge_quad(template: &Quad, u: usize, v: usize, width: usize, height: usize) -> Option<Quad> {
+fn merge_quad(
+    template: &PendingQuad,
+    u: usize,
+    v: usize,
+    width: usize,
+    height: usize,
+) -> Option<PendingQuad> {
     let (axis, _) = normal_axis(template.normal)?;
     let (u_axis, v_axis) = tangents(axis);
     let u0 = u as f32;
@@ -243,7 +262,7 @@ fn valid_index(index: u32, quad_count: usize) -> bool {
 }
 
 fn merge_group(
-    quads: &mut [Quad],
+    quads: &mut [PendingQuad],
     cells: &[u32; CELLS],
     removed: &mut [bool],
     removed_by_layer: &mut [u64; 3],
@@ -317,8 +336,8 @@ fn merge_group(
 /// Merge eligible unit faces in `quads` and adjust `statistics` in place.
 ///
 /// The function is deterministic and preserves the relative order of surviving
-/// quads. Quads that cannot be merged are left untouched.
-pub(crate) fn merge_page_quads(quads: &mut Vec<Quad>, statistics: &mut MeshStatistics) {
+/// quads. PendingQuads that cannot be merged are left untouched.
+pub(crate) fn merge_page_quads(quads: &mut Vec<PendingQuad>, statistics: &mut MeshStatistics) {
     if quads.len() < 2 {
         return;
     }
@@ -437,7 +456,7 @@ mod tests {
     use super::*;
     use crate::{Vertex, ambient_occlusion_level};
 
-    fn unit_quad(x: usize, y: usize, texture: u16) -> Quad {
+    fn unit_quad(x: usize, y: usize, texture: u16) -> PendingQuad {
         let x = x as f32;
         let y = y as f32;
         let vertices = [
@@ -458,7 +477,7 @@ mod tests {
                 uv: [0, 4096],
             },
         ];
-        Quad {
+        PendingQuad {
             vertices,
             normal: [0.0, 0.0, -1.0],
             color: [255, 255, 255, 255],
@@ -469,7 +488,7 @@ mod tests {
         }
     }
 
-    fn stats_for(quads: &[Quad]) -> MeshStatistics {
+    fn stats_for(quads: &[PendingQuad]) -> MeshStatistics {
         let mut statistics = MeshStatistics::default();
         for quad in quads {
             statistics.add_quad(quad.layer);
@@ -477,7 +496,7 @@ mod tests {
         statistics
     }
 
-    fn merge(quads: &mut Vec<Quad>) -> MeshStatistics {
+    fn merge(quads: &mut Vec<PendingQuad>) -> MeshStatistics {
         let mut statistics = stats_for(quads);
         merge_page_quads(quads, &mut statistics);
         statistics

@@ -111,6 +111,8 @@ where
             mesh_pages.push(MeshPage {
                 origin: page.origin,
                 quads: page.quads,
+                float_positions: page.float_positions,
+                float_normals: page.float_normals,
             });
         }
 

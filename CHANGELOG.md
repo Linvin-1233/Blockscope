@@ -35,9 +35,15 @@
 - `render`/`bench` 新增 `--precision exact|fast`。默认 `exact` 路径不变；
   `fast` 用 f32 存储 CPU 投影表，`QuadRender` 从 128 B 降到 80 B，真实 jar
   上 render 提升约 5-16%，代价是少量像素差异。GPU 后端忽略该设置。
+- mesh `Quad` 改为页内定点位置 + 轴对齐法线，流体/旋转几何使用页级 f32 侧表；
+  真实 jar 的 mesh 内存下降约 10-25%，输出逐字节一致，mesh 构建多约 20-25%
+  的 CPU。`Quad.vertices`/`Quad.normal` 已移除，改用 `MeshPage::quad_positions`、
+  `MeshPage::quad_normal` 和 `Quad::uvs`。
 
 ### 变更
 
+- `litematic-mesh` 的 `Quad` 公开字段变更：`vertices` 和 `normal` 移除，位置和
+  法线通过 `MeshPage` 侧表与访问器读取；依赖旧字段的嵌入方需要迁移。
 - 仓库自动化改用 Rust 的 `xtask` crate（`cargo xtask <命令>`），
   移除按平台重复的 PowerShell/Bash 脚本，CI 不再安装 Node。
 - 完全移除 LOD。`render`、`mesh` 和 `bench` 不再接受 `--lod`，

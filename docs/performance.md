@@ -186,6 +186,33 @@ A hybrid fast point (f32 x/y with f64 depth) was also measured. It reduced the
 `000001` difference only from 6.39% to 5.94% while cutting the `000002` gain
 from 16.5% to 10.7%, so the simpler f32 point is the shipped fast path.
 
+### Compact mesh quads (2026-11-07)
+
+`Quad` no longer stores four float vertices. Grid positions are packed as
+`i16` with a per-quad `scale`, axis normals as `i8` components, and UVs as four
+Q12 pairs. Fluid, rotated, or otherwise non-grid vertices use per-page
+`float_positions` and `float_normals` side tables. The packing only accepts a
+value when `i16 / scale` reproduces the original f32 value (signed zero is
+canonicalized), so rendered output is unchanged.
+
+Measured with the client jar, release build:
+
+| Case | Old mesh | New mesh | Change | Old mesh build | New mesh build |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `000002` jar | 3,897.5 MB | 2,909.0 MB | -25.4% | 1,136 ms | 1,403 ms |
+| `000001` jar | 12,608.0 MB | 11,321.3 MB | -10.2% | 4,236 ms | 5,213 ms |
+
+The gain depends on how many quads are on the grid. `000001` is dominated by
+fractional plant and fluid geometry, which must stay in the float tables and is
+therefore larger than the old uniform quad. Ranked medians of three alternating
+runs measured mesh build CPU 20-25% higher. Streamed exact-render peaks were
+about 204 MB (`000002`) and 565 MB (`000001`), slightly below the main build;
+both PNG hashes match it exactly.
+
+Public API note: `Quad.vertices` and `Quad.normal` are gone. Read positions
+through `MeshPage::quad_positions`, normals through `MeshPage::quad_normal`, and
+UVs through `Quad::uvs`; `Quad::new` is the builder entry point.
+
 ## Review-fix performance check (2026-10-28)
 
 The review fixes do not change the single-view render hot path. The pre-review `HEAD` binary (`6b5a680`) and the current build were compared on the same host with the same commands:

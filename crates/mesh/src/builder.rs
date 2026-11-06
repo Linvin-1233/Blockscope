@@ -1,5 +1,5 @@
 use crate::catalog::BlockCatalog;
-use crate::greedy::merge_page_quads;
+use crate::greedy::{PendingQuad, merge_page_quads};
 use crate::model::{ModelQuad, NO_TEXTURE};
 use crate::page::{PageGrid, PaletteBlock, PaletteTables};
 use crate::view::SceneBlockView;
@@ -129,7 +129,7 @@ fn build_mesh_with_view<C: BlockCatalog + ?Sized>(
     progress: Option<PageProgress<'_>>,
 ) -> Result<Mesh, MeshError> {
     let tables = PaletteTables::new(scene, catalog);
-    let mut pages: BTreeMap<[i32; 3], Vec<Quad>> = BTreeMap::new();
+    let mut pages: BTreeMap<[i32; 3], PageQuads> = BTreeMap::new();
     let mut statistics = MeshStatistics::default();
     let mut hint = PageCapacityHint::default();
     let total = keys.len() as u64;
@@ -286,7 +286,14 @@ where
                             {
                                 abort.store(true, Ordering::Relaxed);
                             }
-                            local_pages.push((page.origin, page.quads));
+                            local_pages.push((
+                                page.origin,
+                                PageQuads {
+                                    quads: page.quads,
+                                    float_positions: page.float_positions,
+                                    float_normals: page.float_normals,
+                                },
+                            ));
                         }
                     }
                     Ok(WorkerBuild {
@@ -327,14 +334,22 @@ where
 }
 
 struct WorkerBuild {
-    pages: Vec<([i32; 3], Vec<Quad>)>,
+    pages: Vec<([i32; 3], PageQuads)>,
     statistics: MeshStatistics,
 }
 
 struct PageBuild {
     origin: [i32; 3],
     quads: Vec<Quad>,
+    float_positions: Vec<[[f32; 3]; 4]>,
+    float_normals: Vec<[f32; 3]>,
     statistics: MeshStatistics,
+}
+
+struct PageQuads {
+    quads: Vec<Quad>,
+    float_positions: Vec<[[f32; 3]; 4]>,
+    float_normals: Vec<[f32; 3]>,
 }
 
 fn build_page(
@@ -367,8 +382,11 @@ fn build_page(
     let mut page = PageBuild {
         origin,
         quads: Vec::with_capacity(capacity),
+        float_positions: Vec::new(),
+        float_normals: Vec::new(),
         statistics: MeshStatistics::default(),
     };
+    let mut pending: Option<Vec<PendingQuad>> = options.greedy.then(Vec::new);
 
     for &region_index in view.regions_for_page(page_key) {
         let region = &scene.regions[region_index];
@@ -490,9 +508,8 @@ fn build_page(
                             }
                         });
 
-                        push_quad(
-                            &mut page.quads,
-                            Quad {
+                        if let Some(pending) = &mut pending {
+                            pending.push(PendingQuad {
                                 vertices,
                                 normal: model_quad.normal,
                                 color: color.to_array(),
@@ -500,8 +517,23 @@ fn build_page(
                                 texture: model_quad.texture,
                                 layer,
                                 shade: model_quad.shade,
-                            },
-                        );
+                            });
+                        } else {
+                            push_quad(
+                                &mut page.quads,
+                                Quad::new(
+                                    vertices,
+                                    model_quad.normal,
+                                    color.to_array(),
+                                    ao,
+                                    model_quad.texture,
+                                    layer,
+                                    model_quad.shade,
+                                    &mut page.float_positions,
+                                    &mut page.float_normals,
+                                ),
+                            );
+                        }
                     }
                 }
             }
@@ -509,10 +541,24 @@ fn build_page(
     }
 
     if mode == PageMode::Build {
-        hint.observe(page.quads.len(), non_air);
-        if options.greedy {
-            merge_page_quads(&mut page.quads, &mut page.statistics);
+        if let Some(mut pending) = pending {
+            merge_page_quads(&mut pending, &mut page.statistics);
+            page.quads.reserve(pending.len());
+            for quad in pending {
+                page.quads.push(Quad::new(
+                    quad.vertices,
+                    quad.normal,
+                    quad.color,
+                    quad.ao,
+                    quad.texture,
+                    quad.layer,
+                    quad.shade,
+                    &mut page.float_positions,
+                    &mut page.float_normals,
+                ));
+            }
         }
+        hint.observe(page.quads.len(), non_air);
         // A page far below the estimate would hold its reserved slots for the
         // life of the mesh. Shrinking such outliers is one copy of a small
         // page; ordinary pages keep the hint's margin.
@@ -525,7 +571,7 @@ fn build_page(
 }
 
 fn add_page(
-    pages: &mut BTreeMap<[i32; 3], Vec<Quad>>,
+    pages: &mut BTreeMap<[i32; 3], PageQuads>,
     statistics: &mut MeshStatistics,
     page: PageBuild,
     limits: &MeshLimits,
@@ -560,21 +606,33 @@ fn add_page(
 }
 
 fn merge_page(
-    pages: &mut BTreeMap<[i32; 3], Vec<Quad>>,
+    pages: &mut BTreeMap<[i32; 3], PageQuads>,
     statistics: &mut MeshStatistics,
     page: PageBuild,
 ) {
     accumulate_statistics(statistics, &page.statistics);
     if !page.quads.is_empty() {
-        pages.insert(page.origin, page.quads);
+        pages.insert(
+            page.origin,
+            PageQuads {
+                quads: page.quads,
+                float_positions: page.float_positions,
+                float_normals: page.float_normals,
+            },
+        );
     }
 }
 
-fn finish(pages: BTreeMap<[i32; 3], Vec<Quad>>, mut statistics: MeshStatistics) -> Mesh {
+fn finish(pages: BTreeMap<[i32; 3], PageQuads>, mut statistics: MeshStatistics) -> Mesh {
     statistics.pages = pages.len() as u64;
     let pages = pages
         .into_iter()
-        .map(|(origin, quads)| MeshPage { origin, quads })
+        .map(|(origin, page)| MeshPage {
+            origin,
+            quads: page.quads,
+            float_positions: page.float_positions,
+            float_normals: page.float_normals,
+        })
         .collect();
     Mesh { pages, statistics }
 }

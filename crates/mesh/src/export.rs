@@ -10,14 +10,14 @@ pub fn write_obj<W: Write>(mesh: &Mesh, writer: &mut W) -> io::Result<()> {
 
     for page in &mesh.pages {
         for quad in &page.quads {
-            for vertex in &quad.vertices {
-                let x = page.origin[0] as f64 + f64::from(vertex.position[0]);
-                let y = page.origin[1] as f64 + f64::from(vertex.position[1]);
-                let z = page.origin[2] as f64 + f64::from(vertex.position[2]);
+            for position in page.quad_positions(quad) {
+                let x = page.origin[0] as f64 + f64::from(position[0]);
+                let y = page.origin[1] as f64 + f64::from(position[1]);
+                let z = page.origin[2] as f64 + f64::from(position[2]);
                 writeln!(writer, "v {x} {y} {z}")?;
             }
 
-            let normal = quad.normal;
+            let normal = page.quad_normal(quad);
             writeln!(writer, "vn {} {} {}", normal[0], normal[1], normal[2])?;
             writeln!(
                 writer,
@@ -62,10 +62,10 @@ pub fn write_ply<W: Write>(mesh: &Mesh, writer: &mut W) -> io::Result<()> {
 
     for page in &mesh.pages {
         for quad in &page.quads {
-            for vertex in &quad.vertices {
-                let x = page.origin[0] as f64 + f64::from(vertex.position[0]);
-                let y = page.origin[1] as f64 + f64::from(vertex.position[1]);
-                let z = page.origin[2] as f64 + f64::from(vertex.position[2]);
+            for position in page.quad_positions(quad) {
+                let x = page.origin[0] as f64 + f64::from(position[0]);
+                let y = page.origin[1] as f64 + f64::from(position[1]);
+                let z = page.origin[2] as f64 + f64::from(position[2]);
                 let [r, g, b, a] = quad.color;
                 writeln!(writer, "{x} {y} {z} {r} {g} {b} {a}")?;
             }

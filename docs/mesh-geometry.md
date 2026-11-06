@@ -26,18 +26,27 @@ Scene
 
 ```text
 Vertex {
-  position: [f32; 3],   // page-local
+  position: [f32; 3],   // page-local, used while building
   uv:       [i16; 2],   // Q12 fixed point
 }
 
 Quad {
-  vertices: [Vertex; 4],
-  normal:   [f32; 3],
-  color:    [u8; 4],    // straight alpha
-  ao:       [u8; 4],    // 2-bit levels
-  texture:  u16,
-  layer:    opaque | cutout | translucent,
-  shade:    bool,
+  positions: Grid { scale: u16, positions: [[i16; 3]; 4] }
+           | Float(u32), // index into MeshPage.float_positions
+  normal:    Axis([i8; 3]) | Float(u32),
+  uvs:       [[i16; 2]; 4],
+  color:     [u8; 4],   // straight alpha
+  ao:        [u8; 4],   // 2-bit levels
+  texture:   u16,
+  layer:     opaque | cutout | translucent,
+  shade:     bool,
+}
+
+MeshPage {
+  origin: [i32; 3],
+  quads: [Quad],
+  float_positions: [[[f32; 3]; 4]],
+  float_normals: [[f32; 3]],
 }
 
 Mesh {
@@ -45,6 +54,8 @@ Mesh {
   statistics: MeshStatistics,
 }
 ```
+
+Grid positions reconstruct as `i16 / scale` and are used only when that division reproduces the original f32 value for every vertex (signed zero canonicalizes to `+0.0`). Fluid surfaces and rotated or irrational model vertices use the per-page float tables instead. Normals use the same split: the six axis directions are exact in `Axis`, everything else goes to `float_normals`. Consumers must resolve both through `MeshPage::quad_positions` and `MeshPage::quad_normal`; `Quad::uvs()` returns the per-vertex Q12 coordinates. This keeps `Quad` at 64 bytes for grid geometry while preserving byte-identical output; float quads pay for their side-table entries.
 
 Vertices are ordered counter-clockwise when viewed from outside the block. The quad normal must agree with the winding; tests assert this with a cross product.
 

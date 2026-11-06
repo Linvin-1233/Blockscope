@@ -78,13 +78,14 @@ pub(super) fn encode_page(
         if quad.layer == litematic_mesh::RenderLayer::Translucent {
             continue;
         }
+        let normal = page.quad_normal(quad);
         if let Some(forward) = forward
-            && is_backface(quad.normal, forward)
+            && is_backface(normal, forward)
         {
             culled += 1;
             continue;
         }
-        out.push(encode_quad(quad, page_offset, options));
+        out.push(encode_quad(quad, page, normal, page_offset, options));
     }
 
     culled
@@ -100,21 +101,27 @@ pub(super) fn is_backface(normal: [f32; 3], forward: [f64; 3]) -> bool {
     normal[0] * forward[0] + normal[1] * forward[1] + normal[2] * forward[2] >= 0.0
 }
 
-fn encode_quad(quad: &Quad, page_offset: [f32; 3], options: &RenderOptions) -> GpuQuad {
+fn encode_quad(
+    quad: &Quad,
+    page: &MeshPage,
+    normal: [f32; 3],
+    page_offset: [f32; 3],
+    options: &RenderOptions,
+) -> GpuQuad {
     let ao = match options.lighting {
         crate::LightingProfile::FlatV1 => [3u8; 4],
         crate::LightingProfile::SimpleAoV1 => quad.ao,
     };
 
     GpuQuad {
-        positions: std::array::from_fn(|index| quad.vertices[index].position),
-        uvs: std::array::from_fn(|index| quad.vertices[index].uv),
+        positions: page.quad_positions(quad),
+        uvs: quad.uvs(),
         page_offset,
         color: quad.color,
         ao,
-        shade: options.lighting.face_shade(quad.normal),
+        shade: options.lighting.face_shade(normal),
         texture: quad.texture,
-        flags: (quad.layer.index() as u8) | (normal_code(quad.normal) << 2),
+        flags: (quad.layer.index() as u8) | (normal_code(normal) << 2),
         _pad: 0,
     }
 }
@@ -152,32 +159,47 @@ mod tests {
     use crate::{LightingProfile, RenderOptions};
     use litematic_mesh::{MeshPage, Quad, RenderLayer, Vertex};
 
-    fn quad(normal: [f32; 3]) -> Quad {
-        Quad {
-            vertices: [
-                Vertex {
-                    position: [0.0, 0.0, 0.0],
-                    uv: [0, 0],
-                },
-                Vertex {
-                    position: [1.0, 0.0, 0.0],
-                    uv: [4096, 0],
-                },
-                Vertex {
-                    position: [1.0, 1.0, 0.0],
-                    uv: [4096, 4096],
-                },
-                Vertex {
-                    position: [0.0, 1.0, 0.0],
-                    uv: [0, 4096],
-                },
-            ],
-            normal,
-            color: [10, 20, 30, 255],
-            ao: [3, 2, 1, 0],
-            texture: 7,
-            layer: RenderLayer::Cutout,
-            shade: true,
+    fn page(origin: [i32; 3], normals: &[[f32; 3]]) -> MeshPage {
+        let mut float_positions = Vec::new();
+        let mut float_normals = Vec::new();
+        let quads = normals
+            .iter()
+            .map(|normal| {
+                Quad::new(
+                    [
+                        Vertex {
+                            position: [0.0, 0.0, 0.0],
+                            uv: [0, 0],
+                        },
+                        Vertex {
+                            position: [1.0, 0.0, 0.0],
+                            uv: [4096, 0],
+                        },
+                        Vertex {
+                            position: [1.0, 1.0, 0.0],
+                            uv: [4096, 4096],
+                        },
+                        Vertex {
+                            position: [0.0, 1.0, 0.0],
+                            uv: [0, 4096],
+                        },
+                    ],
+                    *normal,
+                    [10, 20, 30, 255],
+                    [3, 2, 1, 0],
+                    7,
+                    RenderLayer::Cutout,
+                    true,
+                    &mut float_positions,
+                    &mut float_normals,
+                )
+            })
+            .collect();
+        MeshPage {
+            origin,
+            quads,
+            float_positions,
+            float_normals,
         }
     }
 
@@ -212,10 +234,7 @@ mod tests {
 
     #[test]
     fn encode_page_culls_and_preserves_attributes() {
-        let page = MeshPage {
-            origin: [16, 0, -16],
-            quads: vec![quad([0.0, 0.0, 1.0]), quad([0.0, 0.0, -1.0])],
-        };
+        let page = page([16, 0, -16], &[[0.0, 0.0, 1.0], [0.0, 0.0, -1.0]]);
         let options = RenderOptions::default();
         let mut encoded = Vec::new();
 
@@ -242,10 +261,7 @@ mod tests {
 
     #[test]
     fn flat_lighting_overrides_ao() {
-        let page = MeshPage {
-            origin: [0, 0, 0],
-            quads: vec![quad([0.0, 0.0, 1.0])],
-        };
+        let page = page([0, 0, 0], &[[0.0, 0.0, 1.0]]);
         let options = RenderOptions {
             lighting: LightingProfile::FlatV1,
             ..Default::default()

@@ -165,7 +165,7 @@ pub(super) fn push_page_quads<P: QuadPoint>(
     translucent: &mut Vec<Triangle>,
 ) {
     for quad in &page.quads {
-        let normal = quad.normal;
+        let normal = page.quad_normal(quad);
         if dot3(
             [
                 f64::from(normal[0]),
@@ -179,18 +179,19 @@ pub(super) fn push_page_quads<P: QuadPoint>(
             continue;
         }
 
+        let positions = page.quad_positions(quad);
         let mut projected = [[0.0f64; 3]; 4];
-        for (index, vertex) in quad.vertices.iter().enumerate() {
+        for (index, position) in positions.iter().enumerate() {
             let world = [
-                f64::from(page.origin[0]) + f64::from(vertex.position[0]),
-                f64::from(page.origin[1]) + f64::from(vertex.position[1]),
-                f64::from(page.origin[2]) + f64::from(vertex.position[2]),
+                f64::from(page.origin[0]) + f64::from(position[0]),
+                f64::from(page.origin[1]) + f64::from(position[1]),
+                f64::from(page.origin[2]) + f64::from(position[2]),
             ];
             projected[index] = camera.project(world);
         }
 
         let shade = if quad.shade {
-            options.lighting.face_shade(quad.normal)
+            options.lighting.face_shade(normal)
         } else {
             1.0
         };
@@ -199,12 +200,7 @@ pub(super) fn push_page_quads<P: QuadPoint>(
             LightingProfile::FlatV1 => [3u8; 4],
             LightingProfile::SimpleAoV1 => quad.ao,
         };
-        let uvs = [
-            quad.vertices[0].uv,
-            quad.vertices[1].uv,
-            quad.vertices[2].uv,
-            quad.vertices[3].uv,
-        ];
+        let uvs = quad.uvs();
         let texture = quad.texture;
         let layer = quad.layer;
         let mut keep = false;
@@ -279,7 +275,7 @@ pub(super) fn push_page_translucent(
             continue;
         }
 
-        let normal = quad.normal;
+        let normal = page.quad_normal(quad);
         if dot3(
             [
                 f64::from(normal[0]),
@@ -293,18 +289,19 @@ pub(super) fn push_page_translucent(
             continue;
         }
 
+        let positions = page.quad_positions(quad);
         let mut projected = [[0.0f64; 3]; 4];
-        for (index, vertex) in quad.vertices.iter().enumerate() {
+        for (index, position) in positions.iter().enumerate() {
             let world = [
-                f64::from(page.origin[0]) + f64::from(vertex.position[0]),
-                f64::from(page.origin[1]) + f64::from(vertex.position[1]),
-                f64::from(page.origin[2]) + f64::from(vertex.position[2]),
+                f64::from(page.origin[0]) + f64::from(position[0]),
+                f64::from(page.origin[1]) + f64::from(position[1]),
+                f64::from(page.origin[2]) + f64::from(position[2]),
             ];
             projected[index] = camera.project(world);
         }
 
         let shade = if quad.shade {
-            options.lighting.face_shade(quad.normal)
+            options.lighting.face_shade(normal)
         } else {
             1.0
         };
@@ -313,12 +310,7 @@ pub(super) fn push_page_translucent(
             LightingProfile::FlatV1 => [3u8; 4],
             LightingProfile::SimpleAoV1 => quad.ao,
         };
-        let uvs = [
-            quad.vertices[0].uv,
-            quad.vertices[1].uv,
-            quad.vertices[2].uv,
-            quad.vertices[3].uv,
-        ];
+        let uvs = quad.uvs();
 
         for indices in [[0usize, 1, 2], [0, 2, 3]] {
             let points = [

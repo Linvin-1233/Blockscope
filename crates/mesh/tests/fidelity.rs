@@ -34,16 +34,24 @@ fn water_row(levels: &[u8]) -> Scene {
     )])
 }
 
-fn quads(mesh: &Mesh) -> Vec<&litematic_mesh::Quad> {
-    mesh.pages.iter().flat_map(|page| &page.quads).collect()
+fn quads(mesh: &Mesh) -> Vec<(&litematic_mesh::MeshPage, &litematic_mesh::Quad)> {
+    mesh.pages
+        .iter()
+        .flat_map(|page| page.quads.iter().map(move |quad| (page, quad)))
+        .collect()
 }
 
-fn top_quad_at_x(mesh: &Mesh, block_x: f32) -> &litematic_mesh::Quad {
+fn top_quad_at_x(mesh: &Mesh, block_x: f32) -> (&litematic_mesh::MeshPage, &litematic_mesh::Quad) {
     quads(mesh)
         .into_iter()
-        .filter(|quad| quad.normal == [0.0, 1.0, 0.0])
-        .find(|quad| {
-            let center = quad.vertices.iter().map(|v| v.position[0]).sum::<f32>() / 4.0;
+        .filter(|(page, quad)| page.quad_normal(quad) == [0.0, 1.0, 0.0])
+        .find(|(page, quad)| {
+            let center = page
+                .quad_positions(quad)
+                .iter()
+                .map(|position| position[0])
+                .sum::<f32>()
+                / 4.0;
             (center - (block_x + 0.5)).abs() < 0.01
         })
         .unwrap_or_else(|| panic!("missing top quad for water block x={block_x}"))
@@ -95,23 +103,21 @@ fn water_surface_slopes_toward_a_lower_neighbor() {
     )
     .unwrap();
 
-    let quad = top_quad_at_x(&mesh, 1.0);
-    let min_x = quad
-        .vertices
+    let (page, quad) = top_quad_at_x(&mesh, 1.0);
+    let positions = page.quad_positions(quad);
+    let min_x = positions
         .iter()
-        .map(|vertex| vertex.position[0])
+        .map(|position| position[0])
         .fold(f32::INFINITY, f32::min);
-    let max_x = quad
-        .vertices
+    let max_x = positions
         .iter()
-        .map(|vertex| vertex.position[0])
+        .map(|position| position[0])
         .fold(f32::NEG_INFINITY, f32::max);
     let edge_height = |x: f32| {
-        let values: Vec<f32> = quad
-            .vertices
+        let values: Vec<f32> = positions
             .iter()
-            .filter(|vertex| (vertex.position[0] - x).abs() < 1e-4)
-            .map(|vertex| vertex.position[1])
+            .filter(|position| (position[0] - x).abs() < 1e-4)
+            .map(|position| position[1])
             .collect();
         assert_eq!(values.len(), 2);
         values.iter().sum::<f32>() / 2.0
@@ -134,12 +140,12 @@ fn water_hides_the_shared_side_between_different_levels() {
     )
     .unwrap();
 
-    for quad in quads(&mesh) {
-        let all_at_shared_plane = quad
-            .vertices
+    for (page, quad) in quads(&mesh) {
+        let positions = page.quad_positions(quad);
+        let all_at_shared_plane = positions
             .iter()
-            .all(|vertex| (vertex.position[0] - 1.0).abs() < 1e-4);
-        let side_facing_x = quad.normal[0].abs() > 0.5;
+            .all(|position| (position[0] - 1.0).abs() < 1e-4);
+        let side_facing_x = page.quad_normal(quad)[0].abs() > 0.5;
         assert!(
             !(all_at_shared_plane && side_facing_x),
             "shared water side at x=1 should be culled: {quad:?}"
@@ -171,17 +177,16 @@ fn waterlogged_partial_block_keeps_its_model_and_adds_water() {
 
     let mut slab_top = false;
     let mut water_top = None;
-    for quad in quads(&mesh) {
-        let is_up = quad.normal == [0.0, 1.0, 0.0];
-        let min_y = quad
-            .vertices
+    for (page, quad) in quads(&mesh) {
+        let is_up = page.quad_normal(quad) == [0.0, 1.0, 0.0];
+        let positions = page.quad_positions(quad);
+        let min_y = positions
             .iter()
-            .map(|vertex| vertex.position[1])
+            .map(|position| position[1])
             .fold(f32::INFINITY, f32::min);
-        let max_y = quad
-            .vertices
+        let max_y = positions
             .iter()
-            .map(|vertex| vertex.position[1])
+            .map(|position| position[1])
             .fold(f32::NEG_INFINITY, f32::max);
         if is_up && quad.layer == RenderLayer::Opaque && (max_y - 0.5).abs() < 1e-4 {
             slab_top = true;
@@ -312,26 +317,25 @@ fn water_under_water_fills_the_column_and_hides_internal_faces() {
     .unwrap();
 
     let mut full_side = false;
-    for quad in quads(&mesh) {
-        let is_side = quad.normal[1].abs() < 0.5;
-        let min_y = quad
-            .vertices
+    for (page, quad) in quads(&mesh) {
+        let normal = page.quad_normal(quad);
+        let is_side = normal[1].abs() < 0.5;
+        let positions = page.quad_positions(quad);
+        let min_y = positions
             .iter()
-            .map(|vertex| vertex.position[1])
+            .map(|position| position[1])
             .fold(f32::INFINITY, f32::min);
-        let max_y = quad
-            .vertices
+        let max_y = positions
             .iter()
-            .map(|vertex| vertex.position[1])
+            .map(|position| position[1])
             .fold(f32::NEG_INFINITY, f32::max);
         if is_side && min_y.abs() < 1e-4 && (max_y - 1.0).abs() < 1e-4 {
             full_side = true;
         }
-        let horizontal_at_seam = quad.normal[1].abs() > 0.5
-            && quad
-                .vertices
+        let horizontal_at_seam = normal[1].abs() > 0.5
+            && positions
                 .iter()
-                .all(|vertex| (vertex.position[1] - 1.0).abs() < 1e-4);
+                .all(|position| (position[1] - 1.0).abs() < 1e-4);
         assert!(
             !horizontal_at_seam,
             "water column should not emit an internal horizontal face: {quad:?}"

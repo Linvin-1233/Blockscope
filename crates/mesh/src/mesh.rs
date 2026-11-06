@@ -43,7 +43,7 @@ pub fn ambient_occlusion_level(level: u8) -> f32 {
 /// Texture coordinates use Q12 fixed point. Quad-uniform attributes (normal,
 /// color, texture, layer, shade, and ambient-occlusion levels) are stored once
 /// on [`Quad`], keeping vertex storage tight at 16 bytes.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Vertex {
     pub position: [f32; 3],
     pub uv: [i16; 2],
@@ -56,11 +56,36 @@ impl Vertex {
     }
 }
 
+/// Position storage for a mesh quad.
+///
+/// Model and cube geometry is always a multiple of 1/16 block, so it fits the
+/// grid form exactly. Fluid surfaces and rotated model elements keep f32
+/// positions in `MeshPage::float_positions`.
+#[derive(Debug, Clone, PartialEq)]
+pub enum QuadPositions {
+    /// Four page-local positions in `1 / scale` block units.
+    Grid {
+        scale: u16,
+        positions: [[i16; 3]; 4],
+    },
+    /// Index into `MeshPage::float_positions`.
+    Float(u32),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum QuadNormal {
+    /// One of the six axis directions, stored as signed unit components.
+    Axis([i8; 3]),
+    /// Index into `MeshPage::float_normals`.
+    Float(u32),
+}
+
 /// A renderable quad with its vertices and uniform material and lighting attributes.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Quad {
-    pub vertices: [Vertex; 4],
-    pub normal: [f32; 3],
+    pub positions: QuadPositions,
+    pub normal: QuadNormal,
+    pub uvs: [[i16; 2]; 4],
     pub color: [u8; 4],
     pub ao: [u8; 4],
     pub texture: u16,
@@ -69,10 +94,130 @@ pub struct Quad {
 }
 
 impl Quad {
+    /// Pack one quad, appending float positions or normals when the vertices
+    /// are not on the 1/16 grid or the normal is not axis-aligned.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        vertices: [Vertex; 4],
+        normal: [f32; 3],
+        color: [u8; 4],
+        ao: [u8; 4],
+        texture: u16,
+        layer: RenderLayer,
+        shade: bool,
+        float_positions: &mut Vec<[[f32; 3]; 4]>,
+        float_normals: &mut Vec<[f32; 3]>,
+    ) -> Self {
+        let positions = match grid_positions(&vertices) {
+            Some((scale, positions)) => QuadPositions::Grid { scale, positions },
+            None => {
+                let index =
+                    u32::try_from(float_positions.len()).expect("float position index fits u32");
+                float_positions.push(vertices.map(|vertex| vertex.position));
+                QuadPositions::Float(index)
+            }
+        };
+        let normal = match axis_normal(normal) {
+            Some(axis) => QuadNormal::Axis(axis),
+            None => {
+                let index =
+                    u32::try_from(float_normals.len()).expect("float normal index fits u32");
+                float_normals.push(normal);
+                QuadNormal::Float(index)
+            }
+        };
+        Self {
+            positions,
+            normal,
+            uvs: vertices.map(|vertex| vertex.uv),
+            color,
+            ao,
+            texture,
+            layer,
+            shade,
+        }
+    }
+
+    /// Page-local vertex positions reconstructed exactly.
+    pub fn positions(&self, page: &MeshPage) -> [[f32; 3]; 4] {
+        self.positions_with(&page.float_positions)
+    }
+
+    /// Page-local vertex positions with an explicit float table.
+    pub fn positions_with(&self, float_positions: &[[[f32; 3]; 4]]) -> [[f32; 3]; 4] {
+        match self.positions {
+            QuadPositions::Grid { scale, positions } => {
+                positions.map(|position| position.map(|value| f32::from(value) / f32::from(scale)))
+            }
+            QuadPositions::Float(index) => float_positions[index as usize],
+        }
+    }
+
+    pub fn uvs(&self) -> [[i16; 2]; 4] {
+        self.uvs
+    }
+
+    /// Unit normal reconstructed exactly for axis directions.
+    pub fn normal(&self, page: &MeshPage) -> [f32; 3] {
+        self.normal_with(&page.float_normals)
+    }
+
+    pub fn normal_with(&self, float_normals: &[[f32; 3]]) -> [f32; 3] {
+        match self.normal {
+            QuadNormal::Axis(axis) => axis.map(f32::from),
+            QuadNormal::Float(index) => float_normals[index as usize],
+        }
+    }
+
     /// Ambient-occlusion factor for vertex `index` in the float domain.
     pub fn ambient_occlusion(&self, index: usize) -> f32 {
         ambient_occlusion_level(self.ao[index])
     }
+}
+
+fn axis_normal(normal: [f32; 3]) -> Option<[i8; 3]> {
+    let mut axis = [0i8; 3];
+    for (component, packed) in normal.iter().zip(&mut axis) {
+        *packed = if *component == 0.0 {
+            // Equality canonicalizes -0.0 to +0.0. Rendering is unchanged and
+            // keeping the sign would push many axis normals into the float table.
+            0
+        } else if *component == 1.0 {
+            1
+        } else if *component == -1.0 {
+            -1
+        } else {
+            return None;
+        };
+    }
+    Some(axis)
+}
+
+fn grid_positions(vertices: &[Vertex; 4]) -> Option<(u16, [[i16; 3]; 4])> {
+    // Grid positions use 1/16 block units. Plant, torch, and fluid vertices
+    // have fractional coordinates and stay in the per-page float table.
+    const SCALE: u16 = 16;
+    let mut positions = [[0i16; 3]; 4];
+    for (vertex, position) in vertices.iter().zip(&mut positions) {
+        for (axis, slot) in position.iter_mut().enumerate() {
+            let scaled = vertex.position[axis] * f32::from(SCALE);
+            if !scaled.is_finite()
+                || scaled.fract() != 0.0
+                || scaled < f32::from(i16::MIN)
+                || scaled > f32::from(i16::MAX)
+            {
+                return None;
+            }
+            let packed = scaled as i16;
+            // Division must reproduce the original f32 value. Signed zero
+            // canonicalizes to +0.0, which does not change rendering.
+            if f32::from(packed) / f32::from(SCALE) != vertex.position[axis] {
+                return None;
+            }
+            *slot = packed;
+        }
+    }
+    Some((SCALE, positions))
 }
 
 /// A 16x16x16 mesh page. Vertex positions are local to `origin`.
@@ -80,6 +225,22 @@ impl Quad {
 pub struct MeshPage {
     pub origin: [i32; 3],
     pub quads: Vec<Quad>,
+    /// Positions for quads whose vertices are not a multiple of 1/16 block.
+    pub float_positions: Vec<[[f32; 3]; 4]>,
+    /// Normals for quads that are not one of the six axis directions.
+    pub float_normals: Vec<[f32; 3]>,
+}
+
+impl MeshPage {
+    /// Page-local vertex positions for `quad`, reconstructed exactly.
+    pub fn quad_positions(&self, quad: &Quad) -> [[f32; 3]; 4] {
+        quad.positions(self)
+    }
+
+    /// Unit normal for `quad`, reconstructed exactly for axis directions.
+    pub fn quad_normal(&self, quad: &Quad) -> [f32; 3] {
+        quad.normal(self)
+    }
 }
 
 /// A deterministic mesh split into pages.
@@ -95,6 +256,9 @@ impl Mesh {
         let mut total = self.pages.capacity() as u64 * std::mem::size_of::<MeshPage>() as u64;
         for page in &self.pages {
             total += page.quads.capacity() as u64 * std::mem::size_of::<Quad>() as u64;
+            total += page.float_positions.capacity() as u64
+                * std::mem::size_of::<[[f32; 3]; 4]>() as u64;
+            total += page.float_normals.capacity() as u64 * std::mem::size_of::<[f32; 3]>() as u64;
         }
         total
     }
@@ -166,5 +330,19 @@ impl MeshStatistics {
             RenderLayer::Cutout => self.cutout_quads += 1,
             RenderLayer::Translucent => self.translucent_quads += 1,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Quad, QuadNormal, QuadPositions};
+
+    #[test]
+    fn quad_stays_compact() {
+        // Grid geometry is the dominant case. Keep accidental field growth
+        // visible; the old f32-vertex form was 88 bytes.
+        assert_eq!(std::mem::size_of::<QuadPositions>(), 28);
+        assert_eq!(std::mem::size_of::<QuadNormal>(), 8);
+        assert_eq!(std::mem::size_of::<Quad>(), 64);
     }
 }

@@ -287,15 +287,17 @@ fn push_face(
 
     push_quad(
         &mut page.quads,
-        Quad {
+        Quad::new(
             vertices,
-            normal: face.normal(),
-            color: color.to_array(),
-            ao: [3, 3, 3, 3],
+            face.normal(),
+            color.to_array(),
+            [3, 3, 3, 3],
             texture,
             layer,
             shade,
-        },
+            &mut page.float_positions,
+            &mut page.float_normals,
+        ),
     );
 }
 

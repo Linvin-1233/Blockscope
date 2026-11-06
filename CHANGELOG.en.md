@@ -46,9 +46,17 @@ User-facing changes are recorded here. The format follows
   unchanged; fast stores the CPU projection table as f32, shrinking `QuadRender`
   from 128 to 80 bytes and improving measured jar render time by about 5-16% at
   the cost of a small pixel difference. The GPU backend ignores it.
+- Mesh `Quad` now packs page-local grid positions and axis normals; fluid and
+  rotated geometry use per-page f32 side tables. Measured mesh memory fell by
+  about 10-25% on the jar fixtures with byte-identical output, while mesh build
+  CPU rose by roughly 20-25%.
 
 ### Changed
 
+- `litematic-mesh`'s public `Quad` fields changed: `vertices` and `normal` are
+  gone. Read positions and normals through `MeshPage::quad_positions` and
+  `MeshPage::quad_normal`, and UVs through `Quad::uvs`; embedders using the old
+  fields need to migrate.
 - Repository automation now lives in the Rust `xtask` crate (`cargo xtask
   <command>`), replacing the per-platform PowerShell/Bash scripts; CI no longer
   installs Node.

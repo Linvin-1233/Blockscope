@@ -43,14 +43,16 @@ fn single_cube_emits_six_quads() {
     assert_eq!(mesh.pages[0].origin, [0, 0, 0]);
     assert_eq!(mesh.pages[0].quads.len(), 6);
 
-    for quad in &mesh.pages[0].quads {
-        let p0 = quad.vertices[0].position;
-        let p1 = quad.vertices[1].position;
-        let p2 = quad.vertices[2].position;
+    let page = &mesh.pages[0];
+    for quad in &page.quads {
+        let positions = page.quad_positions(quad);
+        let p0 = positions[0];
+        let p1 = positions[1];
+        let p2 = positions[2];
         let u = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
         let v = [p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]];
         assert!(
-            dot(cross(u, v), quad.normal) > 0.0,
+            dot(cross(u, v), page.quad_normal(quad)) > 0.0,
             "quad winding should match its normal"
         );
     }
@@ -276,10 +278,10 @@ fn page_boundary_blocks_go_to_separate_pages() {
 
     for page in &mesh.pages {
         for quad in &page.quads {
-            for vertex in &quad.vertices {
-                for axis in 0..3 {
-                    assert!(vertex.position[axis] >= 0.0);
-                    assert!(vertex.position[axis] <= 16.0);
+            for position in page.quad_positions(quad) {
+                for value in position {
+                    assert!(value >= 0.0);
+                    assert!(value <= 16.0);
                 }
             }
         }
