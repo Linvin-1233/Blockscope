@@ -7,6 +7,13 @@
 
 ## [Unreleased]
 
+### 性能
+
+- CPU 流式渲染把半透明 spill 写入移到后台线程，并在排序当前 bucket 时预读
+  下一个 bucket。`000001` client-jar 的受控 A/B 中 render 时间下降约 5%，
+  峰值内存不变，PNG SHA-256 与之前一致。离屏 quad/triangle 不再进入 tile
+  分箱，tile 内重复的包围盒检查已移除。
+
 ### 变更
 
 - 仓库自动化改用 Rust 的 `xtask` crate（`cargo xtask <命令>`），

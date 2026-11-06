@@ -49,6 +49,117 @@ The textured `000001` stream is 591 MB after the spill path was enabled; the ear
 
 The 18.9 GB figure in `docs/rendering.md` is the client-jar full-mesh path with more quads, not the streamed render path. The re-measured streamed color path is 433-435 MB and the current full color-only path is 7.68 GB. This is why the sparse parser is a conditional spike rather than a committed rewrite.
 
+### CPU client-jar baseline (2026-11-06)
+
+The color-only rows above are diagnostics, not a model of real use. On `000002`
+the jar path has 17.3x more triangles (2.30M to 39.82M); on `000001` it has 2.5x
+more translucent triangles (9.52M to 24.09M). It also spends about 1.7 s
+decoding the 227 MB material set before rendering starts.
+
+Measured on the R1 host with the release binary, CPU backend,
+`--stream-mesh=on`, 1024x1024, supersample 2, 12 threads, `--force-limits`, and
+`fixtures/private/texture/26.2-Fabric.jar`. Peak working set is sampled every
+20 ms.
+
+| Case            | Triangles | Parse    | Mesh      | Render    | PNG     | Total     | Peak     |
+| --------------- | --------: | -------: | --------: | --------: | ------: | --------: | -------: |
+| `000002` color  |     2.30M | 224.5 ms |   423.5 ms |   666.7 ms | 46.7 ms | 1,399.8 ms | 191.1 MB |
+| `000002` jar    |    39.82M | 230.3 ms | 1,453.4 ms | 2,458.5 ms | 46.9 ms | 4,586.9 ms | 205.3 MB |
+| `000001` color  |    91.57M | 203.5 ms | 5,472.5 ms | 6,933.9 ms | 64.6 ms | 12,714.7 ms | 433.7 MB |
+| `000001` jar    |   128.63M | 198.3 ms | 5,349.3 ms | 12,421.6 ms | 64.5 ms | 19,736.8 ms | 580.6 MB |
+
+`Total` is the CLI-reported total. For the jar rows it includes about 0.4 s
+(`000002`) and 1.7 s (`000001`) of material and texture loading that is not part
+of parse, mesh, render, or PNG. The peaks are 205 MB and 581 MB, not the
+multi-gigabyte full-mesh path.
+
+The jar triangle mix explains the render split:
+
+| Case         |   Opaque | Cutout | Translucent |
+| ------------ | -------: | -----: | ----------: |
+| `000002` jar |  39.60M |  181k |         38k |
+| `000001` jar |  84.68M | 19.87M |       24.09M |
+
+Stage timing from a temporary instrumentation build. The timed run is about 9%
+slower than the non-timed render on `000001`; use the ratios, not the absolute
+sum.
+
+| Case         | Project + bin |  Tile | Spill write | Translucent resolve | Assembly | Downsample |
+| ------------ | ------------: | ----: | ----------: | ------------------: | -------: | ---------: |
+| `000002` jar |        923 ms | 1,690 ms |      157 ms |                4 ms |    57 ms |       5 ms |
+| `000001` jar |      2,586 ms | 3,866 ms |    2,853 ms |             4,171 ms |    50 ms |       5 ms |
+
+`000002` is tile-bound. `000001` spends about 7.0 s in the translucent path,
+more than half of its render time, and the spill write is serial on the main
+thread. The library path behind the older full-mesh benchmark rows is not a
+substitute for these streamed CLI numbers.
+
+The streamed CLI color-only `000002` render is 667 ms here, not the roughly
+214 ms measured through the four-chunk library path, because the streamed mesh
+builder emits 432 32-page chunks for this fixture. That fixed per-chunk cost is
+another reason not to use color-only bench results as a jar proxy.
+
+`--greedy-mesh` with the jar was also measured: `000001` triangles changed by
+-0.06% while mesh time grew 35% and render time grew 1%; `000002` triangles fell
+1.2% while mesh time grew 73% and render time fell 3.5%. It stays opt-in.
+
+Commands:
+
+```powershell
+$exe = (Resolve-Path .\target\release\blockscope.exe).Path
+$jar = (Resolve-Path .\fixtures\private\texture\26.2-Fabric.jar).Path
+& $exe render fixtures\private\000001.litematic --client-jar $jar `
+  --backend cpu --stream-mesh=on --width 1024 --height 1024 `
+  --supersample 2 --threads 12 --force-limits --output .\out.png
+```
+
+### P0 CPU streaming changes (2026-11-06)
+
+The first CPU P0 slice targets the client-jar hot path:
+
+- Translucent spill writes run on a FIFO writer thread with a 16-part queue, so
+  spill I/O overlaps opaque rasterization.
+- The spill bucket reader decodes the next bucket while the current bucket is
+  sorted and rasterized, using one reader plus the normal tile workers.
+- Quads and triangles whose bounds lie entirely outside the image are dropped
+  before binning, and tile rasterization no longer repeats the bounding-box
+  intersection test for every binned candidate.
+
+A temporary `BLOCKSCOPE_SYNC_SPILL` build switch disabled the writer overlap
+and bucket read-ahead so both paths could be timed on the same binary. It has
+been removed.
+
+`000001` jar, 1024x1024 ss2, 12 threads, two alternating runs per mode:
+
+| Mode                                |                   Render |               Wall |                 Peak |
+| ----------------------------------- | -----------------------: | -----------------: | -------------------: |
+| serial spill + serial bucket read   | 11,698 / 11,690 ms       | 21.73 / 21.75 s    | 580.6 / 580.1 MB     |
+| writer overlap + bucket read-ahead  | 11,114 / 11,133 ms       | 20.70 / 20.60 s    | 579.8 / 579.7 MB     |
+
+The controlled difference is about 4.9% render and 5.2% wall time, with no
+measurable peak change. `000002` jar measured 2,701 / 3,011 ms serial versus
+2,788 / 2,775 ms overlapped; its translucent layer is too small for a stable
+signal. The PNG SHA-256 values for both fixtures are unchanged.
+
+A post-change spot check on the same host measured `000001` jar render
+9.42-9.79 s, total 16.86-17.79 s, peak 578-580 MB, and `000002` jar render
+2.35 s, total 4.52 s, peak 205 MB. Both PNG hashes still match the pre-change
+files. Treat these as point-in-time diagnostics; the alternating A/B above is
+the attribution.
+
+Three experiments were measured and reverted:
+
+- Quad-level triangle setup: no render win and a slower `000002`.
+- Adaptive mesh chunks sized by a quad budget: neutral speed, but peak rose by
+  26-90 MB depending on the target.
+- Batch texture preload with parallel PNG decode: no wall-time win even after
+  preserving first-use texture ids; on `000001` the prefetch runs were
+  0.7-1.1 s slower than the clean run, because the model pre-scan offset the
+  decode gain.
+
+Absolute run times drift with host state; use the alternating A/B table for the
+P0 claim rather than comparing runs from different times.
+
 ## Review-fix performance check (2026-10-28)
 
 The review fixes do not change the single-view render hot path. The pre-review `HEAD` binary (`6b5a680`) and the current build were compared on the same host with the same commands:

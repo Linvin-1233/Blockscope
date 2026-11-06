@@ -8,6 +8,14 @@ User-facing changes are recorded here. The format follows
 
 ## [Unreleased]
 
+### Performance
+
+- CPU streaming render now writes translucent spill data on a background thread
+  and reads the next spill bucket while the current one is sorted. A controlled
+  A/B on `000001` with the client jar measured about 5% lower render time with
+  unchanged peak memory and the same PNG SHA-256. Off-screen quads and triangles
+  no longer enter the tile bins, and the repeated tile bounding-box test is gone.
+
 ### Changed
 
 - Repository automation now lives in the Rust `xtask` crate (`cargo xtask

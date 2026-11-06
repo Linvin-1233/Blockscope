@@ -1,9 +1,11 @@
 use super::RenderStatistics;
 use super::bin::{TileJob, bin_quads, bin_triangles, effective_tile_size, tile_jobs, worker_count};
 use super::downsample::downsample;
-use super::geometry::{bounds, intersects, quad_bounds, to_u8};
+use super::geometry::to_u8;
 use super::project::{QuadRender, Triangle, merge_page_statistics, push_page_quads};
-use super::spill::{DEFAULT_TRANSLUCENT_BUDGET, TranslucentParts, TranslucentStore};
+use super::spill::{
+    DEFAULT_TRANSLUCENT_BUDGET, TranslucentParts, TranslucentStore, TranslucentWriter,
+};
 use super::tile::{TileBuffer, TileCounters};
 use crate::{Background, Camera, RenderError, RenderOptions, RenderOutput};
 use litematic_material::TextureSet;
@@ -30,14 +32,12 @@ pub struct StreamingRenderer<'a> {
     options: &'a RenderOptions,
     textures: Option<&'a TextureSet>,
     tiles: Vec<Mutex<StreamTile>>,
-    translucent: TranslucentStore,
+    translucent: TranslucentWriter,
     statistics: RenderStatistics,
     threads: usize,
     width: u32,
     height: u32,
     tile_size: u32,
-    tiles_x: u32,
-    tiles_y: u32,
 }
 
 impl<'a> StreamingRenderer<'a> {
@@ -56,6 +56,15 @@ impl<'a> StreamingRenderer<'a> {
         camera: Camera,
         options: &'a RenderOptions,
         textures: Option<&'a TextureSet>,
+    ) -> Self {
+        Self::with_camera_and_budget(camera, options, textures, DEFAULT_TRANSLUCENT_BUDGET)
+    }
+
+    fn with_camera_and_budget(
+        camera: Camera,
+        options: &'a RenderOptions,
+        textures: Option<&'a TextureSet>,
+        budget: usize,
     ) -> Self {
         let width = options.internal_width();
         let height = options.internal_height();
@@ -82,19 +91,14 @@ impl<'a> StreamingRenderer<'a> {
             options,
             textures,
             tiles,
-            translucent: TranslucentStore::new(
-                DEFAULT_TRANSLUCENT_BUDGET,
-                tiles_x,
-                tiles_y,
-                tile_size,
-            ),
+            translucent: TranslucentWriter::new(TranslucentStore::new(
+                budget, tiles_x, tiles_y, tile_size,
+            )),
             statistics,
             threads,
             width,
             height,
             tile_size,
-            tiles_x,
-            tiles_y,
         }
     }
 
@@ -110,14 +114,9 @@ impl<'a> StreamingRenderer<'a> {
     ) -> Result<Self, RenderError> {
         options.validate()?;
         let camera = Camera::new(&scene.bounds, options)?;
-        let mut renderer = Self::with_camera(camera, options, textures);
-        renderer.translucent = TranslucentStore::new(
-            budget,
-            renderer.tiles_x,
-            renderer.tiles_y,
-            renderer.tile_size,
-        );
-        Ok(renderer)
+        Ok(Self::with_camera_and_budget(
+            camera, options, textures, budget,
+        ))
     }
 
     /// Project and rasterize the next contiguous run of mesh pages.
@@ -131,7 +130,7 @@ impl<'a> StreamingRenderer<'a> {
         // Joining the projection workers before the tile pass avoids a barrier
         // that would deadlock the main thread if a worker panicked.
         let slices = page_slices(pages, self.threads);
-        let parts = project_slices(
+        let mut parts = project_slices(
             pages,
             &slices,
             &self.camera,
@@ -143,6 +142,14 @@ impl<'a> StreamingRenderer<'a> {
 
         for part in &parts {
             merge_page_statistics(&mut self.statistics, &part.statistics);
+        }
+
+        // Hand translucent geometry to the writer before the tile pass so the
+        // spill I/O overlaps opaque rasterization. Parts stay in page order.
+        for part in &mut parts {
+            self.translucent
+                .push_many(std::mem::take(&mut part.translucent))
+                .map_err(storage_error)?;
         }
 
         let touched: Vec<usize> = (0..self.tiles.len())
@@ -157,11 +164,6 @@ impl<'a> StreamingRenderer<'a> {
             });
         }
 
-        for part in parts {
-            self.translucent
-                .push_many(part.translucent)
-                .map_err(storage_error)?;
-        }
         Ok(())
     }
 
@@ -178,8 +180,6 @@ impl<'a> StreamingRenderer<'a> {
             height,
             tile_size,
             camera: _,
-            tiles_x: _,
-            tiles_y: _,
         } = self;
 
         match translucent.finish().map_err(storage_error)? {
@@ -203,9 +203,21 @@ impl<'a> StreamingRenderer<'a> {
                     );
                 }
             }
-            TranslucentParts::Spilled(mut reader) => {
-                while let Some(bucket) = reader.read_next().map_err(storage_error)? {
-                    render_translucent_bucket(&tiles, &bucket, options, threads, textures);
+            TranslucentParts::Spilled(reader) => {
+                let reader = &reader;
+                let bucket_count = reader.bucket_count();
+                if bucket_count > 0 {
+                    std::thread::scope(|scope| -> Result<(), RenderError> {
+                        let mut next = Some(scope.spawn(move || reader.read_bucket(0)));
+                        for bucket_index in 0..bucket_count {
+                            let bucket = join_bucket(next.take().expect("bucket reader"))?;
+                            let handle = (bucket_index + 1 < bucket_count)
+                                .then(|| scope.spawn(move || reader.read_bucket(bucket_index + 1)));
+                            render_translucent_bucket(&tiles, &bucket, options, threads, textures);
+                            next = handle;
+                        }
+                        Ok(())
+                    })?;
                 }
             }
         }
@@ -440,17 +452,7 @@ fn render_parts_tile(
 
     for part in parts {
         for &index in &part.bins[tile_index] {
-            let quad = &part.quads[index as usize];
-            if !intersects(
-                &quad_bounds(&quad.points),
-                job.x0,
-                job.y0,
-                job.width,
-                job.height,
-            ) {
-                continue;
-            }
-            buffer.rasterize_quad(quad);
+            buffer.rasterize_quad(&part.quads[index as usize]);
         }
     }
 }
@@ -490,10 +492,6 @@ fn render_stream_translucent(
         let mut translucent: Vec<&Triangle> = bins[tile_index]
             .iter()
             .map(|&index| &triangles[index as usize])
-            .filter(|triangle| {
-                let points = triangle.points_f64();
-                intersects(&bounds(&points), job.x0, job.y0, job.width, job.height)
-            })
             .collect();
         translucent.sort_by(|left, right| right.depth_key.total_cmp(&left.depth_key));
 
@@ -558,13 +556,7 @@ fn render_translucent_bucket(
             filter: options.texture_filter,
         };
 
-        let mut visible: Vec<&Triangle> = triangles
-            .iter()
-            .filter(|triangle| {
-                let points = triangle.points_f64();
-                intersects(&bounds(&points), job.x0, job.y0, job.width, job.height)
-            })
-            .collect();
+        let mut visible: Vec<&Triangle> = triangles.iter().collect();
         visible.sort_by(|left, right| right.depth_key.total_cmp(&left.depth_key));
 
         for triangle in visible {
@@ -600,6 +592,18 @@ fn storage_error(error: std::io::Error) -> RenderError {
         RenderError::translucent_budget(message)
     } else {
         RenderError::temp_storage(message)
+    }
+}
+
+fn join_bucket(
+    handle: std::thread::ScopedJoinHandle<'_, std::io::Result<BTreeMap<u32, Vec<Triangle>>>>,
+) -> Result<BTreeMap<u32, Vec<Triangle>>, RenderError> {
+    match handle.join() {
+        Ok(Ok(bucket)) => Ok(bucket),
+        Ok(Err(error)) => Err(storage_error(error)),
+        Err(_) => Err(RenderError::temp_storage(
+            "translucent bucket reader panicked",
+        )),
     }
 }
 

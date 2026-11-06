@@ -49,6 +49,13 @@ pub(super) fn bin_quads(
 
     for (index, quad) in quads.iter().enumerate() {
         let bbox = quad_bounds(&quad.points);
+        if bbox[2] < 0.0
+            || bbox[0] >= f64::from(width)
+            || bbox[3] < 0.0
+            || bbox[1] >= f64::from(height)
+        {
+            continue;
+        }
         let min_x = (bbox[0] / tile_size).floor().clamp(0.0, max_tile_x) as u32;
         let max_x = (bbox[2] / tile_size).floor().clamp(0.0, max_tile_x) as u32;
         let min_y = (bbox[1] / tile_size).floor().clamp(0.0, max_tile_y) as u32;
@@ -81,6 +88,13 @@ pub(super) fn bin_triangles(
     for (index, triangle) in triangles.iter().enumerate() {
         let points = triangle.points_f64();
         let bbox = bounds(&points);
+        if bbox[2] < 0.0
+            || bbox[0] >= f64::from(width)
+            || bbox[3] < 0.0
+            || bbox[1] >= f64::from(height)
+        {
+            continue;
+        }
         let min_x = (bbox[0] / tile_size).floor().clamp(0.0, max_tile_x) as u32;
         let max_x = (bbox[2] / tile_size).floor().clamp(0.0, max_tile_x) as u32;
         let min_y = (bbox[1] / tile_size).floor().clamp(0.0, max_tile_y) as u32;

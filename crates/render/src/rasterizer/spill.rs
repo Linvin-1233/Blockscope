@@ -4,9 +4,15 @@ use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::path::PathBuf;
+use std::sync::mpsc::{SyncSender, sync_channel};
+use std::sync::{Arc, Mutex};
+use std::thread::{self, JoinHandle};
 
 /// Triangles retained in memory before translucent spill starts.
 pub(super) const DEFAULT_TRANSLUCENT_BUDGET: usize = 262_144;
+
+/// Number of projected chunks the writer may queue before the producer waits.
+const WRITER_QUEUE: usize = 16;
 
 /// Tiles per bucket edge. A bucket is read and rendered as one bounded batch.
 const BUCKET_TILES: u32 = 4;
@@ -90,6 +96,83 @@ pub(super) enum TranslucentParts {
     Spilled(SpillReader),
 }
 
+/// Serializes translucent chunks on a worker thread.
+///
+/// Projection and tile rasterization run on the caller's threads; the writer
+/// keeps the spill I/O and the in-memory triangle growth off the critical path.
+/// The channel is FIFO, so the per-tile stable sort still sees projection order.
+pub(super) struct TranslucentWriter {
+    sender: Option<SyncSender<Vec<Triangle>>>,
+    handle: Option<JoinHandle<io::Result<TranslucentStore>>>,
+    error: Arc<Mutex<Option<(io::ErrorKind, String)>>>,
+}
+
+impl TranslucentWriter {
+    pub(super) fn new(store: TranslucentStore) -> Self {
+        let (sender, receiver) = sync_channel(WRITER_QUEUE);
+        let error = Arc::new(Mutex::new(None));
+        let writer_error = Arc::clone(&error);
+        let handle = thread::Builder::new()
+            .name("translucent-writer".to_string())
+            .spawn(move || {
+                let mut store = store;
+                for triangles in receiver {
+                    if let Err(error) = store.push_many(triangles) {
+                        *writer_error.lock().expect("writer error mutex") =
+                            Some((error.kind(), error.to_string()));
+                        return Err(error);
+                    }
+                }
+                Ok(store)
+            })
+            .expect("translucent writer thread");
+        Self {
+            sender: Some(sender),
+            handle: Some(handle),
+            error,
+        }
+    }
+
+    pub(super) fn push_many(&self, triangles: Vec<Triangle>) -> io::Result<()> {
+        if triangles.is_empty() {
+            return Ok(());
+        }
+        match self
+            .sender
+            .as_ref()
+            .expect("translucent writer is active")
+            .send(triangles)
+        {
+            Ok(()) => Ok(()),
+            Err(_) => {
+                let stored = self.error.lock().expect("writer error mutex").take();
+                Err(match stored {
+                    Some((kind, message)) => io::Error::new(kind, message),
+                    None => io::Error::other("translucent writer stopped"),
+                })
+            }
+        }
+    }
+
+    pub(super) fn finish(mut self) -> io::Result<TranslucentParts> {
+        drop(self.sender.take());
+        let handle = self.handle.take().expect("translucent writer is active");
+        match handle.join() {
+            Ok(result) => result?.finish(),
+            Err(_) => Err(io::Error::other("translucent writer panicked")),
+        }
+    }
+}
+
+impl Drop for TranslucentWriter {
+    fn drop(&mut self) {
+        drop(self.sender.take());
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
 struct SpillStore {
     dir: tempfile::TempDir,
     writers: Vec<BufWriter<File>>,
@@ -165,7 +248,6 @@ impl SpillStore {
             tiles_x,
             tiles_y,
             bucket_count: bucket_cols * bucket_rows,
-            next_bucket: 0,
         })
     }
 }
@@ -175,17 +257,19 @@ pub(super) struct SpillReader {
     tiles_x: u32,
     tiles_y: u32,
     bucket_count: u32,
-    next_bucket: u32,
 }
 
 impl SpillReader {
-    /// Read the next bucket, or `None` after the last one.
-    pub(super) fn read_next(&mut self) -> io::Result<Option<BTreeMap<u32, Vec<Triangle>>>> {
-        if self.next_bucket >= self.bucket_count {
-            return Ok(None);
+    pub(super) fn bucket_count(&self) -> u32 {
+        self.bucket_count
+    }
+
+    /// Read one bucket. Buckets own disjoint tile sets, so independent readers
+    /// can render in parallel without changing per-tile order.
+    pub(super) fn read_bucket(&self, bucket: u32) -> io::Result<BTreeMap<u32, Vec<Triangle>>> {
+        if bucket >= self.bucket_count {
+            return Err(invalid("translucent spill has an invalid bucket"));
         }
-        let bucket = self.next_bucket;
-        self.next_bucket += 1;
         let path: PathBuf = self._dir.path().join(format!("bucket-{bucket}.bin"));
         let file = File::open(path)?;
         let length = file.metadata()?.len();
@@ -208,7 +292,7 @@ impl SpillReader {
                 .or_insert_with(Vec::new)
                 .push(triangle);
         }
-        Ok(Some(records))
+        Ok(records)
     }
 }
 
