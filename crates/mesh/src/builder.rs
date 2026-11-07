@@ -5,7 +5,6 @@ use crate::page::{PageGrid, PaletteBlock, PaletteTables};
 use crate::view::SceneBlockView;
 use crate::{
     Mesh, MeshBuildOptions, MeshError, MeshLimits, MeshPage, MeshStatistics, Quad, Vertex,
-    encode_uv,
 };
 use litematic_scene::{Scene, worker_count};
 use std::collections::BTreeMap;
@@ -454,7 +453,13 @@ fn build_page(
                         }
                     }
 
-                    for model_quad in &palette_block.block.model.quads {
+                    for (model_quad, cached) in palette_block
+                        .block
+                        .model
+                        .quads
+                        .iter()
+                        .zip(&palette_block.quad_cache)
+                    {
                         if should_cull(&grid, tables, local_index, palette_block, model_quad) {
                             continue;
                         }
@@ -486,7 +491,7 @@ fn build_page(
                                     local_position[1] + corner[1] / 16.0,
                                     local_position[2] + corner[2] / 16.0,
                                 ],
-                                uv: encode_uv(model_quad.uv[index]),
+                                uv: cached.uvs[index],
                             }
                         });
 

@@ -7,6 +7,7 @@
 //! one-block border once and then serves the inner loop from an array.
 
 use crate::catalog::{BlockCatalog, ResolvedBlock};
+use crate::encode_uv;
 use crate::model::FaceDirection;
 use crate::shape::{self, FluidState};
 use crate::view::{SceneBlockView, region_palette_id};
@@ -34,9 +35,19 @@ impl Cell {
     }
 }
 
+/// Per-model-quad values that do not depend on the block position.
+///
+/// Every block that shares a palette entry reuses these quantized texture
+/// coordinates instead of re-encoding them for every emitted quad.
+#[derive(Clone, Copy)]
+pub(crate) struct CachedQuad {
+    pub(crate) uvs: [[i16; 2]; 4],
+}
+
 /// One region palette entry after material resolution.
 pub(crate) struct PaletteBlock {
     pub(crate) block: ResolvedBlock,
+    pub(crate) quad_cache: Vec<CachedQuad>,
     /// Canonical state id shared by equal states in every region.
     pub(crate) state_id: u32,
     pub(crate) is_air: bool,
@@ -83,8 +94,19 @@ impl PaletteTables {
                 });
                 needs_water_style |= waterlogged;
 
+                let quad_cache: Vec<CachedQuad> = block
+                    .model
+                    .quads
+                    .iter()
+                    .map(|quad| CachedQuad {
+                        uvs: quad.uv.map(encode_uv),
+                    })
+                    .collect();
+                debug_assert_eq!(quad_cache.len(), block.model.quads.len());
+
                 blocks.push(PaletteBlock {
                     block,
+                    quad_cache,
                     state_id,
                     is_air,
                     occludes,

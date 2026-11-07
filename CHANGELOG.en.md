@@ -37,6 +37,10 @@ User-facing changes are recorded here. The format follows
 
 ### Performance
 
+- Mesh building caches each model quad's Q12 texture coordinates per resolved
+  palette entry instead of re-encoding them for every emitted block. A
+  full-mesh `000002` client-jar benchmark measured a 9.3% lower mesh median over
+  16 alternating runs, with byte-identical PNG output.
 - CPU streaming render now writes translucent spill data on a background thread
   and reads the next spill bucket while the current one is sorted. A controlled
   A/B on `000001` with the client jar measured about 5% lower render time with

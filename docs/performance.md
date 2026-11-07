@@ -608,6 +608,28 @@ The command uses an external ffmpeg. MP4 is H.264/yuv420p with an opaque
 background and even dimensions; GIF is a two-pass palette encode with optional
 1-bit transparency.
 
+## Model UV cache (2026-11-07)
+
+`PaletteTables` now caches the Q12-encoded UVs of every model quad once per
+resolved palette entry. Mesh building still computes block-local positions, but
+it no longer calls `encode_uv` for every emitted block quad.
+
+Full-mesh `000002` with the client jar, CPU, 12 threads, 16 alternating `bench`
+runs:
+
+| Path | Mesh median | Range |
+|---|---:|---:|
+| Re-encode UVs per quad | 1,249.8 ms | 1,110.3-1,433.0 ms |
+| Cached Q12 UVs | 1,133.1 ms | 1,019.5-1,318.6 ms |
+
+The cached path is 9.3% lower at the median. The two fixtures checked (`000002`
+and `000001`, client jar, 1024x1024, supersample 2) produce byte-identical PNG
+SHA-256 values before and after the change.
+
+Caching the scaled corner offsets as well was also measured. It added 48 bytes
+per model quad to the working set and reduced the combined gain to 1.3%, so only
+the UV cache is kept.
+
 ## SIMD investigation (2026-11-07)
 
 The `perf/simd-rasterizer` branch measured whether explicit AVX2 kernels help
@@ -663,14 +685,13 @@ draw order; that is a rasterizer redesign, not a local kernel change.
 | Batched two-quad / four-triangle setup | `000002` tile 1,800-2,033 ms vs baseline 1,356-1,622 ms; render 2,807-3,148 ms vs 2,374-2,745 ms | reverted | Copying triangle inputs and prepared setups between passes cost more than the shared bounds/edge work; the single-triangle path was already inlined and kept inputs in registers. |
 | AVX2 four-triangle setup kernel | 400k batches: scalar 27.6 ms, AVX2 40.2 ms | reverted | Lane assembly, stores, and scalar clipping outweighed the four-wide arithmetic on the reference Zen 2 host. |
 | Six-face cull mask in `PageGrid::fill` | Full-mesh median 1,152.6 ms vs 1,144.1 ms over 8 alternating `bench` runs | reverted | Six face rules per cell is more neighbour work than the ~3.75 model quads per cell consume; the existing `occludes` byte check already covers most culls. |
+| Cached Q12 UVs plus scaled corner offsets | Full-mesh median 1,253.4 ms vs 1,269.4 ms over 16 alternating runs | offset half reverted | The extra 48 bytes per quad offset most of the UV-only win; keep the UV cache alone. |
 | SIMD ambient occlusion / vertex creation | Not implemented | rejected by measurement | Sampled shares are 17% and 12.5% of the block loop; gather-based AO is not faster than L1 scalar loads on the reference Zen 2 host. |
 
 ### Follow-up options
 
 The measurements point at algorithmic work rather than wider vectors:
 
-- Cache quantized model UVs and scaled corner offsets per model instead of
-  re-encoding them for every emitted quad.
 - Keep explicit SIMD for bulk image paths only if they grow beyond the current
   assembly and downsample costs, which are under 50 ms per render.
 - Do not retry four-triangle batching without a copy-free design that keeps the

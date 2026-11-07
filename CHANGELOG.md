@@ -28,6 +28,9 @@
 
 ### 性能
 
+- 网格构建按解析后的 palette 条目缓存每个模型 quad 的 Q12 纹理坐标，不再为
+  每个输出方块重复编码 UV。`000002` client-jar 全量网格基准在 16 轮交替测试中
+  mesh 中位数下降 9.3%，PNG 输出逐字节一致。
 - CPU 流式渲染把半透明 spill 写入移到后台线程，并在排序当前 bucket 时预读
   下一个 bucket。`000001` client-jar 的受控 A/B 中 render 时间下降约 5%，
   峰值内存不变，PNG SHA-256 与之前一致。离屏 quad/triangle 不再进入 tile

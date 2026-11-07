@@ -150,15 +150,6 @@ Plan: `tasks/render-memory-plan.md`
       terminal; stop sending `width=auto`/`height=auto` to iTerm2.
 - [x] Update CLI docs and changelog.
 
-## SIMD follow-ups
-
-Investigation: `docs/performance.md#simd-investigation-2026-11-07`.
-Local SIMD kernels were neutral because the rasterizer averages 1.79 tested
-pixels per non-empty row and the mesh block loop is setup-bound.
-
-- [ ] Measure cached model UVs and scaled corner offsets against the current
-      per-quad `encode_uv` and vertex construction path.
-
 ## Release 0.4.1
 
 - [x] Remove `--lod auto`; LOD requires an explicit `1..=16` factor.
