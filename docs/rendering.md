@@ -250,7 +250,7 @@ The page cache costs about 53 KB per worker and does not change the mesh represe
 
 ### Streaming mesh construction
 
-`--stream-mesh` builds 32-page chunks, renders them into the resident tile buffers, and drops the chunk before building the next one. The full `Mesh` is never materialized. The default is `auto`, which streams like `on`; `--stream-mesh=off` opts back into the full mesh, and `--stream-mesh` or `--stream-mesh=on` forces streaming. Multiple views rebuild the streamed mesh once per view.
+`--stream-mesh` builds 32-page chunks and drops each chunk after rendering. The `render` CLI buffers small chunks until 100,000 quads before handing them to the streaming renderer, so page-dense meshes do not pay a projection and tile barrier per 32-page chunk; larger chunks pass through unchanged. The full `Mesh` is never materialized. The default is `auto`, which streams like `on`; `--stream-mesh=off` opts back into the full mesh, and `--stream-mesh` or `--stream-mesh=on` forces streaming. Multiple views rebuild the streamed mesh once per view.
 
 Translucent triangles stay in memory below 262,144 entries. Above that, the streamed renderer writes exact 76-byte records to temporary bucket files and processes one bucket at a time, so the tile sort still produces the same image without retaining every triangle. The temporary directory is deleted at the end of the render.
 

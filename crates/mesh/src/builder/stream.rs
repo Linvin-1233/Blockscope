@@ -70,6 +70,90 @@ where
     C: BlockCatalog + Sync,
     F: FnMut(&[MeshPage]),
 {
+    build_mesh_streaming_impl(
+        scene,
+        catalog,
+        limits,
+        threads,
+        options,
+        progress,
+        |pages| sink(&pages),
+    )
+}
+
+/// Build a streaming mesh and hand each chunk to `sink` by value.
+///
+/// Unlike the borrowed variants this lets the caller retain or batch pages
+/// without cloning them.
+pub fn build_mesh_streaming_owned<C, F>(
+    scene: &Scene,
+    catalog: &C,
+    limits: &MeshLimits,
+    threads: u32,
+    sink: F,
+) -> Result<MeshStatistics, MeshError>
+where
+    C: BlockCatalog + Sync,
+    F: FnMut(Vec<MeshPage>),
+{
+    build_mesh_streaming_owned_with_options(
+        scene,
+        catalog,
+        limits,
+        threads,
+        MeshBuildOptions::default(),
+        sink,
+    )
+}
+
+/// Build an owned streaming mesh with explicit construction options.
+pub fn build_mesh_streaming_owned_with_options<C, F>(
+    scene: &Scene,
+    catalog: &C,
+    limits: &MeshLimits,
+    threads: u32,
+    options: MeshBuildOptions,
+    sink: F,
+) -> Result<MeshStatistics, MeshError>
+where
+    C: BlockCatalog + Sync,
+    F: FnMut(Vec<MeshPage>),
+{
+    build_mesh_streaming_owned_with_options_and_progress(
+        scene, catalog, limits, threads, options, None, sink,
+    )
+}
+
+/// Build an owned streaming mesh and report page completion after each chunk.
+pub fn build_mesh_streaming_owned_with_options_and_progress<C, F>(
+    scene: &Scene,
+    catalog: &C,
+    limits: &MeshLimits,
+    threads: u32,
+    options: MeshBuildOptions,
+    progress: Option<PageProgress<'_>>,
+    sink: F,
+) -> Result<MeshStatistics, MeshError>
+where
+    C: BlockCatalog + Sync,
+    F: FnMut(Vec<MeshPage>),
+{
+    build_mesh_streaming_impl(scene, catalog, limits, threads, options, progress, sink)
+}
+
+fn build_mesh_streaming_impl<C, F>(
+    scene: &Scene,
+    catalog: &C,
+    limits: &MeshLimits,
+    threads: u32,
+    options: MeshBuildOptions,
+    progress: Option<PageProgress<'_>>,
+    mut sink: F,
+) -> Result<MeshStatistics, MeshError>
+where
+    C: BlockCatalog + Sync,
+    F: FnMut(Vec<MeshPage>),
+{
     let view = SceneBlockView::new(scene, limits)?;
     let keys = view.page_keys().collect::<Vec<_>>();
     let total_pages = keys.len() as u64;
@@ -117,7 +201,7 @@ where
         completed_pages += chunk.len() as u64;
 
         if !mesh_pages.is_empty() {
-            sink(&mesh_pages);
+            sink(mesh_pages);
         }
 
         if let Some(progress) = progress {

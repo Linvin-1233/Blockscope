@@ -6,6 +6,7 @@ use crate::{
     parse_background, parse_texture_filter, stream_target, warn_forced,
 };
 use clap::Args;
+use litematic_mesh::MeshPage;
 use litematic_render::terminal::enable_windows_virtual_terminal;
 use litematic_render::{
     Background, LightingProfile, RenderBackend, RenderOptions, RenderOutput, RenderPrecision,
@@ -17,6 +18,10 @@ use std::fs::File;
 use std::io::{BufWriter, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
+
+/// Buffer small mesh chunks up to this many quads before rendering, so the
+/// per-chunk projection and tile barriers are amortized.
+const STREAM_RENDER_QUADS: usize = 100_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 enum StreamMeshMode {
@@ -386,6 +391,8 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
             };
             let mut render_chunk_ms = 0.0;
             let mut spill_error = None;
+            let mut pending: Vec<MeshPage> = Vec::new();
+            let mut pending_quads = 0usize;
             let build_started = Instant::now();
             let build_bar = progress.bar("Building and rendering mesh");
             if view_count > 1 {
@@ -393,7 +400,7 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
             }
             let result = {
                 let update = |done, total| build_bar.update(done, total);
-                crate::build_scene_mesh_streaming(
+                crate::build_scene_mesh_streaming_owned(
                     &scene,
                     snapshot.as_ref(),
                     &limits,
@@ -401,18 +408,35 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
                     args.mesh.options(),
                     Some(&update),
                     |pages| {
+                        for page in pages {
+                            pending_quads += page.quads.len();
+                            pending.push(page);
+                        }
+                        if pending_quads < STREAM_RENDER_QUADS {
+                            return;
+                        }
                         let chunk_started = Instant::now();
                         if spill_error.is_none()
-                            && let Err(error) = renderer.render_pages(pages)
+                            && let Err(error) = renderer.render_pages(&pending)
                         {
                             spill_error = Some(error);
                         }
                         render_chunk_ms += chunk_started.elapsed().as_secs_f64() * 1000.0;
+                        pending.clear();
+                        pending_quads = 0;
                     },
                 )
             };
             build_bar.finish();
             result?;
+            if spill_error.is_none() && !pending.is_empty() {
+                let chunk_started = Instant::now();
+                if let Err(error) = renderer.render_pages(&pending) {
+                    spill_error = Some(error);
+                }
+                render_chunk_ms += chunk_started.elapsed().as_secs_f64() * 1000.0;
+            }
+            pending.clear();
             if let Some(error) = spill_error {
                 return Err(CliError::from(error));
             }

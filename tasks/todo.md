@@ -134,6 +134,23 @@ Plan: `tasks/render-memory-plan.md`
 - [x] Update CLI/render tests and changelog.
 - [ ] Optional: `serve` stream-mesh protocol support; separate spec.
 
+## CPU streaming optimization
+
+- [x] Buffer small streamed mesh chunks to 100,000 quads before rendering.
+- [x] Add owned-chunk streaming mesh APIs so the CLI moves pages instead of
+      cloning quads.
+- [x] Reuse per-tile bin allocations across streamed chunks.
+- [x] Fuse projection and binning page by page.
+- [x] Encode each translucent spill triangle once and patch only the tile index.
+- [x] Replace the per-tile stable translucent sort with an unstable sort that
+      uses the original bin order as the tie-break.
+- [x] Measure and reject camera-depth buckets for opaque early-Z: cache and bin
+      costs outweighed any depth-test saving.
+- [x] Measure and reject the f32 edge/barycentric rasterizer: within run noise
+      and a higher pixel difference than the existing fast mode.
+- [ ] Follow-ups: persistent worker pool, flat CSR bins, and parallel spill
+      writers are still unmeasured.
+
 ## Fallback color coverage
 
 - [x] Resolve decorated variants (`quartz_pillar`, `chiseled_*`, `smooth_*_slab`)

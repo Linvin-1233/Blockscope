@@ -7,6 +7,7 @@ use litematic_material::{AssetSource, MaterialSet, MaterialSnapshot, TextureFilt
 use litematic_mesh::{
     ColorBlockCatalog, Mesh, MeshBuildOptions, MeshLimits, MeshPage, MeshStatistics, PageProgress,
     Rgba, build_mesh_parallel_with_options_and_progress,
+    build_mesh_streaming_owned_with_options_and_progress,
     build_mesh_streaming_with_options_and_progress, estimate_mesh_quads,
 };
 #[cfg(feature = "gpu")]
@@ -82,6 +83,39 @@ where
                 .flat_map(|region| region.palette.iter().cloned());
             let snapshot = catalog.snapshot(states);
             build_mesh_streaming_with_options_and_progress(
+                scene, &snapshot, limits, threads, options, progress, sink,
+            )
+            .map_err(CliError::from)
+        }
+    }
+}
+
+/// Build a streaming mesh whose chunks are handed to `sink` by value.
+pub(crate) fn build_scene_mesh_streaming_owned<F>(
+    scene: &Scene,
+    snapshot: Option<&MaterialSnapshot>,
+    limits: &MeshLimits,
+    threads: u32,
+    options: MeshBuildOptions,
+    progress: Option<PageProgress<'_>>,
+    sink: F,
+) -> Result<MeshStatistics, CliError>
+where
+    F: FnMut(Vec<MeshPage>),
+{
+    match snapshot {
+        Some(snapshot) => build_mesh_streaming_owned_with_options_and_progress(
+            scene, snapshot, limits, threads, options, progress, sink,
+        )
+        .map_err(CliError::from),
+        None => {
+            let catalog = ColorBlockCatalog::new().map_err(CliError::internal)?;
+            let states = scene
+                .regions
+                .iter()
+                .flat_map(|region| region.palette.iter().cloned());
+            let snapshot = catalog.snapshot(states);
+            build_mesh_streaming_owned_with_options_and_progress(
                 scene, &snapshot, limits, threads, options, progress, sink,
             )
             .map_err(CliError::from)

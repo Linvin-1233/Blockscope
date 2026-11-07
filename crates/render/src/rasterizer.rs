@@ -265,8 +265,8 @@ fn rasterize(
                     translucent,
                     options,
                     job,
-                    &quad_bins[job.index],
-                    &triangle_bins[job.index],
+                    &quad_bins,
+                    &triangle_bins,
                     textures,
                 );
                 if let Some(sink) = &sink {

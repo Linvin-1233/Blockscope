@@ -46,6 +46,14 @@ User-facing changes are recorded here. The format follows
   A/B on `000001` with the client jar measured about 5% lower render time with
   unchanged peak memory and the same PNG SHA-256. Off-screen quads and triangles
   no longer enter the tile bins, and the repeated tile bounding-box test is gone.
+- CPU streaming render now accumulates small mesh chunks up to 100,000 quads
+  before submitting them and reuses tile-bin allocations across chunks;
+  projection and binning run in the same page pass. Streamed `000002` color
+  render dropped from 681/669/690 ms to 192/202/209 ms, and `000002` with the
+  client jar from 2.49/2.54 s to 2.30/2.29 s. Translucent spill encodes each
+  triangle once, and per-tile sorting uses an unstable sort with the original
+  order as the tie-break; the `000001` client-jar render median fell by about
+  5.6%. All three fixtures keep their previous PNG SHA-256 values.
 - `render`/`bench` accept `--precision exact|fast`. The default exact path is
   unchanged; fast stores the CPU projection table as f32, shrinking `QuadRender`
   from 128 to 80 bytes and improving measured jar render time by about 5-16% at

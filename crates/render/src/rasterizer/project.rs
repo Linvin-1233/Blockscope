@@ -37,47 +37,6 @@ pub(super) fn project_pages(
     }
 }
 
-/// Project a contiguous page slice with the selected precision.
-pub(super) fn project_pages_for_slice(
-    pages: &[MeshPage],
-    camera: &Camera,
-    options: &RenderOptions,
-    statistics: &mut RenderStatistics,
-) -> (QuadTable, Vec<Triangle>) {
-    match options.precision {
-        RenderPrecision::Exact => {
-            let mut quads = Vec::with_capacity(pages.iter().map(|page| page.quads.len()).sum());
-            let mut translucent = Vec::new();
-            for page in pages {
-                push_page_quads::<[f64; 3]>(
-                    page,
-                    camera,
-                    options,
-                    statistics,
-                    &mut quads,
-                    &mut translucent,
-                );
-            }
-            (QuadTable::Exact(quads), translucent)
-        }
-        RenderPrecision::Fast => {
-            let mut quads = Vec::with_capacity(pages.iter().map(|page| page.quads.len()).sum());
-            let mut translucent = Vec::new();
-            for page in pages {
-                push_page_quads::<[f32; 3]>(
-                    page,
-                    camera,
-                    options,
-                    statistics,
-                    &mut quads,
-                    &mut translucent,
-                );
-            }
-            (QuadTable::Fast(quads), translucent)
-        }
-    }
-}
-
 fn project_pages_typed<P: QuadPoint>(
     pages: &[MeshPage],
     camera: &Camera,

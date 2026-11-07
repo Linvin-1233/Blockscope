@@ -35,6 +35,12 @@
   下一个 bucket。`000001` client-jar 的受控 A/B 中 render 时间下降约 5%，
   峰值内存不变，PNG SHA-256 与之前一致。离屏 quad/triangle 不再进入 tile
   分箱，tile 内重复的包围盒检查已移除。
+- CPU 流式渲染把小网格块累积到 10 万 quad 后再提交，并复用跨 chunk 的 tile
+  分箱内存；投影与分箱合并到同一遍页面处理。`000002` color 的流式 render 从
+  681/669/690 ms 降到 192/202/209 ms，`000002` client-jar 从 2.49/2.54 s
+  降到 2.30/2.29 s。半透明 spill 每条三角形只编码一次，tile 排序改用带原始
+  顺序 tie-break 的不稳定排序；`000001` client-jar render 中位数下降约 5.6%。
+  三条基准的 PNG SHA-256 均与改动前一致。
 - `render`/`bench` 新增 `--precision exact|fast`。默认 `exact` 路径不变；
   `fast` 用 f32 存储 CPU 投影表，`QuadRender` 从 128 B 降到 80 B，真实 jar
   上 render 提升约 5-16%，代价是少量像素差异。GPU 后端忽略该设置。

@@ -1,5 +1,5 @@
 use super::TileProgress;
-use super::bin::TileJob;
+use super::bin::{BinSet, TileJob};
 use super::geometry::{bounds, edge, to_u8};
 use super::project::{QuadPoint, QuadRender, QuadTable, Triangle, vertex_color};
 use crate::{Background, RenderOptions};
@@ -35,8 +35,8 @@ pub(super) fn render_tiles_parallel(
     translucent: &[Triangle],
     options: &RenderOptions,
     jobs: &[TileJob],
-    quad_bins: &[Vec<u32>],
-    triangle_bins: &[Vec<u32>],
+    quad_bins: &BinSet,
+    triangle_bins: &BinSet,
     threads: usize,
     textures: Option<&TextureSet>,
     progress: Option<&TileProgressSink<'_>>,
@@ -59,8 +59,8 @@ pub(super) fn render_tiles_parallel(
                         translucent,
                         options,
                         job,
-                        &quad_bins[index],
-                        &triangle_bins[index],
+                        quad_bins,
+                        triangle_bins,
                         textures,
                     ));
                     if let Some(progress) = progress {
@@ -99,8 +99,8 @@ pub(super) fn render_tile(
     translucent_triangles: &[Triangle],
     options: &RenderOptions,
     job: &TileJob,
-    quad_candidates: &[u32],
-    triangle_candidates: &[u32],
+    quad_bins: &BinSet,
+    triangle_bins: &BinSet,
     textures: Option<&TextureSet>,
 ) -> TileOutput {
     let pixel_count = (u64::from(job.width) * u64::from(job.height)) as usize;
@@ -130,17 +130,24 @@ pub(super) fn render_tile(
             filter: options.texture_filter,
         };
 
-        for &index in quad_candidates {
+        for &index in quad_bins.get(job.index) {
             tile.rasterize_table_quad(quads, index);
         }
 
-        let mut translucent: Vec<&Triangle> = triangle_candidates
+        let mut translucent: Vec<(u32, &Triangle)> = triangle_bins
+            .get(job.index)
             .iter()
-            .map(|&index| &translucent_triangles[index as usize])
+            .enumerate()
+            .map(|(order, &index)| (order as u32, &translucent_triangles[index as usize]))
             .collect();
-        translucent.sort_by(|left, right| right.depth_key.total_cmp(&left.depth_key));
+        translucent.sort_unstable_by(|(left_order, left), (right_order, right)| {
+            right
+                .depth_key
+                .total_cmp(&left.depth_key)
+                .then_with(|| left_order.cmp(right_order))
+        });
 
-        for triangle in translucent {
+        for (_, triangle) in translucent {
             let colors = triangle.colors();
             let uvs = triangle.uvs();
             let points = triangle.points_f64();
