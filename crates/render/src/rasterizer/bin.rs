@@ -66,6 +66,12 @@ impl BinSet {
     pub(super) fn clear(&mut self) {
         for bin in &mut self.bins {
             bin.clear();
+            // A few tiles can accumulate very large candidate lists. Keep a
+            // bounded amount of capacity so the reused pool does not pin the
+            // peak of an earlier chunk for the rest of the render.
+            if bin.capacity() > 256 {
+                bin.shrink_to(128);
+            }
         }
     }
 

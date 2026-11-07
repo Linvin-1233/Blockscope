@@ -136,11 +136,14 @@ Plan: `tasks/render-memory-plan.md`
 
 ## CPU streaming optimization
 
-- [x] Buffer small streamed mesh chunks to 100,000 quads before rendering.
+- [x] Buffer small streamed mesh chunks to 150,000 quads before rendering in
+      `render` and the CPU `serve` path.
 - [x] Add owned-chunk streaming mesh APIs so the CLI moves pages instead of
       cloning quads.
-- [x] Reuse per-tile bin allocations across streamed chunks.
+- [x] Reuse per-tile bin allocations across streamed chunks and shrink large
+      retained lists to bound the peak.
 - [x] Fuse projection and binning page by page.
+- [x] Persist the page capacity hint across streamed chunks.
 - [x] Encode each translucent spill triangle once and patch only the tile index.
 - [x] Replace the per-tile stable translucent sort with an unstable sort that
       uses the original bin order as the tie-break.
@@ -148,8 +151,14 @@ Plan: `tasks/render-memory-plan.md`
       costs outweighed any depth-test saving.
 - [x] Measure and reject the f32 edge/barycentric rasterizer: within run noise
       and a higher pixel difference than the existing fast mode.
-- [ ] Follow-ups: persistent worker pool, flat CSR bins, and parallel spill
-      writers are still unmeasured.
+- [x] Measure and reject flat CSR bins: lower peak but about 1 s slower per
+      `000001` jar render than the reused `Vec<Vec<u32>>` bins.
+- [x] Measure and reject 64-page mesh chunks: faster mesh but about 250 MB more
+      peak than 32 pages; the persisted hint recovers the mesh speed instead.
+- [x] Measure and reject intra-chunk render splitting: extra tile passes made
+      `000001` jar render much slower.
+- [ ] Follow-ups: persistent worker pool and parallel spill writers remain
+      unmeasured.
 
 ## Fallback color coverage
 

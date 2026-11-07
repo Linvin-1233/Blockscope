@@ -5,7 +5,7 @@ use crate::{
 use clap::Args;
 use litematic_core::LitematicFile;
 use litematic_material::{MaterialSet, MaterialSnapshot};
-use litematic_mesh::{Mesh, MeshLimits};
+use litematic_mesh::{Mesh, MeshLimits, MeshPage};
 use litematic_render::{LightingProfile, RenderBackend, RenderOptions, write_png};
 use litematic_scene::{Scene, sha256};
 use serde::Deserialize;
@@ -613,10 +613,13 @@ fn process_streaming(
             }
             Err(error) => return Err(error),
         };
+    let batch_stream = renderer.is_cpu();
     let mut render_chunk_ms = 0.0;
     let mut render_error = None;
+    let mut pending: Vec<MeshPage> = Vec::new();
+    let mut pending_quads = 0usize;
     let mesh_started = Instant::now();
-    crate::build_scene_mesh_streaming(
+    crate::build_scene_mesh_streaming_owned(
         &scene,
         snapshot.as_ref(),
         &context.mesh_limits,
@@ -624,16 +627,44 @@ fn process_streaming(
         context.mesh_options,
         None,
         |pages| {
+            if !batch_stream {
+                let chunk_started = Instant::now();
+                if render_error.is_none()
+                    && let Err(error) = renderer.render_pages(&pages)
+                {
+                    render_error = Some(error);
+                }
+                render_chunk_ms += chunk_started.elapsed().as_secs_f64() * 1000.0;
+                return;
+            }
+
+            for page in pages {
+                pending_quads += page.quads.len();
+                pending.push(page);
+            }
+            if pending_quads < crate::STREAM_RENDER_QUADS {
+                return;
+            }
             let chunk_started = Instant::now();
             if render_error.is_none()
-                && let Err(error) = renderer.render_pages(pages)
+                && let Err(error) = renderer.render_pages(&pending)
             {
                 render_error = Some(error);
             }
             render_chunk_ms += chunk_started.elapsed().as_secs_f64() * 1000.0;
+            pending.clear();
+            pending_quads = 0;
         },
     )?;
     let mesh_total_ms = mesh_started.elapsed().as_secs_f64() * 1000.0;
+    if batch_stream && render_error.is_none() && !pending.is_empty() {
+        let chunk_started = Instant::now();
+        if let Err(error) = renderer.render_pages(&pending) {
+            render_error = Some(error);
+        }
+        render_chunk_ms += chunk_started.elapsed().as_secs_f64() * 1000.0;
+    }
+    pending.clear();
     if let Some(error) = render_error {
         return Err(CliError::from(error));
     }
