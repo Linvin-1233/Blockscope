@@ -1,6 +1,7 @@
 use super::geometry::{bounds, quad_bounds};
 use super::project::{QuadPoint, QuadRender, QuadTable, Triangle};
 pub(super) use litematic_scene::worker_count;
+
 #[derive(Clone, Copy, Debug)]
 pub(super) struct TileJob {
     pub(super) index: usize,
@@ -32,54 +33,127 @@ pub(super) fn tile_jobs(width: u32, height: u32, tile_size: u32) -> Vec<TileJob>
     jobs
 }
 
-/// Group quads by the tiles their screen bounds cover, so each tile only visits
-/// candidates that can actually write a fragment.
-pub(super) fn bin_quads(
-    table: &QuadTable,
-    width: u32,
-    height: u32,
-    tile_size: u32,
-) -> Vec<Vec<u32>> {
-    match table {
-        QuadTable::Exact(quads) => bin_quads_typed(quads, width, height, tile_size),
-        QuadTable::Fast(quads) => bin_quads_typed(quads, width, height, tile_size),
-    }
+/// Per-tile candidate lists.
+///
+/// The lists are reused across streamed chunks: clearing a list keeps its
+/// allocation, so a streamed render does not allocate a thousand small vectors
+/// for every mesh chunk.
+pub(super) struct BinSet {
+    bins: Vec<Vec<u32>>,
+    tiles_x: u32,
+    tile_size: f64,
+    width: f64,
+    height: f64,
+    max_tile_x: f64,
+    max_tile_y: f64,
 }
 
-fn bin_quads_typed<P: QuadPoint>(
-    quads: &[QuadRender<P>],
-    width: u32,
-    height: u32,
-    tile_size: u32,
-) -> Vec<Vec<u32>> {
-    let tiles_x = width.div_ceil(tile_size);
-    let tiles_y = height.div_ceil(tile_size);
-    let mut bins = vec![Vec::new(); (tiles_x * tiles_y) as usize];
-    let tile_size = f64::from(tile_size);
-    let max_tile_x = f64::from(tiles_x - 1);
-    let max_tile_y = f64::from(tiles_y - 1);
-
-    for (index, quad) in quads.iter().enumerate() {
-        let bbox = quad_bounds(&quad.points.map(QuadPoint::to_f64));
-        if bbox[2] < 0.0
-            || bbox[0] >= f64::from(width)
-            || bbox[3] < 0.0
-            || bbox[1] >= f64::from(height)
-        {
-            continue;
+impl BinSet {
+    pub(super) fn new(width: u32, height: u32, tile_size: u32) -> Self {
+        let tiles_x = width.div_ceil(tile_size);
+        let tiles_y = height.div_ceil(tile_size);
+        Self {
+            bins: vec![Vec::new(); (tiles_x * tiles_y) as usize],
+            tiles_x,
+            tile_size: f64::from(tile_size),
+            width: f64::from(width),
+            height: f64::from(height),
+            max_tile_x: f64::from(tiles_x - 1),
+            max_tile_y: f64::from(tiles_y - 1),
         }
-        let min_x = (bbox[0] / tile_size).floor().clamp(0.0, max_tile_x) as u32;
-        let max_x = (bbox[2] / tile_size).floor().clamp(0.0, max_tile_x) as u32;
-        let min_y = (bbox[1] / tile_size).floor().clamp(0.0, max_tile_y) as u32;
-        let max_y = (bbox[3] / tile_size).floor().clamp(0.0, max_tile_y) as u32;
+    }
 
-        for tile_y in min_y..=max_y {
-            for tile_x in min_x..=max_x {
-                bins[(tile_y * tiles_x + tile_x) as usize].push(index as u32);
+    pub(super) fn clear(&mut self) {
+        for bin in &mut self.bins {
+            bin.clear();
+            // A few tiles can accumulate very large candidate lists. Keep a
+            // bounded amount of capacity so the reused pool does not pin the
+            // peak of an earlier chunk for the rest of the render.
+            if bin.capacity() > 256 {
+                bin.shrink_to(128);
             }
         }
     }
 
+    pub(super) fn len(&self) -> usize {
+        self.bins.len()
+    }
+
+    pub(super) fn is_empty(&self, index: usize) -> bool {
+        self.bins[index].is_empty()
+    }
+
+    pub(super) fn get(&self, index: usize) -> &[u32] {
+        &self.bins[index]
+    }
+
+    /// Append the quads in `quads` to their tile bins. `start` is the index of
+    /// the first quad in the full projected table.
+    pub(super) fn push_quads<P: QuadPoint>(&mut self, quads: &[QuadRender<P>], start: usize) {
+        for (offset, quad) in quads.iter().enumerate() {
+            let bbox = quad_bounds(&quad.points.map(QuadPoint::to_f64));
+            if bbox[2] < 0.0 || bbox[0] >= self.width || bbox[3] < 0.0 || bbox[1] >= self.height {
+                continue;
+            }
+            let min_x = (bbox[0] / self.tile_size)
+                .floor()
+                .clamp(0.0, self.max_tile_x) as u32;
+            let max_x = (bbox[2] / self.tile_size)
+                .floor()
+                .clamp(0.0, self.max_tile_x) as u32;
+            let min_y = (bbox[1] / self.tile_size)
+                .floor()
+                .clamp(0.0, self.max_tile_y) as u32;
+            let max_y = (bbox[3] / self.tile_size)
+                .floor()
+                .clamp(0.0, self.max_tile_y) as u32;
+            let index = (start + offset) as u32;
+
+            for tile_y in min_y..=max_y {
+                for tile_x in min_x..=max_x {
+                    self.bins[(tile_y * self.tiles_x + tile_x) as usize].push(index);
+                }
+            }
+        }
+    }
+
+    pub(super) fn push_triangles(&mut self, triangles: &[Triangle]) {
+        for (index, triangle) in triangles.iter().enumerate() {
+            let points = triangle.points_f64();
+            let bbox = bounds(&points);
+            if bbox[2] < 0.0 || bbox[0] >= self.width || bbox[3] < 0.0 || bbox[1] >= self.height {
+                continue;
+            }
+            let min_x = (bbox[0] / self.tile_size)
+                .floor()
+                .clamp(0.0, self.max_tile_x) as u32;
+            let max_x = (bbox[2] / self.tile_size)
+                .floor()
+                .clamp(0.0, self.max_tile_x) as u32;
+            let min_y = (bbox[1] / self.tile_size)
+                .floor()
+                .clamp(0.0, self.max_tile_y) as u32;
+            let max_y = (bbox[3] / self.tile_size)
+                .floor()
+                .clamp(0.0, self.max_tile_y) as u32;
+
+            for tile_y in min_y..=max_y {
+                for tile_x in min_x..=max_x {
+                    self.bins[(tile_y * self.tiles_x + tile_x) as usize].push(index as u32);
+                }
+            }
+        }
+    }
+}
+
+/// Group quads by the tiles their screen bounds cover, so each tile only visits
+/// candidates that can actually write a fragment.
+pub(super) fn bin_quads(table: &QuadTable, width: u32, height: u32, tile_size: u32) -> BinSet {
+    let mut bins = BinSet::new(width, height, tile_size);
+    match table {
+        QuadTable::Exact(quads) => bins.push_quads(quads, 0),
+        QuadTable::Fast(quads) => bins.push_quads(quads, 0),
+    }
     bins
 }
 
@@ -89,36 +163,9 @@ pub(super) fn bin_triangles(
     width: u32,
     height: u32,
     tile_size: u32,
-) -> Vec<Vec<u32>> {
-    let tiles_x = width.div_ceil(tile_size);
-    let tiles_y = height.div_ceil(tile_size);
-    let mut bins = vec![Vec::new(); (tiles_x * tiles_y) as usize];
-    let tile_size = f64::from(tile_size);
-    let max_tile_x = f64::from(tiles_x - 1);
-    let max_tile_y = f64::from(tiles_y - 1);
-
-    for (index, triangle) in triangles.iter().enumerate() {
-        let points = triangle.points_f64();
-        let bbox = bounds(&points);
-        if bbox[2] < 0.0
-            || bbox[0] >= f64::from(width)
-            || bbox[3] < 0.0
-            || bbox[1] >= f64::from(height)
-        {
-            continue;
-        }
-        let min_x = (bbox[0] / tile_size).floor().clamp(0.0, max_tile_x) as u32;
-        let max_x = (bbox[2] / tile_size).floor().clamp(0.0, max_tile_x) as u32;
-        let min_y = (bbox[1] / tile_size).floor().clamp(0.0, max_tile_y) as u32;
-        let max_y = (bbox[3] / tile_size).floor().clamp(0.0, max_tile_y) as u32;
-
-        for tile_y in min_y..=max_y {
-            for tile_x in min_x..=max_x {
-                bins[(tile_y * tiles_x + tile_x) as usize].push(index as u32);
-            }
-        }
-    }
-
+) -> BinSet {
+    let mut bins = BinSet::new(width, height, tile_size);
+    bins.push_triangles(triangles);
     bins
 }
 

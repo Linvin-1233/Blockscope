@@ -1,19 +1,20 @@
 use super::RenderStatistics;
-use super::bin::{TileJob, bin_quads, bin_triangles, effective_tile_size, tile_jobs, worker_count};
+use super::bin::{BinSet, TileJob, bin_triangles, effective_tile_size, tile_jobs, worker_count};
 use super::downsample::downsample;
 use super::geometry::to_u8;
-use super::project::{QuadTable, Triangle, merge_page_statistics, project_pages_for_slice};
+use super::project::{QuadTable, Triangle, merge_page_statistics, push_page_quads};
 use super::spill::{
     DEFAULT_TRANSLUCENT_BUDGET, TranslucentParts, TranslucentStore, TranslucentWriter,
 };
 use super::tile::{TileBuffer, TileCounters};
-use crate::{Background, Camera, RenderError, RenderOptions, RenderOutput};
+use crate::{Background, Camera, RenderError, RenderOptions, RenderOutput, RenderPrecision};
 use litematic_material::TextureSet;
 use litematic_mesh::{MeshPage, NO_TEXTURE, RenderLayer};
 use litematic_scene::Scene;
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 
 /// Chunk pages by projected geometry size rather than page count: page sizes
 /// vary by two orders of magnitude between meshes, and a fixed page count
@@ -33,11 +34,16 @@ pub struct StreamingRenderer<'a> {
     textures: Option<&'a TextureSet>,
     tiles: Vec<Mutex<StreamTile>>,
     translucent: TranslucentWriter,
+    bin_pool: Vec<BinSet>,
     statistics: RenderStatistics,
     threads: usize,
     width: u32,
     height: u32,
     tile_size: u32,
+    timing: bool,
+    project_time: Duration,
+    spill_time: Duration,
+    tile_time: Duration,
 }
 
 impl<'a> StreamingRenderer<'a> {
@@ -57,7 +63,12 @@ impl<'a> StreamingRenderer<'a> {
         options: &'a RenderOptions,
         textures: Option<&'a TextureSet>,
     ) -> Self {
-        Self::with_camera_and_budget(camera, options, textures, DEFAULT_TRANSLUCENT_BUDGET)
+        // Diagnostic override for comparing the in-memory and spilled paths.
+        let budget = std::env::var("BLOCKSCOPE_TRANSLUCENT_BUDGET")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(DEFAULT_TRANSLUCENT_BUDGET);
+        Self::with_camera_and_budget(camera, options, textures, budget)
     }
 
     fn with_camera_and_budget(
@@ -94,11 +105,17 @@ impl<'a> StreamingRenderer<'a> {
             translucent: TranslucentWriter::new(TranslucentStore::new(
                 budget, tiles_x, tiles_y, tile_size,
             )),
+            bin_pool: Vec::new(),
             statistics,
             threads,
             width,
             height,
             tile_size,
+            // Set BLOCKSCOPE_STREAM_TIMING to print stage timings at finish.
+            timing: std::env::var_os("BLOCKSCOPE_STREAM_TIMING").is_some(),
+            project_time: Duration::ZERO,
+            spill_time: Duration::ZERO,
+            tile_time: Duration::ZERO,
         }
     }
 
@@ -130,15 +147,10 @@ impl<'a> StreamingRenderer<'a> {
         // Joining the projection workers before the tile pass avoids a barrier
         // that would deadlock the main thread if a worker panicked.
         let slices = page_slices(pages, self.threads);
-        let mut parts = project_slices(
-            pages,
-            &slices,
-            &self.camera,
-            self.options,
-            self.width,
-            self.height,
-            self.tile_size,
-        );
+        let bins = self.take_bins(slices.len());
+        let project_started = Instant::now();
+        let mut parts = project_slices(pages, &slices, &self.camera, self.options, bins);
+        self.project_time += project_started.elapsed();
 
         for part in &parts {
             merge_page_statistics(&mut self.statistics, &part.statistics);
@@ -146,14 +158,17 @@ impl<'a> StreamingRenderer<'a> {
 
         // Hand translucent geometry to the writer before the tile pass so the
         // spill I/O overlaps opaque rasterization. Parts stay in page order.
+        let spill_started = Instant::now();
         for part in &mut parts {
             self.translucent
                 .push_many(std::mem::take(&mut part.translucent))
                 .map_err(storage_error)?;
         }
+        self.spill_time += spill_started.elapsed();
 
+        let tile_started = Instant::now();
         let touched: Vec<usize> = (0..self.tiles.len())
-            .filter(|&index| parts.iter().any(|part| !part.bins[index].is_empty()))
+            .filter(|&index| parts.iter().any(|part| !part.bins.is_empty(index)))
             .collect();
         if !touched.is_empty() {
             let tiles = &self.tiles;
@@ -163,8 +178,27 @@ impl<'a> StreamingRenderer<'a> {
                 render_parts_tile(tiles, &parts, tile_index, options, textures);
             });
         }
+        self.tile_time += tile_started.elapsed();
+
+        for part in parts {
+            self.bin_pool.push(part.bins);
+        }
 
         Ok(())
+    }
+
+    /// Take one bin set per projection slice, reusing the previous chunk's
+    /// allocations when possible.
+    fn take_bins(&mut self, count: usize) -> Vec<BinSet> {
+        while self.bin_pool.len() < count {
+            self.bin_pool
+                .push(BinSet::new(self.width, self.height, self.tile_size));
+        }
+        let mut bins: Vec<BinSet> = self.bin_pool.drain(..count).collect();
+        for bin in &mut bins {
+            bin.clear();
+        }
+        bins
     }
 
     /// Resolve translucent geometry, assemble tiles, and downsample.
@@ -174,23 +208,31 @@ impl<'a> StreamingRenderer<'a> {
             textures,
             tiles,
             translucent,
+            bin_pool: _,
             mut statistics,
             threads,
             width,
             height,
             tile_size,
+            timing,
+            project_time,
+            spill_time,
+            tile_time,
             camera: _,
         } = self;
 
-        match translucent.finish().map_err(storage_error)? {
+        let resolve_started = Instant::now();
+        let writer_started = Instant::now();
+        let translucent_parts = translucent.finish().map_err(storage_error)?;
+        let writer_wait = writer_started.elapsed();
+        let mut bucket_read_time = Duration::ZERO;
+        let mut bucket_render_time = Duration::ZERO;
+        match translucent_parts {
             TranslucentParts::Memory(translucent) => {
                 if !translucent.is_empty() {
                     let triangle_bins = bin_triangles(&translucent, width, height, tile_size);
-                    let touched: Vec<usize> = triangle_bins
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, bin)| !bin.is_empty())
-                        .map(|(index, _)| index)
+                    let touched: Vec<usize> = (0..triangle_bins.len())
+                        .filter(|&index| !triangle_bins.is_empty(index))
                         .collect();
                     render_stream_translucent(
                         &tiles,
@@ -210,10 +252,14 @@ impl<'a> StreamingRenderer<'a> {
                     std::thread::scope(|scope| -> Result<(), RenderError> {
                         let mut next = Some(scope.spawn(move || reader.read_bucket(0)));
                         for bucket_index in 0..bucket_count {
+                            let read_started = Instant::now();
                             let bucket = join_bucket(next.take().expect("bucket reader"))?;
+                            bucket_read_time += read_started.elapsed();
                             let handle = (bucket_index + 1 < bucket_count)
                                 .then(|| scope.spawn(move || reader.read_bucket(bucket_index + 1)));
+                            let render_started = Instant::now();
                             render_translucent_bucket(&tiles, &bucket, options, threads, textures);
+                            bucket_render_time += render_started.elapsed();
                             next = handle;
                         }
                         Ok(())
@@ -221,7 +267,9 @@ impl<'a> StreamingRenderer<'a> {
                 }
             }
         }
+        let resolve_time = resolve_started.elapsed();
 
+        let assembly_started = Instant::now();
         let mut output = vec![0u8; (u64::from(width) * u64::from(height) * 4) as usize];
         for tile in tiles {
             let tile = tile.into_inner().expect("stream tile mutex poisoned");
@@ -230,6 +278,8 @@ impl<'a> StreamingRenderer<'a> {
             copy_tile(&tile.job, &tile.colors, &mut output, width);
         }
 
+        let assembly_time = assembly_started.elapsed();
+        let downsample_started = Instant::now();
         let rgba = if options.supersample > 1 {
             downsample(
                 &output,
@@ -243,6 +293,22 @@ impl<'a> StreamingRenderer<'a> {
         } else {
             output
         };
+        let downsample_time = downsample_started.elapsed();
+
+        if timing {
+            eprintln!(
+                "stream timing: project {:.2} s, spill {:.2} s, tile {:.2} s, resolve {:.2} s (writer wait {:.2} s, bucket read {:.2} s, bucket render {:.2} s), assembly {:.2} s, downsample {:.2} s",
+                project_time.as_secs_f64(),
+                spill_time.as_secs_f64(),
+                tile_time.as_secs_f64(),
+                resolve_time.as_secs_f64(),
+                writer_wait.as_secs_f64(),
+                bucket_read_time.as_secs_f64(),
+                bucket_render_time.as_secs_f64(),
+                assembly_time.as_secs_f64(),
+                downsample_time.as_secs_f64()
+            );
+        }
 
         Ok(RenderOutput {
             width: options.width,
@@ -331,7 +397,7 @@ impl StreamTile {
 /// Projected geometry for one worker's slice of a streamed page chunk.
 struct ChunkPart {
     quads: QuadTable,
-    bins: Vec<Vec<u32>>,
+    bins: BinSet,
     translucent: Vec<Triangle>,
     statistics: RenderStatistics,
 }
@@ -343,40 +409,22 @@ fn project_slices(
     slices: &[(usize, usize)],
     camera: &Camera,
     options: &RenderOptions,
-    width: u32,
-    height: u32,
-    tile_size: u32,
+    bins: Vec<BinSet>,
 ) -> Vec<ChunkPart> {
     if slices.len() <= 1 {
         return slices
             .iter()
-            .map(|&(start, end)| {
-                project_slice(
-                    &pages[start..end],
-                    camera,
-                    options,
-                    width,
-                    height,
-                    tile_size,
-                )
-            })
+            .zip(bins)
+            .map(|(&(start, end), bins)| project_slice(&pages[start..end], camera, options, bins))
             .collect();
     }
 
     std::thread::scope(|scope| {
         let handles: Vec<_> = slices
             .iter()
-            .map(|&(start, end)| {
-                scope.spawn(move || {
-                    project_slice(
-                        &pages[start..end],
-                        camera,
-                        options,
-                        width,
-                        height,
-                        tile_size,
-                    )
-                })
+            .zip(bins)
+            .map(|(&(start, end), bins)| {
+                scope.spawn(move || project_slice(&pages[start..end], camera, options, bins))
             })
             .collect();
         handles
@@ -388,19 +436,53 @@ fn project_slices(
 
 /// Project and bin one worker's pages.
 ///
-/// Reserving the page quad count avoids repeated growth copies; culling only
-/// ever makes this an upper bound.
+/// Binning runs page by page so the freshly projected quads are still hot in
+/// cache. Reserving the page quad count avoids repeated growth copies; culling
+/// only ever makes this an upper bound.
 fn project_slice(
     pages: &[MeshPage],
     camera: &Camera,
     options: &RenderOptions,
-    width: u32,
-    height: u32,
-    tile_size: u32,
+    mut bins: BinSet,
 ) -> ChunkPart {
     let mut statistics = RenderStatistics::default();
-    let (quads, translucent) = project_pages_for_slice(pages, camera, options, &mut statistics);
-    let bins = bin_quads(&quads, width, height, tile_size);
+    let capacity: usize = pages.iter().map(|page| page.quads.len()).sum();
+    let (quads, translucent) = match options.precision {
+        RenderPrecision::Exact => {
+            let mut quads = Vec::with_capacity(capacity);
+            let mut translucent = Vec::new();
+            for page in pages {
+                let start = quads.len();
+                push_page_quads::<[f64; 3]>(
+                    page,
+                    camera,
+                    options,
+                    &mut statistics,
+                    &mut quads,
+                    &mut translucent,
+                );
+                bins.push_quads(&quads[start..], start);
+            }
+            (QuadTable::Exact(quads), translucent)
+        }
+        RenderPrecision::Fast => {
+            let mut quads = Vec::with_capacity(capacity);
+            let mut translucent = Vec::new();
+            for page in pages {
+                let start = quads.len();
+                push_page_quads::<[f32; 3]>(
+                    page,
+                    camera,
+                    options,
+                    &mut statistics,
+                    &mut quads,
+                    &mut translucent,
+                );
+                bins.push_quads(&quads[start..], start);
+            }
+            (QuadTable::Fast(quads), translucent)
+        }
+    };
     ChunkPart {
         quads,
         bins,
@@ -439,7 +521,7 @@ fn render_parts_tile(
     };
 
     for part in parts {
-        for &index in &part.bins[tile_index] {
+        for &index in part.bins.get(tile_index) {
             buffer.rasterize_table_quad(&part.quads, index);
         }
     }
@@ -448,7 +530,7 @@ fn render_parts_tile(
 fn render_stream_translucent(
     tiles: &[Mutex<StreamTile>],
     triangles: &[Triangle],
-    bins: &[Vec<u32>],
+    bins: &BinSet,
     touched: &[usize],
     options: &RenderOptions,
     threads: usize,
@@ -477,13 +559,20 @@ fn render_stream_translucent(
             filter: options.texture_filter,
         };
 
-        let mut translucent: Vec<&Triangle> = bins[tile_index]
+        let mut translucent: Vec<(u32, &Triangle)> = bins
+            .get(tile_index)
             .iter()
-            .map(|&index| &triangles[index as usize])
+            .enumerate()
+            .map(|(order, &index)| (order as u32, &triangles[index as usize]))
             .collect();
-        translucent.sort_by(|left, right| right.depth_key.total_cmp(&left.depth_key));
+        translucent.sort_unstable_by(|(left_order, left), (right_order, right)| {
+            right
+                .depth_key
+                .total_cmp(&left.depth_key)
+                .then_with(|| left_order.cmp(right_order))
+        });
 
-        for triangle in translucent {
+        for (_, triangle) in translucent {
             let colors = triangle.colors();
             let uvs = triangle.uvs();
             let points = triangle.points_f64();
@@ -544,10 +633,19 @@ fn render_translucent_bucket(
             filter: options.texture_filter,
         };
 
-        let mut visible: Vec<&Triangle> = triangles.iter().collect();
-        visible.sort_by(|left, right| right.depth_key.total_cmp(&left.depth_key));
+        let mut visible: Vec<(u32, &Triangle)> = triangles
+            .iter()
+            .enumerate()
+            .map(|(order, triangle)| (order as u32, triangle))
+            .collect();
+        visible.sort_unstable_by(|(left_order, left), (right_order, right)| {
+            right
+                .depth_key
+                .total_cmp(&left.depth_key)
+                .then_with(|| left_order.cmp(right_order))
+        });
 
-        for triangle in visible {
+        for (_, triangle) in visible {
             let colors = triangle.colors();
             let uvs = triangle.uvs();
             let points = triangle.points_f64();

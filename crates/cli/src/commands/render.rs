@@ -2,10 +2,11 @@ use crate::ui::progress::Progress;
 use crate::ui::{self, ACCENT, HEADER, MUTED, WARNING};
 use crate::{
     AssetArgs, CliError, GEOMETRY_IGNORES_BLOCK_ENTITY_NBT, LimitArgs, MeshOptionArgs,
-    PreparedScene, StreamTarget, apply_render_limits, load_materials, load_scene, mesh_limits,
-    parse_background, parse_texture_filter, stream_target, warn_forced,
+    PreparedScene, STREAM_RENDER_QUADS, StreamTarget, apply_render_limits, load_materials,
+    load_scene, mesh_limits, parse_background, parse_texture_filter, stream_target, warn_forced,
 };
 use clap::Args;
+use litematic_mesh::MeshPage;
 use litematic_render::terminal::enable_windows_virtual_terminal;
 use litematic_render::{
     Background, LightingProfile, RenderBackend, RenderOptions, RenderOutput, RenderPrecision,
@@ -384,8 +385,11 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
                 }
                 Err(error) => return Err(error),
             };
+            let batch_stream = renderer.is_cpu();
             let mut render_chunk_ms = 0.0;
             let mut spill_error = None;
+            let mut pending: Vec<MeshPage> = Vec::new();
+            let mut pending_quads = 0usize;
             let build_started = Instant::now();
             let build_bar = progress.bar("Building and rendering mesh");
             if view_count > 1 {
@@ -393,7 +397,7 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
             }
             let result = {
                 let update = |done, total| build_bar.update(done, total);
-                crate::build_scene_mesh_streaming(
+                crate::build_scene_mesh_streaming_owned(
                     &scene,
                     snapshot.as_ref(),
                     &limits,
@@ -401,18 +405,46 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
                     args.mesh.options(),
                     Some(&update),
                     |pages| {
+                        if !batch_stream {
+                            let chunk_started = Instant::now();
+                            if spill_error.is_none()
+                                && let Err(error) = renderer.render_pages(&pages)
+                            {
+                                spill_error = Some(error);
+                            }
+                            render_chunk_ms += chunk_started.elapsed().as_secs_f64() * 1000.0;
+                            return;
+                        }
+
+                        for page in pages {
+                            pending_quads += page.quads.len();
+                            pending.push(page);
+                        }
+                        if pending_quads < STREAM_RENDER_QUADS {
+                            return;
+                        }
                         let chunk_started = Instant::now();
                         if spill_error.is_none()
-                            && let Err(error) = renderer.render_pages(pages)
+                            && let Err(error) = renderer.render_pages(&pending)
                         {
                             spill_error = Some(error);
                         }
                         render_chunk_ms += chunk_started.elapsed().as_secs_f64() * 1000.0;
+                        pending.clear();
+                        pending_quads = 0;
                     },
                 )
             };
             build_bar.finish();
             result?;
+            if batch_stream && spill_error.is_none() && !pending.is_empty() {
+                let chunk_started = Instant::now();
+                if let Err(error) = renderer.render_pages(&pending) {
+                    spill_error = Some(error);
+                }
+                render_chunk_ms += chunk_started.elapsed().as_secs_f64() * 1000.0;
+            }
+            pending.clear();
             if let Some(error) = spill_error {
                 return Err(CliError::from(error));
             }

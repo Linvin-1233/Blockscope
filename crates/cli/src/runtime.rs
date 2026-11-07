@@ -7,7 +7,7 @@ use litematic_material::{AssetSource, MaterialSet, MaterialSnapshot, TextureFilt
 use litematic_mesh::{
     ColorBlockCatalog, Mesh, MeshBuildOptions, MeshLimits, MeshPage, MeshStatistics, PageProgress,
     Rgba, build_mesh_parallel_with_options_and_progress,
-    build_mesh_streaming_with_options_and_progress, estimate_mesh_quads,
+    build_mesh_streaming_owned_with_options_and_progress, estimate_mesh_quads,
 };
 #[cfg(feature = "gpu")]
 use litematic_render::GpuRenderSession;
@@ -25,6 +25,10 @@ pub(crate) const MAX_THREADS: u32 = 256;
 
 /// Upper bound for the number of yaw angles in one render request.
 pub(crate) const MAX_VIEWS: usize = 64;
+
+/// Buffer small CPU-streamed mesh chunks up to this many quads before
+/// rendering, so per-chunk projection and tile barriers are amortized.
+pub(crate) const STREAM_RENDER_QUADS: usize = 150_000;
 
 /// Keep one batch of rendered views under this much output memory.
 const MAX_VIEW_BATCH_BYTES: u64 = 256 * 1024 * 1024;
@@ -57,7 +61,8 @@ fn build_scene_mesh_with_progress(
     }
 }
 
-pub(crate) fn build_scene_mesh_streaming<F>(
+/// Build a streaming mesh whose chunks are handed to `sink` by value.
+pub(crate) fn build_scene_mesh_streaming_owned<F>(
     scene: &Scene,
     snapshot: Option<&MaterialSnapshot>,
     limits: &MeshLimits,
@@ -67,10 +72,10 @@ pub(crate) fn build_scene_mesh_streaming<F>(
     sink: F,
 ) -> Result<MeshStatistics, CliError>
 where
-    F: FnMut(&[MeshPage]),
+    F: FnMut(Vec<MeshPage>),
 {
     match snapshot {
-        Some(snapshot) => build_mesh_streaming_with_options_and_progress(
+        Some(snapshot) => build_mesh_streaming_owned_with_options_and_progress(
             scene, snapshot, limits, threads, options, progress, sink,
         )
         .map_err(CliError::from),
@@ -81,7 +86,7 @@ where
                 .iter()
                 .flat_map(|region| region.palette.iter().cloned());
             let snapshot = catalog.snapshot(states);
-            build_mesh_streaming_with_options_and_progress(
+            build_mesh_streaming_owned_with_options_and_progress(
                 scene, &snapshot, limits, threads, options, progress, sink,
             )
             .map_err(CliError::from)
@@ -97,6 +102,10 @@ pub(crate) enum StreamTarget<'a> {
 }
 
 impl StreamTarget<'_> {
+    pub(crate) fn is_cpu(&self) -> bool {
+        matches!(self, Self::Cpu(_))
+    }
+
     pub(crate) fn render_pages(&mut self, pages: &[MeshPage]) -> Result<(), RenderError> {
         match self {
             Self::Cpu(renderer) => renderer.render_pages(pages),

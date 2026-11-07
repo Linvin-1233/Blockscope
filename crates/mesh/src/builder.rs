@@ -18,7 +18,8 @@ mod stream;
 
 pub use count::{count_mesh_quads, estimate_mesh_quads};
 pub use stream::{
-    build_mesh_streaming, build_mesh_streaming_with_options,
+    build_mesh_streaming, build_mesh_streaming_owned, build_mesh_streaming_owned_with_options,
+    build_mesh_streaming_owned_with_options_and_progress, build_mesh_streaming_with_options,
     build_mesh_streaming_with_options_and_progress,
 };
 

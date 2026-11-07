@@ -468,6 +468,44 @@ fn streaming_builder_matches_the_full_mesh() {
 }
 
 #[test]
+fn owned_streaming_builder_matches_the_borrowed_builder() {
+    use litematic_mesh::{ColorSnapshot, build_mesh_streaming, build_mesh_streaming_owned};
+
+    let values: Vec<u32> = (0..32 * 4 * 32).map(|index| (index % 3) as u32).collect();
+    let region = make_region(
+        "main",
+        [0, 0, 0],
+        [32, 4, 32],
+        &["minecraft:air", "minecraft:stone", "minecraft:glass"],
+        &values,
+    );
+    let scene = make_scene(vec![region]);
+    let catalog = ColorBlockCatalog::default();
+    let states = scene
+        .regions
+        .iter()
+        .flat_map(|region| region.palette.iter().cloned());
+    let snapshot: ColorSnapshot = catalog.snapshot(states);
+
+    let mut borrowed_pages = Vec::new();
+    let borrowed_statistics =
+        build_mesh_streaming(&scene, &snapshot, &MeshLimits::default(), 4, |chunk| {
+            borrowed_pages.extend_from_slice(chunk)
+        })
+        .unwrap();
+
+    let mut owned_pages = Vec::new();
+    let owned_statistics =
+        build_mesh_streaming_owned(&scene, &snapshot, &MeshLimits::default(), 4, |chunk| {
+            owned_pages.extend(chunk)
+        })
+        .unwrap();
+
+    assert_eq!(borrowed_statistics, owned_statistics);
+    assert_eq!(borrowed_pages, owned_pages);
+}
+
+#[test]
 fn streaming_builder_enforces_limits() {
     use litematic_mesh::{ColorSnapshot, build_mesh_streaming};
 

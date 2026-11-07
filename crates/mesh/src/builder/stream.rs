@@ -70,6 +70,90 @@ where
     C: BlockCatalog + Sync,
     F: FnMut(&[MeshPage]),
 {
+    build_mesh_streaming_impl(
+        scene,
+        catalog,
+        limits,
+        threads,
+        options,
+        progress,
+        |pages| sink(&pages),
+    )
+}
+
+/// Build a streaming mesh and hand each chunk to `sink` by value.
+///
+/// Unlike the borrowed variants this lets the caller retain or batch pages
+/// without cloning them.
+pub fn build_mesh_streaming_owned<C, F>(
+    scene: &Scene,
+    catalog: &C,
+    limits: &MeshLimits,
+    threads: u32,
+    sink: F,
+) -> Result<MeshStatistics, MeshError>
+where
+    C: BlockCatalog + Sync,
+    F: FnMut(Vec<MeshPage>),
+{
+    build_mesh_streaming_owned_with_options(
+        scene,
+        catalog,
+        limits,
+        threads,
+        MeshBuildOptions::default(),
+        sink,
+    )
+}
+
+/// Build an owned streaming mesh with explicit construction options.
+pub fn build_mesh_streaming_owned_with_options<C, F>(
+    scene: &Scene,
+    catalog: &C,
+    limits: &MeshLimits,
+    threads: u32,
+    options: MeshBuildOptions,
+    sink: F,
+) -> Result<MeshStatistics, MeshError>
+where
+    C: BlockCatalog + Sync,
+    F: FnMut(Vec<MeshPage>),
+{
+    build_mesh_streaming_owned_with_options_and_progress(
+        scene, catalog, limits, threads, options, None, sink,
+    )
+}
+
+/// Build an owned streaming mesh and report page completion after each chunk.
+pub fn build_mesh_streaming_owned_with_options_and_progress<C, F>(
+    scene: &Scene,
+    catalog: &C,
+    limits: &MeshLimits,
+    threads: u32,
+    options: MeshBuildOptions,
+    progress: Option<PageProgress<'_>>,
+    sink: F,
+) -> Result<MeshStatistics, MeshError>
+where
+    C: BlockCatalog + Sync,
+    F: FnMut(Vec<MeshPage>),
+{
+    build_mesh_streaming_impl(scene, catalog, limits, threads, options, progress, sink)
+}
+
+fn build_mesh_streaming_impl<C, F>(
+    scene: &Scene,
+    catalog: &C,
+    limits: &MeshLimits,
+    threads: u32,
+    options: MeshBuildOptions,
+    progress: Option<PageProgress<'_>>,
+    mut sink: F,
+) -> Result<MeshStatistics, MeshError>
+where
+    C: BlockCatalog + Sync,
+    F: FnMut(Vec<MeshPage>),
+{
     let view = SceneBlockView::new(scene, limits)?;
     let keys = view.page_keys().collect::<Vec<_>>();
     let total_pages = keys.len() as u64;
@@ -77,11 +161,15 @@ where
         progress(0, total_pages);
     }
     let tables = PaletteTables::new(scene, catalog);
+    let workers = worker_count(threads, keys.len());
+    let mut hints = (0..workers)
+        .map(|_| PageCapacityHint::default())
+        .collect::<Vec<_>>();
     let mut statistics = MeshStatistics::default();
     let mut completed_pages = 0u64;
 
     for chunk in keys.chunks(STREAM_PAGES_PER_CHUNK) {
-        let pages = build_page_chunk(scene, &view, &tables, chunk, threads, options)?;
+        let pages = build_page_chunk(scene, &view, &tables, chunk, threads, options, &mut hints)?;
         let mut mesh_pages = Vec::new();
         for page in pages {
             accumulate_statistics(&mut statistics, &page.statistics);
@@ -119,7 +207,7 @@ where
         completed_pages += chunk.len() as u64;
 
         if !mesh_pages.is_empty() {
-            sink(&mesh_pages);
+            sink(mesh_pages);
         }
 
         if let Some(progress) = progress {
@@ -137,6 +225,7 @@ fn build_page_chunk(
     keys: &[[i32; 3]],
     threads: u32,
     options: MeshBuildOptions,
+    hints: &mut [PageCapacityHint],
 ) -> Result<Vec<PageBuild>, MeshError> {
     let origins = keys
         .iter()
@@ -148,30 +237,22 @@ fn build_page_chunk(
     let error = Mutex::new(None);
 
     if workers <= 1 {
-        let mut hint = PageCapacityHint::default();
+        let hint = &mut hints[0];
         for (index, &origin) in origins.iter().enumerate() {
-            let page = build_page(
-                scene,
-                view,
-                tables,
-                origin,
-                options,
-                &mut hint,
-                PageMode::Build,
-            )?;
+            let page = build_page(scene, view, tables, origin, options, hint, PageMode::Build)?;
             slots[index]
                 .set(page)
                 .map_err(|_| MeshError::limit("duplicate mesh page slot"))?;
         }
     } else {
+        let hints = &mut hints[..workers];
         thread::scope(|scope| {
-            for _ in 0..workers {
+            for hint in hints.iter_mut() {
                 let slots = &slots;
                 let cursor = &cursor;
                 let error = &error;
                 let origins = &origins;
                 scope.spawn(move || {
-                    let mut hint = PageCapacityHint::default();
                     loop {
                         let index = cursor.fetch_add(1, Ordering::Relaxed);
                         let Some(&origin) = origins.get(index) else {
@@ -183,7 +264,7 @@ fn build_page_chunk(
                             tables,
                             origin,
                             options,
-                            &mut hint,
+                            hint,
                             PageMode::Build,
                         ) {
                             Ok(page) => {

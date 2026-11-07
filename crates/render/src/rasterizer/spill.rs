@@ -217,11 +217,13 @@ impl SpillStore {
         let min_y = (bbox[1] / self.tile_size).floor().clamp(0.0, max_tile_y) as u32;
         let max_y = (bbox[3] / self.tile_size).floor().clamp(0.0, max_tile_y) as u32;
 
+        // Encode the triangle once; only the tile index changes per record.
+        let mut record = triangle.encode_record(0);
         for tile_y in min_y..=max_y {
             for tile_x in min_x..=max_x {
                 let tile_index = tile_y * self.tiles_x + tile_x;
                 let bucket = (tile_y / BUCKET_TILES) * self.bucket_cols + tile_x / BUCKET_TILES;
-                let record = triangle.encode_record(tile_index);
+                record[0..4].copy_from_slice(&tile_index.to_le_bytes());
                 self.writers[bucket as usize].write_all(&record)?;
             }
         }

@@ -134,6 +134,49 @@ Plan: `tasks/render-memory-plan.md`
 - [x] Update CLI/render tests and changelog.
 - [ ] Optional: `serve` stream-mesh protocol support; separate spec.
 
+## CPU streaming optimization
+
+- [x] Buffer small streamed mesh chunks to 150,000 quads before rendering in
+      `render` and the CPU `serve` path.
+- [x] Add owned-chunk streaming mesh APIs so the CLI moves pages instead of
+      cloning quads.
+- [x] Reuse per-tile bin allocations across streamed chunks and shrink large
+      retained lists to bound the peak.
+- [x] Fuse projection and binning page by page.
+- [x] Persist the page capacity hint across streamed chunks.
+- [x] Encode each translucent spill triangle once and patch only the tile index.
+- [x] Replace the per-tile stable translucent sort with an unstable sort that
+      uses the original bin order as the tie-break.
+- [x] Measure and reject camera-depth buckets for opaque early-Z: cache and bin
+      costs outweighed any depth-test saving.
+- [x] Measure and reject the f32 edge/barycentric rasterizer: within run noise
+      and a higher pixel difference than the existing fast mode.
+- [x] Measure and reject flat CSR bins: lower peak but about 1 s slower per
+      `000001` jar render than the reused `Vec<Vec<u32>>` bins.
+- [x] Measure and reject 64-page mesh chunks: faster mesh but about 250 MB more
+      peak than 32 pages; the persisted hint recovers the mesh speed instead.
+- [x] Measure and reject intra-chunk render splitting: extra tile passes made
+      `000001` jar render much slower.
+- [x] Add a nearest-neighbor texture fast path for in-range UVs.
+- [x] Add stage timing diagnostics (`BLOCKSCOPE_STREAM_TIMING`) and a
+      translucent-budget override (`BLOCKSCOPE_TRANSLUCENT_BUDGET`).
+- [x] Measure the spill writer wait at about 0.04 s on `000001` jar; the writer
+      is not the critical path, so parallel spill writers are not a priority.
+- [x] Measure and reject part-outer tile scheduling: repeated thread scopes and
+      tile-buffer setup made the tile stage roughly twice as slow.
+- [x] Measure and reject two-bucket translucent grouping: bucket render
+      improved but the larger read-ahead could not finish in time.
+- [x] Measure and reject `BUCKET_TILES=8`: better bucket-render balance but
+      about 190 MB more peak and no stable wall-time win.
+- [x] Measure and reject 128px tiles: cache locality outweighed the lower
+      per-tile overhead.
+- [x] Measure and reject the 1 MB block bucket reader: the reader is not the
+      critical path.
+- [ ] Follow-ups: the `000001` jar stage split is project about 2.0 s, tile
+      about 3.4 s, and translucent resolve about 2.8 s. The simple scheduling
+      variants are exhausted; a persistent worker pool or a structural
+      rasterizer change would be needed for the next step.
+
 ## Fallback color coverage
 
 - [x] Resolve decorated variants (`quartz_pillar`, `chiseled_*`, `smooth_*_slab`)

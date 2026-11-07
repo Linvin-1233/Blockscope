@@ -236,6 +236,109 @@ were already grid-packed. `000001` is fluid/plant-heavy: total mesh memory is
 delta 180, 31 alpha pixels). Mesh build CPU stays within about 3% of the exact
 compact path. Use exact mode for golden or hash comparisons.
 
+## CPU streaming pipeline (2026-11-07)
+
+The CPU streaming path now batches small mesh chunks before rendering, reuses
+per-tile bin allocations across chunks, and persists the page capacity hint
+across streamed chunks. `render` and the CPU `serve` path buffer small chunks
+until 150,000 quads and pass larger chunks through; the mesh builder still emits
+32-page chunks, so the mesh peak does not grow just because the render batch is
+larger. Moving the hint out of `build_page_chunk` was the largest mesh change:
+the `000001` jar mesh median fell from 5.5 s to 3.1 s without increasing the
+resident page count. Bin lists reuse their allocations, but bins above 256
+entries are shrunk to 128 on reuse so one dense chunk cannot pin the peak for
+the rest of the render. The mesh crate also exposes owned-chunk streaming
+variants, so the CLI moves pages instead of cloning every `Quad`.
+
+The translucent spill encodes each triangle once and only patches the tile
+index per record. Per-tile translucent sorting uses `sort_unstable_by` with the
+original bin position as the tie-break, so equal depth keys keep their previous
+order while the sort avoids the stable merge-sort allocation.
+
+Same-host A/B, baseline commit `219350b` versus the current build, release,
+CPU, `--stream-mesh=on`, 1024x1024, supersample 2, 12 threads,
+`--force-limits`, and `--no-file`. Runs alternate baseline and current binaries;
+PNG hashes were checked in separate runs.
+
+| Case | Baseline render | Current render | Render change | Baseline total | Current total |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `000002` color | 758.9 / 669.0 ms | 179.2 / 192.3 ms | median -74.0% | 1583.6 / 1416.3 ms | 964.2 / 990.5 ms |
+| `000002` jar | 2250.2 / 2173.8 ms | 1929.0 / 1852.7 ms | median -14.5% | 4173.2 / 3989.3 ms | 3752.7 / 3634.8 ms |
+| `000001` jar | 9438.9 / 9201.7 ms | 9377.7 / 8618.5 ms | median -3.5% | 16827.3 / 16603.0 ms | 14229.5 / 13639.4 ms |
+
+`000002` color is the clearest case: the old streamed CLI path paid the
+projection and tile barriers once per 32-page chunk; batching cuts 432 render
+passes to roughly 16 at 150,000 quads. `000002` jar also benefits from the
+smaller retained bin pool. `000001` jar is dominated by the translucent spill
+and sort, but its mesh stage still drops from a 5.49 s median to 3.04 s,
+cutting total wall time by about 16.6 percent.
+
+Peak working set is 8-13 percent above the baseline because the render batch
+and bin pool are slightly larger; it remains far below the old spilled
+in-memory path:
+
+| Case | Baseline peak | Current peak |
+| --- | ---: | ---: |
+| `000002` color | 175.2 MB | about 199 MB |
+| `000002` jar | 205.6 MB | 231.5 MB |
+| `000001` jar | 585.9 MB | 636.6 MB |
+
+The unstable sort was isolated with two binaries built from the same tree, one
+with the stable sort and one with the tie-break sort. On `000001` jar:
+stable 9,490.1 / 10,305.4 ms, tie-break unstable 9,132.2 / 9,615.2 ms, a 5.3%
+median render reduction. PNG SHA-256 values are unchanged:
+
+| Case | SHA-256 |
+| --- | --- |
+| `000002` color | `92F1244E88CF2F390B24A239419B5C8D4B732206303AEA22C525085D9D1C0BB3` |
+| `000002` jar | `38250F5E3A96F6488CB48368AC373E24620B7339658FB4857C73D981AF56B328` |
+| `000001` jar | `D143DA27D670E887AE25C4313CE331E1F22066F98D119659879764A0F5C28CCC` |
+
+### CPU texture sampling fast path (2026-11-07)
+
+Nearest sampling now bypasses `repeat` and `rem_euclid` when both UV
+components are inside `0..1`, which is the common case for model faces. The
+fast path keeps the same texel index and wrap behavior, including the rare
+f32 multiplication that rounds up to the texture width.
+
+Controlled A/B with the same tree before and after the change, `000001` jar,
+12 threads, 1024x1024, supersample 2, default streaming:
+
+| Metric | Before | After |
+| --- | ---: | ---: |
+| Render | 9058.9 / 9416.1 ms | 9150.1 / 8834.5 ms |
+| Tile stage (one timed run) | 3.50 s | 3.35 s |
+| `000002` jar render | 1882.8 / 1957.2 ms | 1933.2 / 1839.0 ms |
+
+The `000001` render median fell by about 2.7 percent and the tile stage by
+about 4 percent. `000002` is within run noise. PNG SHA-256 values are
+unchanged.
+
+`BLOCKSCOPE_STREAM_TIMING=1` prints the project, spill, tile, resolve, assembly,
+and downsample stage timings; `BLOCKSCOPE_TRANSLUCENT_BUDGET` overrides the
+in-memory translucent triangle budget for diagnostics. A stage trace on
+`000001` jar measured project 2.0 s, tile 3.4 s, and resolve 2.8 s, with only
+0.04 s waiting for the spill writer. The spill writer is therefore not the
+critical path, and parallel spill writers were not pursued.
+
+### Rejected CPU experiments (2026-11-07)
+
+| Attempt | Result | Verdict | Why |
+| --- | --- | --- | --- |
+| Camera-depth buckets for opaque early-Z (`BLOCKSCOPE_CPU_DEPTH_BUCKETS=16/32/64`) | `000002` jar render 2,333-2,654 ms off versus 2,757-3,944 ms on | reverted | Extra bins and scatter cost outweighed any early-Z saving; depth testing was not the limiting fragment cost. |
+| f32 edge/barycentric rasterizer for `--precision fast` | `000002` jar median 1,797.7 ms exact versus 1,757.1 ms fast (2.3%, within run noise); 0.779% pixels differ, max delta 21 | reverted | The tile path is memory and setup bound; the extra approximation did not buy a stable win. The existing fast point-storage mode remains. |
+| Flat CSR bins with a counting pass plus fill | `000001` jar render 10.5-10.8 s versus 9.4-9.6 s with reused `Vec<Vec<u32>>` bins; peak 589 MB versus 676 MB | not used | The memory win was real, but the extra pass and scatter cost about 1 s. The bounded bin-capacity reuse keeps the peak near 637 MB without that regression. |
+| 64-page mesh chunks | `000001` jar mesh 4.6 s versus 5.9 s at 32 pages; total 16.1 s; peak 929 MB | not kept | The larger page chunk raises the peak by about 250 MB. Persisting the page capacity hint gives the mesh speedup at 32 pages. |
+| Render splitting inside a mesh chunk at 100k/150k quads | `000001` jar render 12.0-15.9 s versus 9.4-9.6 s with whole-chunk renders | reverted | Smaller render batches revisit the resident tile buffers more often; extra tile passes cost more than the smaller working set saves. |
+| Part-outer opaque/cutout tile scheduling | `000001` jar tile 7.2-7.5 s versus 3.4-3.8 s; render 12.5-14.3 s versus 9.1-9.4 s | reverted | One thread scope and one tile-buffer setup per projection slice cost more than the improved quad-table locality saves. |
+| Pairing two translucent buckets per render batch | `000001` jar render 9.2-10.0 s versus 9.1-9.4 s; bucket render improved but bucket read wait rose from 0.77-0.78 s to 1.02-1.64 s | reverted | Two buckets per batch improved tile load balance but the larger read-ahead could not finish before the render, so the gains cancelled. |
+| `BUCKET_TILES=8` translucent spill buckets | resolve 2.64-2.84 s versus 2.82-2.99 s; peak 829 MB versus 641 MB | reverted | Larger buckets improved bucket-render balance but raised the peak by about 190 MB for no stable wall-time win. |
+| 128px tiles at 2048 internal | tile 4.25 s versus 3.58 s; resolve 2.98 s versus 2.81 s; render 9.49 s versus 8.88 s | reverted | The larger tile buffers lose more cache locality than the lower per-tile overhead saves. |
+| 1 MB bucket buffer plus block record decode | resolve unchanged at about 2.8 s | reverted | The reader is already overlapped and is not the critical path; the extra buffer and decoding code did not pay for itself. |
+
+A small-bbox triangle fast path was also proposed, but a prior measurement
+showed no gain and a slowdown, so it was not retried.
+
 ## Review-fix performance check (2026-10-28)
 
 The review fixes do not change the single-view render hot path. The pre-review `HEAD` binary (`6b5a680`) and the current build were compared on the same host with the same commands:
