@@ -156,8 +156,6 @@ Investigation: `docs/performance.md#simd-investigation-2026-11-07`.
 Local SIMD kernels were neutral because the rasterizer averages 1.79 tested
 pixels per non-empty row and the mesh block loop is setup-bound.
 
-- [ ] Measure a precomputed six-face cull mask in `PageGrid::fill` against the
-      current per-model-quad neighbor lookup.
 - [ ] Measure cached model UVs and scaled corner offsets against the current
       per-quad `encode_uv` and vertex construction path.
 
