@@ -1,12 +1,13 @@
 use super::super::bin::worker_count;
-use super::super::project::push_page_translucent;
+use super::super::geometry::{bounds, dot3};
+use super::super::project::Triangle;
 use super::super::{GpuStageTimings, RenderStatistics};
 use super::translucent::TranslucentStore;
 use super::vertex::Viewport;
 use super::{GpuFailure, atlas, backend, draw, instance, resolve, targets};
-use crate::{Camera, RenderError, RenderOptions, RenderOutput};
+use crate::{Camera, LightingProfile, RenderError, RenderOptions, RenderOutput};
 use litematic_material::TextureSet;
-use litematic_mesh::{Mesh, NO_TEXTURE};
+use litematic_mesh::{Mesh, NO_TEXTURE, RenderLayer};
 use litematic_scene::{Bounds, Scene};
 use std::sync::Arc;
 use std::time::Instant;
@@ -20,6 +21,127 @@ struct ResidentBatch {
     count: u32,
 }
 
+/// Static translucent data copied out of the mesh pages once. Re-projecting a
+/// video frame then skips opaque quads and repeated page decoding.
+struct ResidentTranslucent {
+    quads: Vec<TranslucentQuad>,
+}
+
+struct TranslucentQuad {
+    positions: [[f64; 3]; 4],
+    normal: [f32; 3],
+    color: [u8; 4],
+    shade: f32,
+    ao: [u8; 4],
+    uvs: [[i16; 2]; 4],
+    texture: u16,
+}
+
+impl ResidentTranslucent {
+    fn build(mesh: &Mesh, lighting: LightingProfile) -> Self {
+        let mut quads = Vec::new();
+        for page in &mesh.pages {
+            for quad in &page.quads {
+                if quad.layer != RenderLayer::Translucent {
+                    continue;
+                }
+                let normal = page.quad_normal(quad);
+                let local = page.quad_positions(quad);
+                let mut positions = [[0.0f64; 3]; 4];
+                for (index, position) in local.iter().enumerate() {
+                    positions[index] = [
+                        f64::from(page.origin[0]) + f64::from(position[0]),
+                        f64::from(page.origin[1]) + f64::from(position[1]),
+                        f64::from(page.origin[2]) + f64::from(position[2]),
+                    ];
+                }
+                let shade = if quad.shade {
+                    lighting.face_shade(normal)
+                } else {
+                    1.0
+                };
+                let ao = match lighting {
+                    LightingProfile::FlatV1 => [3u8; 4],
+                    LightingProfile::SimpleAoV1 => quad.ao,
+                };
+                quads.push(TranslucentQuad {
+                    positions,
+                    normal,
+                    color: quad.color,
+                    shade,
+                    ao,
+                    uvs: quad.uvs(),
+                    texture: quad.texture,
+                });
+            }
+        }
+        Self { quads }
+    }
+
+    fn project(
+        &self,
+        camera: &Camera,
+        statistics: &mut RenderStatistics,
+        translucent: &mut Vec<Triangle>,
+    ) {
+        for quad in &self.quads {
+            if dot3(
+                [
+                    f64::from(quad.normal[0]),
+                    f64::from(quad.normal[1]),
+                    f64::from(quad.normal[2]),
+                ],
+                camera.forward(),
+            ) >= 0.0
+            {
+                statistics.culled_backfaces += 1;
+                continue;
+            }
+
+            let mut projected = [[0.0f64; 3]; 4];
+            for (index, position) in quad.positions.iter().enumerate() {
+                projected[index] = camera.project(*position);
+            }
+
+            for indices in [[0usize, 1, 2], [0, 2, 3]] {
+                let points = [
+                    projected[indices[0]],
+                    projected[indices[1]],
+                    projected[indices[2]],
+                ];
+                let bbox = bounds(&points);
+                if bbox[0] > bbox[2] || bbox[1] > bbox[3] {
+                    continue;
+                }
+
+                statistics.translucent_triangles += 1;
+                if quad.texture != NO_TEXTURE {
+                    statistics.textured_triangles += 1;
+                }
+                statistics.triangles += 1;
+                let depth_key = (points[0][2] + points[1][2] + points[2][2]) / 3.0;
+                translucent.push(Triangle {
+                    points: points.map(|point| point.map(|value| value as f32)),
+                    color: quad.color,
+                    shade: quad.shade,
+                    ao: [
+                        quad.ao[indices[0]],
+                        quad.ao[indices[1]],
+                        quad.ao[indices[2]],
+                    ],
+                    uvs: [
+                        quad.uvs[indices[0]],
+                        quad.uvs[indices[1]],
+                        quad.uvs[indices[2]],
+                    ],
+                    texture: quad.texture,
+                    depth_key,
+                });
+            }
+        }
+    }
+}
+
 /// Reusable GPU session for a fixed mesh and a sequence of cameras.
 ///
 /// Opaque and cutout quads are encoded into resident vertex buffers once, so a
@@ -30,7 +152,7 @@ struct ResidentBatch {
 pub struct GpuFrameSession<'a> {
     context: Arc<backend::GpuContext>,
     atlas: atlas::CachedAtlas,
-    mesh: &'a Mesh,
+    _mesh: &'a Mesh,
     bounds: Bounds,
     base_options: RenderOptions,
     width: u32,
@@ -41,6 +163,7 @@ pub struct GpuFrameSession<'a> {
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     targets: targets::RenderTargets,
+    translucent: ResidentTranslucent,
     batches: Vec<ResidentBatch>,
     resident_quads: u64,
     resident_bytes: u64,
@@ -149,6 +272,7 @@ impl<'a> GpuFrameSession<'a> {
         }
 
         let targets = targets::create(&context, width, height, options.background)?;
+        let translucent = ResidentTranslucent::build(mesh, options.lighting);
 
         let encode_started = Instant::now();
         let mut batches = Vec::new();
@@ -188,7 +312,7 @@ impl<'a> GpuFrameSession<'a> {
         Ok(Self {
             context,
             atlas,
-            mesh,
+            _mesh: mesh,
             bounds: scene.bounds,
             base_options: options.clone(),
             width,
@@ -199,6 +323,7 @@ impl<'a> GpuFrameSession<'a> {
             camera_buffer,
             camera_bind_group,
             targets,
+            translucent,
             batches,
             resident_quads,
             resident_bytes,
@@ -296,9 +421,8 @@ impl<'a> GpuFrameSession<'a> {
         let mut statistics = self.base_statistics.clone();
         let project_started = Instant::now();
         let mut translucent = Vec::new();
-        for page in &self.mesh.pages {
-            push_page_translucent(page, &camera, options, &mut statistics, &mut translucent);
-        }
+        self.translucent
+            .project(&camera, &mut statistics, &mut translucent);
         let mut store = TranslucentStore::new(depth_min, depth_max);
         if let Err(error) = store.push_many(translucent) {
             return Err(draw::temp_storage_failure(error));
