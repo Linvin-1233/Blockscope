@@ -1,8 +1,8 @@
 # Spec: `server-preview`
 
 **Status:** Deferred (2026-11-07): the textured stateless design is blocked;
-a color-only blockout variant is the recommended future direction. Issue
-draft: `tasks/server-preview-issue.md`. See "Gate Outcome" below.
+a color-only blockout variant is the recommended future direction. See "Gate
+Outcome" below.
 **Date:** 2026-11-07
 **Owner:** CLI / service protocol
 **Depends on:** engine protocol v4, existing scene/mesh cache, optional `gpu` feature

@@ -1,7 +1,6 @@
 # Contract: `server-preview`
 
 **Parent spec:** `tasks/server-preview-spec.md`
-**Issue draft:** `tasks/server-preview-issue.md`
 **Status:** Deferred (2026-11-07): the parent spec's textured latency gate
 failed. This is a design record only; do not implement the textured stateless
 contract.

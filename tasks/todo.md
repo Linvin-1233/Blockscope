@@ -216,7 +216,6 @@ Plan: `tasks/render-memory-plan.md`
 
 ## Server-side preview (deferred)
 
-Issue draft: `tasks/server-preview-issue.md`
 Spec: `tasks/server-preview-spec.md`
 Contract: `tasks/server-preview-contract.md` (design record, do not implement)
 

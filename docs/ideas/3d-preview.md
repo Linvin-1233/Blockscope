@@ -1,8 +1,7 @@
 # Server-Side 3D Preview
 
 **Status:** Deferred (2026-11-07): the textured stateless design failed the
-latency gate; color-only blockout is the recommended future direction. Issue
-draft: `tasks/server-preview-issue.md`.
+latency gate; color-only blockout is the recommended future direction.
 **Date:** 2026-11-07
 **Decision:** Direction C from the 2026-11-07 discussion: server-side preview first. The engine remains headless; the upper-layer service owns the UI.
 
@@ -77,7 +76,7 @@ measurements are in `docs/performance-preview.md`; the spec is
 
 The MVP and Not Doing sections below describe the original textured design and
 are retained as context. A future issue should use the color-only blockout
-scope; see `tasks/server-preview-issue.md`.
+scope; the measurements are in `docs/performance-preview.md`.
 
 ## Key Assumptions to Validate
 
