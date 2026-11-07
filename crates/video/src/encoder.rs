@@ -145,6 +145,7 @@ impl Mp4Encoder {
         resolved: ResolvedEncoder,
         output: &Path,
     ) -> Result<Self, VideoError> {
+        remove_stale_output_temps(output, "mp4");
         let temp = temporary_output_path(output, "mp4");
         let args = mp4_args(settings, resolved, &temp);
         let mut child = Command::new(ffmpeg.path())
@@ -255,6 +256,7 @@ pub struct GifEncoder {
 
 impl GifEncoder {
     fn start(ffmpeg: &Ffmpeg, settings: &VideoSettings, output: &Path) -> Result<Self, VideoError> {
+        remove_stale_output_temps(output, "gif");
         let parent = output.parent().unwrap_or_else(|| Path::new("."));
         let raw = tempfile::Builder::new()
             .prefix(".blockscope-gif-")
@@ -511,6 +513,30 @@ fn stderr_suffix(bytes: &[u8]) -> String {
     }
 }
 
+/// Remove sibling temp files left by a killed encoder for this output stem.
+/// Callers must not run two jobs for the same output path concurrently.
+fn remove_stale_output_temps(output: &Path, extension: &str) {
+    let parent = output.parent().unwrap_or_else(|| Path::new("."));
+    let stem = output
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("video");
+    let prefix = format!(".{stem}.blockscope-");
+    let suffix = format!(".{extension}");
+    let Ok(entries) = fs::read_dir(parent) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if name.starts_with(&prefix) && name.ends_with(&suffix) {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
+}
+
 fn temporary_output_path(output: &Path, extension: &str) -> PathBuf {
     let parent = output.parent().unwrap_or_else(|| Path::new("."));
     let stem = output
@@ -556,7 +582,7 @@ fn file_size(path: &Path) -> Result<u64, VideoError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{gif_encode_args, gif_palette_args, mp4_args};
+    use super::{gif_encode_args, gif_palette_args, mp4_args, remove_stale_output_temps};
     use crate::encoder::VideoSettings;
     use crate::ffmpeg::{Encoder, Quality, ResolvedEncoder, VideoFormat};
     use std::path::Path;
@@ -681,6 +707,26 @@ mod tests {
             .collect();
         assert!(text.windows(2).any(|pair| pair == ["-loop", "0"]));
         assert!(text.iter().any(|arg| arg.contains("alpha_threshold=128")));
+    }
+
+    #[test]
+    fn stale_output_temps_for_the_same_stem_are_removed() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("clip.mp4");
+        let stale = dir.path().join(".clip.blockscope-42-0.mp4");
+        let stale_gif = dir.path().join(".clip.blockscope-42-1.gif");
+        let unrelated = dir.path().join(".other.blockscope-42-0.mp4");
+        for path in [&stale, &stale_gif, &unrelated] {
+            std::fs::write(path, b"x").unwrap();
+        }
+
+        remove_stale_output_temps(&output, "mp4");
+        assert!(!stale.exists());
+        assert!(stale_gif.exists());
+        assert!(unrelated.exists());
+
+        remove_stale_output_temps(&output, "gif");
+        assert!(!stale_gif.exists());
     }
 
     #[test]

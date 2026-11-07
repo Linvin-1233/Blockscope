@@ -405,6 +405,7 @@ impl Ffmpeg {
         for encoder in Encoder::hardware_candidates() {
             if compiled.contains(&encoder) && self.probe_encoder(encoder, width, height).is_ok() {
                 usable.push(encoder);
+                break;
             }
         }
         if let Ok(mut cache) = self.probes.lock() {

@@ -198,6 +198,40 @@ fn serve_rejects_transparent_mp4_before_looking_for_ffmpeg() {
 }
 
 #[test]
+fn serve_rejects_video_without_ffmpeg_before_reading_the_input() {
+    let dir = tempfile::tempdir().unwrap();
+    let (child, mut stdin, mut lines) = start_with(&["--ffmpeg", "definitely-not-ffmpeg"]);
+    let _hello = read_json(&mut lines);
+
+    send(
+        &mut stdin,
+        &json!({
+            "type": "render",
+            "id": "no-ffmpeg",
+            "input": { "path": dir.path().join("missing.litematic").display().to_string() },
+            "format": "mp4",
+            "background": "#000000",
+            "width": 128,
+            "height": 128,
+            "encoder": "software",
+            "animation": animation(),
+            "outputDir": dir.path().join("out").display().to_string(),
+        }),
+    );
+    let result = read_json(&mut lines);
+    assert_eq!(result["ok"], false, "{result}");
+    assert_eq!(result["error"]["code"], "FFMPEG_NOT_FOUND");
+    assert!(
+        !result["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("missing.litematic")
+    );
+
+    shutdown(child, stdin, lines);
+}
+
+#[test]
 fn serve_renders_mp4_and_gif_when_ffmpeg_is_available() {
     let Some(ffmpeg) = ffmpeg() else {
         eprintln!("skipping ffmpeg service test: set BLOCKSCOPE_FFMPEG");
@@ -211,6 +245,9 @@ fn serve_renders_mp4_and_gif_when_ffmpeg_is_available() {
     let hello = read_json(&mut lines);
     assert_eq!(hello["video"]["available"], true, "{hello}");
     assert!(hello["video"]["ffmpegVersion"].is_string());
+    let encoders = hello["video"]["encoders"].as_array().unwrap();
+    assert!(encoders.iter().any(|value| value == "auto"));
+    assert!(encoders.iter().any(|value| value == "software"));
 
     let request = |id: &str, format: &str, background: &str| {
         json!({
