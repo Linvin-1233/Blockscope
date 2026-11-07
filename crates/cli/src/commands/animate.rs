@@ -120,15 +120,17 @@ pub(crate) fn run(args: AnimateArgs) -> Result<(), CliError> {
         .map_err(video_error)?;
     let plan = animation.frame_plan();
     if !args.limits.force_limits {
-        if animation.duration() > 60.0 {
-            return Err(CliError::input(
-                "ANIMATION_INVALID: duration must be at most 60 seconds; use --force-limits",
-            ));
-        }
-        if plan.len() > 1800 {
+        if animation.duration() > litematic_video::MAX_DURATION_SECONDS {
             return Err(CliError::input(format!(
-                "ANIMATION_INVALID: {} frames exceed the 1800-frame limit; use --force-limits",
-                plan.len()
+                "ANIMATION_INVALID: duration must be at most {} seconds; use --force-limits",
+                litematic_video::MAX_DURATION_SECONDS
+            )));
+        }
+        if plan.len() > litematic_video::MAX_FRAMES {
+            return Err(CliError::input(format!(
+                "ANIMATION_INVALID: {} frames exceed the {}-frame limit; use --force-limits",
+                plan.len(),
+                litematic_video::MAX_FRAMES
             )));
         }
     }

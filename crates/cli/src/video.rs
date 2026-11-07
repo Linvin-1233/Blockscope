@@ -163,3 +163,28 @@ fn render_cpu(
 pub(crate) fn video_error(error: VideoError) -> CliError {
     CliError::input(error.to_string())
 }
+
+/// `hello.video` shared by `serve` and `supervise`.
+pub(crate) fn hello_object(ffmpeg: Option<&Ffmpeg>, error: Option<&str>) -> serde_json::Value {
+    match ffmpeg {
+        Some(ffmpeg) => serde_json::json!({
+            "available": true,
+            "formats": ["mp4", "gif"],
+            "encoders": ffmpeg.video_encoders(),
+            "ffmpegVersion": ffmpeg.version_string(),
+            "maxFrames": litematic_video::MAX_FRAMES,
+            "maxDurationSeconds": litematic_video::MAX_DURATION_SECONDS,
+            "hardwareProbe": "lazy",
+        }),
+        None => serde_json::json!({
+            "available": false,
+            "reason": error.unwrap_or("ffmpeg is not available"),
+            "formats": [],
+            "encoders": [],
+            "ffmpegVersion": null,
+            "maxFrames": litematic_video::MAX_FRAMES,
+            "maxDurationSeconds": litematic_video::MAX_DURATION_SECONDS,
+            "hardwareProbe": "lazy",
+        }),
+    }
+}

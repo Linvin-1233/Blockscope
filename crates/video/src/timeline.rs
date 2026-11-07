@@ -19,6 +19,13 @@ impl Easing {
         }
     }
 
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Linear => "linear",
+            Self::Smooth => "smooth",
+        }
+    }
+
     fn apply(self, t: f64) -> f64 {
         match self {
             Self::Linear => t,

@@ -8,6 +8,7 @@ use litematic_material::{MaterialSet, MaterialSnapshot};
 use litematic_mesh::{Mesh, MeshLimits, MeshPage};
 use litematic_render::{LightingProfile, RenderBackend, RenderOptions, write_png};
 use litematic_scene::{Scene, sha256};
+use litematic_video::{Ffmpeg, VideoFormat};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::fs::{self, File};
@@ -16,7 +17,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
-pub const PROTOCOL_VERSION: u32 = 3;
+mod video;
+
+pub const PROTOCOL_VERSION: u32 = 4;
 const DEFAULT_SIZE: u32 = 1024;
 const DEFAULT_SUPERSAMPLE: u32 = 2;
 const DEFAULT_ELEVATION: f32 = 30.0;
@@ -53,6 +56,9 @@ pub struct ServeArgs {
     /// Estimated cache budget in bytes; 0 uses half of available memory.
     #[arg(long, default_value_t = 0)]
     cache_bytes: u64,
+    /// External ffmpeg executable used for MP4 and GIF jobs.
+    #[arg(long, value_name = "PATH")]
+    ffmpeg: Option<PathBuf>,
     #[command(flatten)]
     mesh: MeshOptionArgs,
     #[command(flatten)]
@@ -77,6 +83,8 @@ struct ServeContext<'a> {
     cache_bytes: u64,
     mesh_options: litematic_mesh::MeshBuildOptions,
     mesh_limits: MeshLimits,
+    ffmpeg: Option<Ffmpeg>,
+    ffmpeg_error: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -116,8 +124,39 @@ struct RenderRequest {
     #[serde(default)]
     format: Option<String>,
     #[serde(default)]
+    animation: Option<AnimationRequest>,
+    #[serde(default)]
+    encoder: Option<String>,
+    #[serde(default)]
+    quality: Option<String>,
+    #[serde(default)]
     threads: Option<u32>,
     output_dir: PathBuf,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AnimationRequest {
+    keyframes: Vec<KeyframeRequest>,
+    #[serde(default)]
+    duration: Option<f64>,
+    #[serde(default)]
+    fps: Option<u32>,
+    #[serde(default = "default_true", rename = "loop")]
+    looped: bool,
+    #[serde(default)]
+    easing: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct KeyframeRequest {
+    time: f64,
+    yaw: f32,
+    elevation: f32,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Deserialize)]
@@ -137,6 +176,10 @@ pub fn run(args: ServeArgs) -> Result<(), CliError> {
     let capacity = Capacity::detect();
     crate::warn_forced(args.limits.force_limits);
     let materials = load_materials(&args.assets)?;
+    let (ffmpeg, ffmpeg_error) = match Ffmpeg::discover(args.ffmpeg.as_deref()) {
+        Ok(ffmpeg) => (Some(ffmpeg), None),
+        Err(error) => (None, Some(error.to_string())),
+    };
     let mut cache: Vec<CachedScene> = Vec::new();
     let cache_limit = args.cache as usize;
     let cache_bytes = cache_budget(args.cache_bytes, &capacity);
@@ -151,11 +194,21 @@ pub fn run(args: ServeArgs) -> Result<(), CliError> {
         // Capacity is fixed for the process lifetime, so detect the mesh cap
         // once instead of once per uncached job.
         mesh_limits: crate::mesh_limits(args.limits.force_limits),
+        ffmpeg,
+        ffmpeg_error,
     };
 
     let stdout = std::io::stdout();
     let mut out = BufWriter::new(stdout.lock());
-    write_line(&mut out, &hello(&capacity, cache_bytes))?;
+    write_line(
+        &mut out,
+        &hello(
+            &capacity,
+            cache_bytes,
+            context.ffmpeg.as_ref(),
+            context.ffmpeg_error.as_deref(),
+        ),
+    )?;
 
     let stdin = std::io::stdin();
     let mut input = stdin.lock();
@@ -219,7 +272,12 @@ pub fn run(args: ServeArgs) -> Result<(), CliError> {
     Ok(())
 }
 
-fn hello(capacity: &Capacity, cache_bytes: u64) -> Value {
+fn hello(
+    capacity: &Capacity,
+    cache_bytes: u64,
+    ffmpeg: Option<&Ffmpeg>,
+    ffmpeg_error: Option<&str>,
+) -> Value {
     let mut backends = vec!["cpu", "auto"];
     if cfg!(feature = "gpu") {
         backends.push("gpu");
@@ -244,6 +302,7 @@ fn hello(capacity: &Capacity, cache_bytes: u64) -> Value {
             "height": capacity.default_height,
             "supersample": capacity.default_supersample,
         },
+        "video": crate::video::hello_object(ffmpeg, ffmpeg_error),
     })
 }
 
@@ -259,7 +318,12 @@ fn handle(
             let code = error_code(&error.message);
             let retryable = matches!(
                 code.as_str(),
-                "PNG_ENCODE_FAILED" | "TEMP_STORAGE_FAILED" | "IO_ERROR" | "INTERNAL_ERROR"
+                "PNG_ENCODE_FAILED"
+                    | "TEMP_STORAGE_FAILED"
+                    | "FFMPEG_FAILED"
+                    | "VIDEO_TEMP_FAILED"
+                    | "IO_ERROR"
+                    | "INTERNAL_ERROR"
             );
             json!({
                 "type": "result",
@@ -289,12 +353,29 @@ fn process(
             "INVALID_REQUEST: outputDir must be absolute",
         ));
     }
-    if let Some(format) = &request.format
-        && format != "png"
-    {
-        return Err(CliError::input(
-            "INVALID_REQUEST: only png output is supported",
-        ));
+    let format = request.format.as_deref().unwrap_or("png");
+    match format {
+        "png" => {
+            if request.animation.is_some() {
+                return Err(CliError::input(
+                    "ANIMATION_INVALID: animation requires mp4 or gif output",
+                ));
+            }
+            if request.encoder.is_some() || request.quality.is_some() {
+                return Err(CliError::input(
+                    "INVALID_RENDER_OPTIONS: encoder and quality only apply to video output",
+                ));
+            }
+        }
+        "mp4" | "gif" => {
+            let format = VideoFormat::parse(format).expect("matched video formats");
+            return video::process_video(request, cache, context, format, started);
+        }
+        other => {
+            return Err(CliError::input(format!(
+                "INVALID_REQUEST: format must be png, mp4, or gif, got '{other}'"
+            )));
+        }
     }
 
     let views = if request.views.is_empty() {
@@ -389,85 +470,20 @@ fn process(
         return process_streaming(request, context, &view_options, started);
     }
 
-    let limits = crate::decode_limits(context.force_limits, context.ignore_block_entity_nbt);
-
-    // A caller-supplied hash is an identity, so a cache hit must not re-read the
-    // file. The supervisor already hashes inputs for routing and forwards it.
-    let requested_hash = request
-        .input
-        .hash
-        .as_ref()
-        .map(|hash| hash.to_ascii_lowercase());
-    let cached = requested_hash
-        .as_deref()
-        .and_then(|hash| take_cached(cache, hash));
-
-    let (scene, mesh, snapshot, parse_ms, mesh_ms, cache_hit, input_hash) =
-        if let Some(entry) = cached {
-            let input_hash = entry.hash.clone();
-            let scene = Arc::clone(&entry.scene);
-            let mesh = Arc::clone(&entry.mesh);
-            let snapshot = entry.snapshot.clone();
-            cache.insert(0, entry);
-            (scene, mesh, snapshot, 0.0, 0.0, true, input_hash)
-        } else {
-            let input = crate::read_file_limited(&request.input.path, limits.max_input_bytes)?;
-            let input_hash = sha256(&input).to_hex();
-
-            if let Some(expected) = &request.input.hash
-                && !input_hash.eq_ignore_ascii_case(expected)
-            {
-                return Err(CliError::input(format!(
-                    "INPUT_HASH_MISMATCH: expected {expected}, got {input_hash}"
-                )));
-            }
-
-            if let Some(entry) = take_cached(cache, &input_hash) {
-                let scene = Arc::clone(&entry.scene);
-                let mesh = Arc::clone(&entry.mesh);
-                let snapshot = entry.snapshot.clone();
-                cache.insert(0, entry);
-                (scene, mesh, snapshot, 0.0, 0.0, true, input_hash)
-            } else {
-                let parse_started = Instant::now();
-                let file = LitematicFile::parse_bytes(
-                    &input,
-                    &limits,
-                    &crate::scene_limits(context.force_limits),
-                )
-                .map_err(CliError::from)?;
-                let scene = file.into_scene().map_err(CliError::from)?;
-                let parse_ms = parse_started.elapsed().as_secs_f64() * 1000.0;
-
-                let prepared = crate::prepare_scene(
-                    scene,
-                    context.materials,
-                    &context.mesh_limits,
-                    request.threads.unwrap_or(context.default_threads),
-                    context.mesh_options,
-                )?;
-                let crate::PreparedScene {
-                    scene,
-                    mesh,
-                    snapshot,
-                    mesh_ms,
-                } = prepared;
-
-                let scene = Arc::new(scene);
-                let mesh = Arc::new(mesh);
-                let snapshot = snapshot.map(Arc::new);
-                let entry = CachedScene {
-                    hash: input_hash.clone(),
-                    scene: Arc::clone(&scene),
-                    mesh: Arc::clone(&mesh),
-                    snapshot: snapshot.clone(),
-                    bytes: estimated_cache_bytes(&scene, &mesh, snapshot.as_deref()),
-                };
-                cache_insert(cache, entry, context.cache_limit, context.cache_bytes);
-
-                (scene, mesh, snapshot, parse_ms, mesh_ms, false, input_hash)
-            }
-        };
+    let LoadedScene {
+        scene,
+        mesh,
+        snapshot,
+        parse_ms,
+        mesh_ms,
+        cache_hit,
+        input_hash,
+    } = load_scene_for_request(
+        request,
+        cache,
+        context,
+        request.threads.unwrap_or(context.default_threads),
+    )?;
 
     let view_count = view_options.len();
     let mut outputs = Vec::with_capacity(view_count);
@@ -509,6 +525,7 @@ fn process(
             let statistics = output.statistics;
             last_statistics = Some(statistics);
             outputs.push(json!({
+                "kind": "image",
                 "path": path.display().to_string(),
                 "yaw": options.yaw,
                 "width": width,
@@ -544,6 +561,122 @@ fn process(
             "backendUsed": statistics.backend_used.as_str(),
         },
     }))
+}
+
+pub(super) struct LoadedScene {
+    pub scene: Arc<Scene>,
+    pub mesh: Arc<Mesh>,
+    pub snapshot: Option<Arc<MaterialSnapshot>>,
+    pub parse_ms: f64,
+    pub mesh_ms: f64,
+    pub cache_hit: bool,
+    pub input_hash: String,
+}
+
+fn load_scene_for_request(
+    request: &RenderRequest,
+    cache: &mut Vec<CachedScene>,
+    context: &ServeContext<'_>,
+    threads: u32,
+) -> Result<LoadedScene, CliError> {
+    let limits = crate::decode_limits(context.force_limits, context.ignore_block_entity_nbt);
+
+    // A caller-supplied hash is an identity, so a cache hit must not re-read the
+    // file. The supervisor already hashes inputs for routing and forwards it.
+    let requested_hash = request
+        .input
+        .hash
+        .as_ref()
+        .map(|hash| hash.to_ascii_lowercase());
+    if let Some(entry) = requested_hash
+        .as_deref()
+        .and_then(|hash| take_cached(cache, hash))
+    {
+        let input_hash = entry.hash.clone();
+        let scene = Arc::clone(&entry.scene);
+        let mesh = Arc::clone(&entry.mesh);
+        let snapshot = entry.snapshot.clone();
+        cache.insert(0, entry);
+        return Ok(LoadedScene {
+            scene,
+            mesh,
+            snapshot,
+            parse_ms: 0.0,
+            mesh_ms: 0.0,
+            cache_hit: true,
+            input_hash,
+        });
+    }
+
+    let input = crate::read_file_limited(&request.input.path, limits.max_input_bytes)?;
+    let input_hash = sha256(&input).to_hex();
+
+    if let Some(expected) = &request.input.hash
+        && !input_hash.eq_ignore_ascii_case(expected)
+    {
+        return Err(CliError::input(format!(
+            "INPUT_HASH_MISMATCH: expected {expected}, got {input_hash}"
+        )));
+    }
+
+    if let Some(entry) = take_cached(cache, &input_hash) {
+        let scene = Arc::clone(&entry.scene);
+        let mesh = Arc::clone(&entry.mesh);
+        let snapshot = entry.snapshot.clone();
+        cache.insert(0, entry);
+        return Ok(LoadedScene {
+            scene,
+            mesh,
+            snapshot,
+            parse_ms: 0.0,
+            mesh_ms: 0.0,
+            cache_hit: true,
+            input_hash,
+        });
+    }
+
+    let parse_started = Instant::now();
+    let file =
+        LitematicFile::parse_bytes(&input, &limits, &crate::scene_limits(context.force_limits))
+            .map_err(CliError::from)?;
+    let scene = file.into_scene().map_err(CliError::from)?;
+    let parse_ms = parse_started.elapsed().as_secs_f64() * 1000.0;
+
+    let prepared = crate::prepare_scene(
+        scene,
+        context.materials,
+        &context.mesh_limits,
+        threads,
+        context.mesh_options,
+    )?;
+    let crate::PreparedScene {
+        scene,
+        mesh,
+        snapshot,
+        mesh_ms,
+    } = prepared;
+
+    let scene = Arc::new(scene);
+    let mesh = Arc::new(mesh);
+    let snapshot = snapshot.map(Arc::new);
+    let entry = CachedScene {
+        hash: input_hash.clone(),
+        scene: Arc::clone(&scene),
+        mesh: Arc::clone(&mesh),
+        snapshot: snapshot.clone(),
+        bytes: estimated_cache_bytes(&scene, &mesh, snapshot.as_deref()),
+    };
+    cache_insert(cache, entry, context.cache_limit, context.cache_bytes);
+
+    Ok(LoadedScene {
+        scene,
+        mesh,
+        snapshot,
+        parse_ms,
+        mesh_ms,
+        cache_hit: false,
+        input_hash,
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -694,6 +827,7 @@ fn process_streaming(
         "sceneHash": scene.scene_hash().to_hex(),
         "cacheHit": false,
         "outputs": [{
+            "kind": "image",
             "path": path.display().to_string(),
             "yaw": options.yaw,
             "width": output.width,
