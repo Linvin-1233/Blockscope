@@ -2,7 +2,7 @@ use crate::CliError;
 use litematic_material::MaterialSnapshot;
 use litematic_mesh::Mesh;
 use litematic_render::{
-    RenderBackend, RenderOptions, RenderOutput, RenderStatistics, render_mesh,
+    GpuStageTimings, RenderBackend, RenderOptions, RenderOutput, RenderStatistics, render_mesh,
     render_mesh_with_textures,
 };
 use litematic_scene::Scene;
@@ -28,6 +28,7 @@ pub(crate) struct VideoRenderReport {
     pub encode_ms: f64,
     pub bytes: u64,
     pub statistics: RenderStatistics,
+    pub gpu: GpuStageTimings,
 }
 
 /// Render every frame in the plan, feed it to the encoder, and finish the
@@ -91,6 +92,7 @@ pub(crate) fn render_video(
     let mut render_ms = 0.0;
     let mut encode_ms = 0.0;
     let mut statistics = None;
+    let mut gpu = GpuStageTimings::default();
 
     for index in 0..job.plan.len() {
         on_frame(index as usize, job.plan.len() as usize);
@@ -113,6 +115,19 @@ pub(crate) fn render_video(
         if statistics.is_none() {
             statistics = Some(output.statistics.clone());
         }
+        let stages = &output.statistics.gpu;
+        gpu.setup_us = gpu.setup_us.saturating_add(stages.setup_us);
+        gpu.atlas_us = gpu.atlas_us.saturating_add(stages.atlas_us);
+        gpu.encode_us = gpu.encode_us.saturating_add(stages.encode_us);
+        gpu.upload_us = gpu.upload_us.saturating_add(stages.upload_us);
+        gpu.project_us = gpu.project_us.saturating_add(stages.project_us);
+        gpu.draw_us = gpu.draw_us.saturating_add(stages.draw_us);
+        gpu.translucent_us = gpu.translucent_us.saturating_add(stages.translucent_us);
+        gpu.readback_us = gpu.readback_us.saturating_add(stages.readback_us);
+        gpu.resolve_us = gpu.resolve_us.saturating_add(stages.resolve_us);
+        gpu.total_us = gpu.total_us.saturating_add(stages.total_us);
+        gpu.atlas_cache_hit |= stages.atlas_cache_hit;
+        gpu.wboit_used |= stages.wboit_used;
 
         let encode_started = Instant::now();
         encoder.write_frame(&output.rgba).map_err(video_error)?;
@@ -130,6 +145,7 @@ pub(crate) fn render_video(
         encode_ms,
         bytes,
         statistics: statistics.unwrap_or_default(),
+        gpu,
     })
 }
 

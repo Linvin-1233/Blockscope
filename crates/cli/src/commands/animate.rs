@@ -269,6 +269,20 @@ pub(crate) fn run(args: AnimateArgs) -> Result<(), CliError> {
                 "culledBackfaces": render.statistics.culled_backfaces,
                 "backendUsed": render.statistics.backend_used.as_str(),
             },
+            "gpuStages": {
+                "setupUs": render.gpu.setup_us,
+                "atlasUs": render.gpu.atlas_us,
+                "atlasCacheHit": render.gpu.atlas_cache_hit,
+                "wboitUsed": render.gpu.wboit_used,
+                "projectUs": render.gpu.project_us,
+                "encodeUs": render.gpu.encode_us,
+                "uploadUs": render.gpu.upload_us,
+                "drawUs": render.gpu.draw_us,
+                "translucentUs": render.gpu.translucent_us,
+                "readbackUs": render.gpu.readback_us,
+                "resolveUs": render.gpu.resolve_us,
+                "totalUs": render.gpu.total_us,
+            },
         });
         println!(
             "{}",
