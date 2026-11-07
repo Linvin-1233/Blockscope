@@ -157,8 +157,14 @@ Plan: `tasks/render-memory-plan.md`
       peak than 32 pages; the persisted hint recovers the mesh speed instead.
 - [x] Measure and reject intra-chunk render splitting: extra tile passes made
       `000001` jar render much slower.
-- [ ] Follow-ups: persistent worker pool and parallel spill writers remain
-      unmeasured.
+- [x] Add a nearest-neighbor texture fast path for in-range UVs.
+- [x] Add stage timing diagnostics (`BLOCKSCOPE_STREAM_TIMING`) and a
+      translucent-budget override (`BLOCKSCOPE_TRANSLUCENT_BUDGET`).
+- [x] Measure the spill writer wait at about 0.04 s on `000001` jar; the writer
+      is not the critical path, so parallel spill writers are not a priority.
+- [ ] Follow-ups: the `000001` jar stage split is project about 2.0 s, tile
+      about 3.4 s, and translucent resolve about 2.8 s; tile and translucent
+      rasterization are the remaining targets.
 
 ## Fallback color coverage
 

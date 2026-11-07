@@ -14,6 +14,7 @@ use litematic_scene::Scene;
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, Instant};
 
 /// Chunk pages by projected geometry size rather than page count: page sizes
 /// vary by two orders of magnitude between meshes, and a fixed page count
@@ -39,6 +40,10 @@ pub struct StreamingRenderer<'a> {
     width: u32,
     height: u32,
     tile_size: u32,
+    timing: bool,
+    project_time: Duration,
+    spill_time: Duration,
+    tile_time: Duration,
 }
 
 impl<'a> StreamingRenderer<'a> {
@@ -58,7 +63,12 @@ impl<'a> StreamingRenderer<'a> {
         options: &'a RenderOptions,
         textures: Option<&'a TextureSet>,
     ) -> Self {
-        Self::with_camera_and_budget(camera, options, textures, DEFAULT_TRANSLUCENT_BUDGET)
+        // Diagnostic override for comparing the in-memory and spilled paths.
+        let budget = std::env::var("BLOCKSCOPE_TRANSLUCENT_BUDGET")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(DEFAULT_TRANSLUCENT_BUDGET);
+        Self::with_camera_and_budget(camera, options, textures, budget)
     }
 
     fn with_camera_and_budget(
@@ -101,6 +111,11 @@ impl<'a> StreamingRenderer<'a> {
             width,
             height,
             tile_size,
+            // Set BLOCKSCOPE_STREAM_TIMING to print stage timings at finish.
+            timing: std::env::var_os("BLOCKSCOPE_STREAM_TIMING").is_some(),
+            project_time: Duration::ZERO,
+            spill_time: Duration::ZERO,
+            tile_time: Duration::ZERO,
         }
     }
 
@@ -133,7 +148,9 @@ impl<'a> StreamingRenderer<'a> {
         // that would deadlock the main thread if a worker panicked.
         let slices = page_slices(pages, self.threads);
         let bins = self.take_bins(slices.len());
+        let project_started = Instant::now();
         let mut parts = project_slices(pages, &slices, &self.camera, self.options, bins);
+        self.project_time += project_started.elapsed();
 
         for part in &parts {
             merge_page_statistics(&mut self.statistics, &part.statistics);
@@ -141,12 +158,15 @@ impl<'a> StreamingRenderer<'a> {
 
         // Hand translucent geometry to the writer before the tile pass so the
         // spill I/O overlaps opaque rasterization. Parts stay in page order.
+        let spill_started = Instant::now();
         for part in &mut parts {
             self.translucent
                 .push_many(std::mem::take(&mut part.translucent))
                 .map_err(storage_error)?;
         }
+        self.spill_time += spill_started.elapsed();
 
+        let tile_started = Instant::now();
         let touched: Vec<usize> = (0..self.tiles.len())
             .filter(|&index| parts.iter().any(|part| !part.bins.is_empty(index)))
             .collect();
@@ -158,6 +178,7 @@ impl<'a> StreamingRenderer<'a> {
                 render_parts_tile(tiles, &parts, tile_index, options, textures);
             });
         }
+        self.tile_time += tile_started.elapsed();
 
         for part in parts {
             self.bin_pool.push(part.bins);
@@ -193,10 +214,20 @@ impl<'a> StreamingRenderer<'a> {
             width,
             height,
             tile_size,
+            timing,
+            project_time,
+            spill_time,
+            tile_time,
             camera: _,
         } = self;
 
-        match translucent.finish().map_err(storage_error)? {
+        let resolve_started = Instant::now();
+        let writer_started = Instant::now();
+        let translucent_parts = translucent.finish().map_err(storage_error)?;
+        let writer_wait = writer_started.elapsed();
+        let mut bucket_read_time = Duration::ZERO;
+        let mut bucket_render_time = Duration::ZERO;
+        match translucent_parts {
             TranslucentParts::Memory(translucent) => {
                 if !translucent.is_empty() {
                     let triangle_bins = bin_triangles(&translucent, width, height, tile_size);
@@ -221,10 +252,14 @@ impl<'a> StreamingRenderer<'a> {
                     std::thread::scope(|scope| -> Result<(), RenderError> {
                         let mut next = Some(scope.spawn(move || reader.read_bucket(0)));
                         for bucket_index in 0..bucket_count {
+                            let read_started = Instant::now();
                             let bucket = join_bucket(next.take().expect("bucket reader"))?;
+                            bucket_read_time += read_started.elapsed();
                             let handle = (bucket_index + 1 < bucket_count)
                                 .then(|| scope.spawn(move || reader.read_bucket(bucket_index + 1)));
+                            let render_started = Instant::now();
                             render_translucent_bucket(&tiles, &bucket, options, threads, textures);
+                            bucket_render_time += render_started.elapsed();
                             next = handle;
                         }
                         Ok(())
@@ -232,7 +267,9 @@ impl<'a> StreamingRenderer<'a> {
                 }
             }
         }
+        let resolve_time = resolve_started.elapsed();
 
+        let assembly_started = Instant::now();
         let mut output = vec![0u8; (u64::from(width) * u64::from(height) * 4) as usize];
         for tile in tiles {
             let tile = tile.into_inner().expect("stream tile mutex poisoned");
@@ -241,6 +278,8 @@ impl<'a> StreamingRenderer<'a> {
             copy_tile(&tile.job, &tile.colors, &mut output, width);
         }
 
+        let assembly_time = assembly_started.elapsed();
+        let downsample_started = Instant::now();
         let rgba = if options.supersample > 1 {
             downsample(
                 &output,
@@ -254,6 +293,22 @@ impl<'a> StreamingRenderer<'a> {
         } else {
             output
         };
+        let downsample_time = downsample_started.elapsed();
+
+        if timing {
+            eprintln!(
+                "stream timing: project {:.2} s, spill {:.2} s, tile {:.2} s, resolve {:.2} s (writer wait {:.2} s, bucket read {:.2} s, bucket render {:.2} s), assembly {:.2} s, downsample {:.2} s",
+                project_time.as_secs_f64(),
+                spill_time.as_secs_f64(),
+                tile_time.as_secs_f64(),
+                resolve_time.as_secs_f64(),
+                writer_wait.as_secs_f64(),
+                bucket_read_time.as_secs_f64(),
+                bucket_render_time.as_secs_f64(),
+                assembly_time.as_secs_f64(),
+                downsample_time.as_secs_f64()
+            );
+        }
 
         Ok(RenderOutput {
             width: options.width,

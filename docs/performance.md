@@ -244,6 +244,33 @@ median render reduction. PNG SHA-256 values are unchanged:
 | `000002` jar | `38250F5E3A96F6488CB48368AC373E24620B7339658FB4857C73D981AF56B328` |
 | `000001` jar | `D143DA27D670E887AE25C4313CE331E1F22066F98D119659879764A0F5C28CCC` |
 
+### CPU texture sampling fast path (2026-11-07)
+
+Nearest sampling now bypasses `repeat` and `rem_euclid` when both UV
+components are inside `0..1`, which is the common case for model faces. The
+fast path keeps the same texel index and wrap behavior, including the rare
+f32 multiplication that rounds up to the texture width.
+
+Controlled A/B with the same tree before and after the change, `000001` jar,
+12 threads, 1024x1024, supersample 2, default streaming:
+
+| Metric | Before | After |
+| --- | ---: | ---: |
+| Render | 9058.9 / 9416.1 ms | 9150.1 / 8834.5 ms |
+| Tile stage (one timed run) | 3.50 s | 3.35 s |
+| `000002` jar render | 1882.8 / 1957.2 ms | 1933.2 / 1839.0 ms |
+
+The `000001` render median fell by about 2.7 percent and the tile stage by
+about 4 percent. `000002` is within run noise. PNG SHA-256 values are
+unchanged.
+
+`BLOCKSCOPE_STREAM_TIMING=1` prints the project, spill, tile, resolve, assembly,
+and downsample stage timings; `BLOCKSCOPE_TRANSLUCENT_BUDGET` overrides the
+in-memory translucent triangle budget for diagnostics. A stage trace on
+`000001` jar measured project 2.0 s, tile 3.4 s, and resolve 2.8 s, with only
+0.04 s waiting for the spill writer. The spill writer is therefore not the
+critical path, and parallel spill writers were not pursued.
+
 ### Rejected CPU experiments (2026-11-07)
 
 | Attempt | Result | Verdict | Why |

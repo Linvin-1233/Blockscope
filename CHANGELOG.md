@@ -44,6 +44,9 @@
   半透明 spill 每条三角形只编码一次，tile 排序改用带原始顺序 tie-break 的
   不稳定排序。三条基准的 PNG SHA-256 均与改动前一致，峰值工作集约上升
   8-13%。
+- CPU 最近邻纹理采样对 `0..1` 范围内的 UV 增加快速路径，跳过重复的
+  `repeat` 和取模。`000001` client-jar 的 tile 阶段约下降 4%，render 中位数
+  约下降 2.7%；`000002` 在噪声范围内，PNG 哈希不变。
 - `render`/`bench` 新增 `--precision exact|fast`。默认 `exact` 路径不变；
   `fast` 用 f32 存储 CPU 投影表，`QuadRender` 从 128 B 降到 80 B，真实 jar
   上 render 提升约 5-16%，代价是少量像素差异。GPU 后端忽略该设置。

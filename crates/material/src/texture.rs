@@ -27,6 +27,29 @@ impl Texture {
             return None;
         }
 
+        // Nearest sampling dominates the CPU path, and almost all model UVs
+        // stay inside 0..1. Skip the repeat/rem_euclid work in that common
+        // case while keeping the exact rounding of the general path.
+        if filter == TextureFilter::Nearest
+            && (0.0..1.0).contains(&uv[0])
+            && (0.0..1.0).contains(&uv[1])
+        {
+            let width = self.width as usize;
+            let height = self.height as usize;
+            let x = (uv[0] * self.width as f32) as usize;
+            let y = (uv[1] * self.height as f32) as usize;
+            let x = if x >= width { 0 } else { x };
+            let y = if y >= height { 0 } else { y };
+            let index = (y * width + x) * 4;
+            const INV_255: f32 = 1.0 / 255.0;
+            return Some([
+                f32::from(self.rgba[index]) * INV_255,
+                f32::from(self.rgba[index + 1]) * INV_255,
+                f32::from(self.rgba[index + 2]) * INV_255,
+                f32::from(self.rgba[index + 3]) * INV_255,
+            ]);
+        }
+
         let x = repeat(uv[0]) * self.width as f32;
         let y = repeat(uv[1]) * self.height as f32;
         Some(match filter {
@@ -351,6 +374,31 @@ mod tests {
             .sample(id, [0.5, 0.5], TextureFilter::Nearest)
             .unwrap();
         assert!(sample[0] > 0.9 && sample[1] < 0.1);
+    }
+
+    #[test]
+    fn nearest_sampling_handles_in_range_edges() {
+        let texture = Texture {
+            width: 2,
+            height: 2,
+            rgba: vec![
+                255, 0, 0, 255, // red
+                0, 255, 0, 255, // green
+                0, 0, 255, 255, // blue
+                255, 255, 255, 255, // white
+            ],
+        };
+
+        assert_eq!(
+            texture.sample([0.0, 0.0], TextureFilter::Nearest).unwrap(),
+            [1.0, 0.0, 0.0, 1.0]
+        );
+        assert_eq!(
+            texture
+                .sample([0.999_999, 0.999_999], TextureFilter::Nearest)
+                .unwrap(),
+            [1.0, 1.0, 1.0, 1.0]
+        );
     }
 
     #[test]

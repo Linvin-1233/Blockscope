@@ -58,6 +58,10 @@ User-facing changes are recorded here. The format follows
   unstable sort with the original order as the tie-break. All three fixtures
   keep their previous PNG SHA-256 values; peak working set rises by about
   8-13%.
+- CPU nearest-neighbor texture sampling now takes a fast path for UVs inside
+  `0..1`, skipping the repeated `repeat` and modulo work. The `000001`
+  client-jar tile stage fell by about 4% and the render median by about 2.7%;
+  `000002` is within run noise and PNG hashes are unchanged.
 - `render`/`bench` accept `--precision exact|fast`. The default exact path is
   unchanged; fast stores the CPU projection table as f32, shrinking `QuadRender`
   from 128 to 80 bytes and improving measured jar render time by about 5-16% at
