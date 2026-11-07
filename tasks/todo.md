@@ -213,3 +213,22 @@ Plan: `tasks/render-memory-plan.md`
 - [x] Update CLI tests, docs, and changelog.
 - [x] Push `v0.4.1` and let the release workflow publish the artifacts
       (maintainer).
+
+## Server-side preview (deferred)
+
+Issue draft: `tasks/server-preview-issue.md`
+Spec: `tasks/server-preview-spec.md`
+Contract: `tasks/server-preview-contract.md` (design record, do not implement)
+
+- [x] Run the latency spike on the existing render paths for `000002` and
+      `000001`. Textured stateless 384x384 warm p95 is 1.77-1.82 s and 10.5 s;
+      the 300 ms gate failed. Lower resolution is geometry-bound; streaming
+      bounds memory but is slower. Results in `docs/performance-preview.md`.
+- [x] Run the resident-session spike. Textured `000002` is
+      `BACKEND_UNAVAILABLE` on the 4 GB card (3.66 GB needed, 1.29 GB budget);
+      `000001` needs more. Color-only `000002` 384x384 stateless meets the gate
+      at p95 236-265 ms and 333 MB; color-only `000001` is 4.8-5.0 s. Color-only
+      `000002` resident at 256x256 is about 27 ms/frame with 201.9 MB resident.
+- [x] Defer to a future issue (2026-11-07). Color-only blockout preview is the
+      recommended direction; textured preview is opt-in on larger GPUs and
+      `000001`-class stays batch `--draft`.

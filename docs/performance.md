@@ -910,3 +910,11 @@ The measurements point at algorithmic work rather than wider vectors:
   scalar setup inlined; the measured version regressed tile time by 33-47%.
 - Do not retry a full six-face cull mask without a vectorized mask build; the
   scalar version does more neighbour work than the block loop saves.
+
+## Server preview latency spike
+
+The server-preview latency spike, the textured resident-session result, and
+the color-only blockout follow-up are recorded in
+[performance-preview.md](performance-preview.md). Short version: textured
+preview is not viable at 384x384 on the 4 GB reference host; color-only
+`000002` meets the 300 ms gate; `000001` stays batch-only.
