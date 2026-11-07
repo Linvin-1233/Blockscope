@@ -86,10 +86,10 @@ for both columns; 413.5 ms is not a per-frame value.
 The color-block catalog removes the client-jar model detail. `000002` drops
 from 39.82M triangles to 2.30M; `000001` drops from 128.63M to 91.57M.
 
-| Case | Cold total | Warm p50 | Warm max | Render p50 | Peak WS |
+| Case | Cold total | Warm p50 | Warm p95 | Render p50 | Peak WS |
 |---|---:|---:|---:|---:|---:|
-| `000002` color, 384x384 | 651-733 ms | 208-213 ms | 265 ms (20 reps) | 80-83 ms | 333 MB |
-| `000001` color, 384x384 | 9,554 ms | 4,820-4,986 ms | 4,986 ms (3 reps) | 4,756-4,921 ms | not recorded |
+| `000002` color, 384x384 | 651-733 ms | 208-213 ms | 234-265 ms (20/20 cache hits) | 80-83 ms | 334 MB |
+| `000001` color, 384x384 | 9,554 ms | 4,820-4,986 ms | 4.99 s (3 reps; p95 = max) | 4,756-4,921 ms | not recorded |
 
 `000002` color-only meets the 300 ms gate at 384x384 on the CPU, with no client
 jar and no GPU. `000001` does not. The color-only session is an optional
@@ -104,7 +104,7 @@ the gate.
   3.66 GB against a 1.29 GB budget. A larger GPU is required for textured
   `000002`; `000001` needs more still.
 - Color-only blockout preview **meets** the 300 ms gate for `000002` at
-  384x384 (p95 236-265 ms, 333 MB peak) on the CPU. It does not show textures,
+  384x384 (p95 234-265 ms, 334 MB peak) on the CPU. It does not show textures,
   so it is a framing/rotation preview, not a final-look preview.
 - `000001` remains non-interactive in every mode measured: 4.8-5.0 s
   color-only, 9.4-10.5 s textured.

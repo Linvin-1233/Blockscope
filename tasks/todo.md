@@ -226,7 +226,7 @@ Contract: `tasks/server-preview-contract.md` (design record, do not implement)
 - [x] Run the resident-session spike. Textured `000002` is
       `BACKEND_UNAVAILABLE` on the 4 GB card (3.66 GB needed, 1.29 GB budget);
       `000001` needs more. Color-only `000002` 384x384 stateless meets the gate
-      at p95 236-265 ms and 333 MB; color-only `000001` is 4.8-5.0 s. Color-only
+      at p95 234-265 ms and 334 MB; color-only `000001` is 4.8-5.0 s. Color-only
       `000002` resident at 256x256 is about 27 ms/frame with 201.9 MB resident.
 - [x] Defer to a future issue (2026-11-07). Color-only blockout preview is the
       recommended direction; textured preview is opt-in on larger GPUs and

@@ -63,7 +63,7 @@ needs 3.66 GB of resident instance data against a 1.29 GB VRAM budget. A larger
 GPU is required; `000001` needs more still.
 
 The **color-only blockout** variant is viable: `000002` at 384x384, warm cache,
-p95 is 236-265 ms with 333 MB peak on the CPU, meeting the 300 ms gate.
+p95 is 234-265 ms with 334 MB peak on the CPU, meeting the 300 ms gate.
 `000001` color-only is still 4.8-5.0 s. A color-only resident session at
 256x256 is about 27 ms/frame with 201.9 MB resident.
 
@@ -85,7 +85,7 @@ scope; the measurements are in `docs/performance-preview.md`.
       under 300 ms on the reference host after the scene and mesh are cached.
       Textured `000002` measured 1.77-1.82 s and `000001` 10.5 s; lower
       resolution does not help because the path is geometry-bound. Color-only
-      `000002` measured 236-265 ms and meets the gate; color-only `000001` is
+      `000002` measured 234-265 ms and meets the gate; color-only `000001` is
       4.8-5.0 s.
 - [ ] **Cache hits or bounded streaming are acceptable.** Small structures
       should hit the cache after the first preview. Large cold structures stream

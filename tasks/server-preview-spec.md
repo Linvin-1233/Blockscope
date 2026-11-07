@@ -322,7 +322,7 @@ The **color-only blockout** variant changes the result:
 
 | Case | Warm p50 | Warm p95 | Peak WS | Verdict |
 |---|---:|---:|---:|---|
-| color `000002`, 384x384 | 208-213 ms | 236-265 ms | 333 MB | meets the 300 ms gate |
+| color `000002`, 384x384 | 208-213 ms | 234-265 ms | 334 MB | meets the 300 ms gate |
 | color `000001`, 384x384 | 4,820-4,986 ms | 4.8-5.0 s | not recorded | not interactive |
 
 Color-only `000002` uses 2.30M triangles instead of 39.82M; `000001` still uses
