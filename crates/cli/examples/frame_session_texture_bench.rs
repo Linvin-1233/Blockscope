@@ -103,7 +103,7 @@ fn main() -> Result<(), String> {
                         "error": error.to_string(),
                     })
                 );
-                return Ok(());
+                return Err(error.to_string());
             }
         };
     let setup_ms = setup_started.elapsed().as_secs_f64() * 1000.0;
