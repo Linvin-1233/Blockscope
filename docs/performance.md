@@ -264,6 +264,296 @@ The probe peak is constant at about 142 KB. The sparse case is about 2x slower b
 
 **Decision: go for the integration spike follow-up.** The peak reduction is far above the 50 percent bar and the sparse parse time is under 2x. This is not yet a production parser: the next step is a scoped implementation plan for `RegionStates`, canonical scene hashing, and parity tests. The probe's `occupied_nonzero` counter is not the same as `non_air` when the palette has a non-zero default entry; the production path must use the palette default and preserve diagnostics.
 
+## GPU backend baseline (2026-11-05)
+
+This is the pre-G2 baseline for `tasks/gpu-performance-spec.md`. It records why
+the current GPU path is not yet a net win on a strong CPU. The host is the
+12-core / 48 GB Windows machine with an NVIDIA GTX 1650 SUPER (4 GB), release
+build, D3D12, color-only materials, 1024x1024 output, supersample 2, 12 threads,
+`--force-limits`. The CLI default backend was still `cpu` when measured; the
+spec changes it to `auto` in G6.
+
+Build and run:
+
+```powershell
+cargo build --release -p blockscope-cli --features gpu
+
+$exe = (Resolve-Path .\target\release\blockscope.exe).Path
+& $exe bench fixtures\private\000002.litematic --backend cpu --iterations 3
+& $exe bench fixtures\private\000002.litematic --backend gpu --iterations 3
+& $exe bench fixtures\private\000001.litematic --backend cpu --iterations 1
+& $exe bench fixtures\private\000001.litematic --backend gpu --iterations 2
+```
+
+End-to-end:
+
+| Case | CPU 12t | CPU 2t | GPU | Notes |
+|---|---:|---:|---:|---|
+| `000002` render | 190 ms | 341 ms | 201 ms | GPU 6% slower than CPU 12t |
+| `000002` render + PNG | 235 ms | 385 ms | 245 ms | GPU 4% slower than CPU 12t |
+| `000001` render, full mesh | 7,046 ms | - | 14,881 ms | GPU 2.1x slower |
+| `000001` end to end | about 11.3 s | - | about 18.7 s | includes parse, mesh, render, PNG |
+
+`000001` used 87.9M quads in this build. The GPU path requires the full mesh, so
+it also chooses the 7.68 GB color-only memory peak instead of the 433 MB
+streamed peak.
+
+GPU stage timings from the last iteration of a three-iteration `000002` run:
+
+| Stage | Time |
+|---|---:|
+| setup | 0.7 ms |
+| atlas build/upload | 0.1 ms |
+| CPU projection/cull | 81.0 ms |
+| CPU vertex encode | 59.7 ms |
+| buffer upload | 28.4 ms |
+| opaque draw | 0.8 ms |
+| translucent sort/draw | 0.6 ms |
+| readback | 6.9 ms |
+| resolve | 2.2 ms |
+| total | 199.2 ms |
+
+The GPU draw itself is under 1% of render time. CPU projection, vertex
+expansion, and upload account for about 85%. This is the bottleneck G2 removes.
+
+Current GPU parity on the 96x96 reference scenes:
+
+| Scene | Differing pixels | Max channel delta | Alpha mismatch |
+|---|---:|---:|---:|
+| opaque/cutout/translucent | 1,021 / 9,216 (11.1%) | 1 | none |
+| solid background | 815 / 9,216 (8.8%) | 1 | none |
+| textured nearest | 0 | 0 | none |
+| textured linear (M4 host) | 44 / 9,216 | 1 | none |
+
+The 0.1% gate is a target for the second-generation path, not a property of the
+current path. G2 and G5 own closing it or recording the measured exception.
+
+### Shared texture storage (2026-11-05)
+
+`TextureSet` now stores `Arc<Texture>` entries, so cloning it for a material
+snapshot only bumps refcounts. The `000001` client-jar stream still peaks at
+581.4 MB, within the 591 MB baseline's run-to-run variance; the live material
+set is dropped before rendering, so the steady peak does not include a second
+copy. The change removes the transient texture copy during snapshot creation and
+is required for the process-wide GPU atlas cache. The measured command is the
+same streamed client-jar render used for the 591 MB row in the summary table.
+
+The GPU atlas cache is keyed by a weak texture-set identity. Its byte cap is
+one quarter of the 60% VRAM working set, clamped to 64-512 MiB; the session
+also includes the atlas in its admission check. On `000002 --client-jar`, the
+first GPU render spent 1,037 ms building/uploading the atlas; the next render
+reported `atlasCacheHit=true` and 4 microseconds. The second view of the same
+material snapshot therefore reuses the atlas instead of repacking 227 MB of
+textures.
+
+### Instanced opaque/cutout path (2026-11-05)
+
+The GPU path now uploads one 92-byte `GpuQuad` instance per opaque/cutout quad
+instead of six projected 36-byte vertices. The camera transform, UV decode,
+AO, and quad expansion run in the vertex shader; translucent geometry still
+uses the CPU-projected path until G5.
+
+`000002`, color-only, 1024x1024, ss2, 12 threads, median of 3:
+
+| Path | Render | Render + PNG | Mesh |
+|---|---:|---:|---:|
+| CPU 12t | 197.0 ms | 242.7 ms | 235.2 ms |
+| GPU instanced | 116.3 ms | 161.2 ms | 228.9 ms |
+
+GPU stage timings for the same run: encode 70.4 ms, translucent projection
+11.5 ms, upload 11.3 ms, draw 1.0 ms, readback 5.3 ms, resolve 2.1 ms, total
+113.1 ms. The GPU is now faster than 12-thread CPU on this fixture.
+
+`000001`, full mesh, color-only, one iteration:
+
+| Path | Render | End to end |
+|---|---:|---:|
+| GPU instanced | 8,650 ms | about 12.5 s |
+| Previous GPU path | 14,881 ms | about 18.7 s |
+| CPU 12t | 7,046 ms | about 11.3 s |
+
+On the large fixture the remaining GPU cost is dominated by CPU instance
+encoding (2.94 s), translucent projection (1.13 s), and the old translucent
+sort/draw (2.81 s). The full-mesh 7.68 GB peak is still the reason G3 streaming
+is next.
+
+### GPU streaming (2026-11-05)
+
+`render --backend gpu --stream-mesh=on` now builds page chunks and feeds
+`GpuRenderSession`; the full mesh is not retained. `000001`, color-only,
+1024x1024, ss2, 12 threads, `--force-limits`:
+
+| Metric | Value |
+|---|---:|
+| Peak working set | 1,678 MB |
+| Wall time | 11.27 s |
+| Render | 5.10 s |
+| Mesh | 5.04 s |
+| PNG | 65.6 ms |
+| Triangles | 91.6M |
+
+The 2 GB memory gate passes. The 10 s wall gate is not met yet: the remaining
+cost is the 32-page mesh chunk policy (P0) and the 9.5M retained translucent
+triangles in the old GPU path (G5/WBOIT). `--stream-mesh=auto` and `on` produce
+byte-identical PNGs to the full-mesh GPU path on the CLI fixture.
+
+Multi-view GPU jobs use one `GpuRenderSession` and one mesh build:
+
+| Case | Wall | Peak working set |
+|---|---:|---:|
+| `000002`, 1 view | 1.38 s | - |
+| `000002`, 2 views | 1.40 s | - |
+| `000002`, 12 views | 3.15 s | 943 MB |
+
+Views are batched by the 60 percent VRAM target budget minus atlas and staging
+headroom. On this host that permits the 12 views at 1024x1024 ss2 in two
+sessions, with one mesh build and one upload per session.
+
+### GPU translucent depth buckets (2026-11-05)
+
+Translucent triangles above 262,144 entries spill into 128 camera-depth bucket
+files instead of being retained in one vector. `000001` GPU streaming,
+color-only, 1024x1024, ss2, 12 threads:
+
+| Metric | Before buckets | After buckets |
+|---|---:|---:|
+| Peak working set | 1,678 MB | **499 MB** |
+| Wall | 11.27 s | 11.35 s |
+| Render | 5.10 s | 5.16 s |
+| PNG SHA-256 | `42309C9F...` | unchanged |
+
+The 9.5M translucent triangles are written to depth buckets and read
+far-to-near in bounded sub-batches. The 10 s wall gate is still mesh-bound
+(5.08 s); the bucket reader and per-bucket sort are not the bottleneck.
+
+### WBOIT capture (2026-11-05)
+
+Translucent buckets now draw into `Rgba16Float` accumulation and revealage
+targets with depth test on and depth write off; a full-screen composite pass
+resolves them over the opaque color target. Revealage is RGBA rather than
+R16Float because WebGPU needs a per-fragment source alpha for
+`OneMinusSrcAlpha`.
+
+`000001` GPU streaming, color-only, 1024x1024, ss2, 12 threads:
+
+| Metric | Old translucent path | WBOIT |
+|---|---:|---:|
+| Peak working set | 499 MB | **538 MB** |
+| Wall | 11.35 s | 12.20 s |
+| Render | 5.16 s | 5.34 s |
+| PNG | identical to pre-bucket | visually similar, not byte-identical |
+
+The 9,216-pixel parity scene keeps a maximum channel delta of 1 but still has
+1,039 differing blended pixels, so the 0.1% tolerance remains a calibration
+item for Task 17. The extra ~39 MB and ~0.2 s are the two half-float targets
+plus the composite pass.
+
+`000001` with the client jar, GPU streaming, 1024x1024, ss2, 12 threads:
+
+| Metric | Value |
+|---|---:|
+| Peak working set | 656 MB |
+| Wall | 22.64 s |
+| Render | 12.21 s |
+| Mesh | 6.32 s |
+| Parse | 0.37 s |
+| Triangles | 127.2M (24.1M translucent) |
+
+The 3 GB memory gate passes; the 15 s wall gate does not. The gap is the
+24.1M translucent triangles (projection + WBOIT fill) and the 6.3 s streamed
+mesh. This is recorded as a target-not-met rather than hidden. Calibration
+defaults are 128 depth buckets, a 262,144-triangle in-memory/read cap, and the
+WBOIT weight `0.03 / (1e-5 + depth^4)` clamped to `1e-5..3000`.
+
+## GPU performance path final results (2026-11-06)
+
+`auto` is now the default backend for the CLI, `bench`, and `serve`. The policy
+is deterministic for a machine description and chooses the GPU only when the
+calibrated estimate predicts a win:
+
+- CPU cost per quad and per internal pixel is scaled by
+  `(12 / per_view_threads)^0.35` from the reference host; multi-view jobs split
+  the thread budget across views.
+- GPU cost includes device/target setup, readback, per-quad encode/upload/draw,
+  and a 10 percent streaming overhead.
+- The GPU is rejected without a hardware adapter, with a software adapter,
+  above the f32-safe scene span, above the 60 percent VRAM working set, or for
+  meshes below 10,000 quads.
+- When the process-wide GPU context is not initialized, a single-view job on a
+  CPU with eight or more threads is kept on the CPU. Shader compilation and
+  device setup cost a few hundred milliseconds, which a one-shot CLI render
+  cannot amortize; multi-view jobs amortize it across views, and a warm process
+  that already paid setup can still choose the GPU.
+- A predicted win requires a 5 percent margin, so setup noise cannot flip the
+  decision.
+
+The 60 percent VRAM budget uses the platform probe where available and a
+conservative floor otherwise: 2 GiB for discrete adapters and 1 GiB for
+integrated or virtual adapters. `BLOCKSCOPE_GPU_VRAM_BYTES` overrides the probe.
+Linux reads `/sys/class/drm/*/device/mem_info_vram_total`; Windows and macOS
+currently use the floor. The session admits targets, readback, one 32 MiB
+staging batch times three slots, and the atlas inside that budget. Larger page
+chunks are split into bounded instance uploads.
+
+R1 is the 12-thread Ryzen 5 5500 / GTX 1650 SUPER host, Windows D3D12, release
+build, color-only, 1024x1024, supersample 2, `--force-limits`. Render and total
+medians are from three iterations; total includes PNG.
+
+| Case | CPU render | auto render | CPU total | auto total | backend used |
+|---|---:|---:|---:|---:|---|
+| `000002`, 12 threads | 259.0 ms | 224.6 ms | 312.7 ms | 279.4 ms | cpu |
+| `000002`, 2 threads | 437.1 ms | 148.3 ms | 491.7 ms | 199.7 ms | gpu |
+
+On 12 threads `auto` keeps the one-shot render exact on the CPU: the warm GPU
+render is 190.2 ms, but the first GPU render in a fresh process is 535.5 ms
+because it pays shader compilation and device setup. On 2 threads the GPU wins
+even with setup. `auto` reports `backendUsed`, so the caller can always tell.
+
+Commands:
+
+```powershell
+cargo build --release -p blockscope-cli --features gpu
+$exe = (Resolve-Path .\target\release\blockscope.exe).Path
+& $exe bench fixtures\private\000002.litematic --backend auto --threads 12 --iterations 3 --force-limits --json
+& $exe bench fixtures\private\000002.litematic --backend cpu  --threads 12 --iterations 3 --force-limits --json
+& $exe bench fixtures\private\000002.litematic --backend auto --threads 2  --iterations 3 --force-limits --json
+& $exe bench fixtures\private\000002.litematic --backend cpu  --threads 2  --iterations 3 --force-limits --json
+```
+
+Explicit GPU full-mesh `render` finished a single view in 1.84 s and two views
+in 1.71 s wall, inside the 1.3x two-view gate. Twelve `auto` views were batched
+by the VRAM budget and finished in 3.42 s with a 1006.7 MB peak. Multi-view jobs
+amortize setup across views, so the policy uses the GPU even on a strong CPU;
+single-view `auto` keeps the exact CPU on 12 threads.
+
+`000001` auto streaming (`--backend auto`, default `--stream-mesh=auto`) on the
+12-thread host selects the CPU for exact one-shot output:
+
+| Case | Wall | Peak working set | Render | Mesh |
+|---|---:|---:|---:|---:|
+| color-only | 15.03 s | 473 MB | 6.80 s | 5.45 s |
+| client jar | 20.42 s | 619 MB | 12.08 s | 5.33 s |
+
+Explicit `--backend gpu` measured 14.64 s / 502 MB for color-only and
+19.83 s / 655 MB for the client jar. The difference is within run-to-run noise,
+so `auto` keeps the byte-exact CPU on this strong host. The 2 GB and 3 GB memory
+gates pass. The 10 s and 15 s wall gates do not; the remaining cost is page-chunk
+meshing and CPU/WBOIT translucent work. These are recorded as not met.
+
+Parity on the 96x96 GPU scenes, D3D12, max channel delta 1:
+
+| Scene | Differing pixels | 0.1% target |
+|---|---:|---|
+| translucent hybrid | 1,039 / 9,216 (11.3%) | not met |
+| opaque/cutout | 842 / 9,216 (9.1%) | not met |
+| textured opaque | 245 / 9,216 (2.7%) | not met |
+
+Alpha coverage matches exactly in all three. The spec's 0.1 percent
+differing-pixel target is therefore not met on this driver; the maximum channel
+delta target (2) is met. The parity tests keep a 15 percent regression cap and
+record the measured values instead of hiding them. The CPU backend remains the
+byte-exact reference and the explicit exactness override.
+
 ## GPU frame session (2026-11-06)
 
 `GpuFrameSession` is the first resident-geometry slice for video export. It

@@ -80,9 +80,11 @@ blockscope preview model.litematic -t
 | `--supersample <1-4>`                                          | 超采样倍数，默认 `2`                                                  |
 | `--views <LIST>`                                               | 逗号分隔的 yaw 角度，例如 `45,225`，最多 64 个                        |
 | `--yaw` / `--elevation`                                        | 单视角水平/俯仰角                                                     |
+| `--sphere-fit`                                                 | 按旋转不变的包围球取景，而不是随 yaw 变化的投影轮廓；适合转台动画     |
 | `--background transparent\|#RRGGBB[AA]`                        | 背景，默认透明                                                        |
 | `--lighting flat-v1\|simple-ao-v1`                             | 光照配置，默认 `simple-ao-v1`                                         |
 | `--threads <N>`                                                | mesh/rasterizer 线程数，`0` 使用可用并行度，最多 256                  |
+| `--backend cpu\|gpu\|auto`                                     | 光栅化后端，默认 `auto`；`cpu` 为逐字节参考，`gpu` 强制硬件、不可用即失败 |
 | `--precision exact\|fast`                                      | CPU 投影精度，默认 `exact`；`fast` 用 f32 存储屏幕点，以少量像素差异换取速度和内存 |
 | `--stream-mesh [auto\|on\|off]`                                | 按页构建并渲染网格，不保留完整 Mesh；默认 `auto`，`off` 保留完整 Mesh |
 | `--greedy-mesh`                                                | 合并同材质、同光照的共面单位面；适合大平面和重复结构，默认关闭        |
@@ -96,10 +98,12 @@ blockscope preview model.litematic -t
 
 `inspect`、`validate` 和 `stats` 默认保留 `TileEntities` 内容；几何命令默认跳过，以减少大容器文件的解析时间和内存。
 
-GPU 后端需要完整 Mesh，不能与 `--stream-mesh on` 同用。若二进制未启用 `gpu`
-特性或没有可用硬件适配器，显式 `gpu` 会以 `BACKEND_UNAVAILABLE` 失败；`auto`
-则回退到 CPU。GPU 输出与 CPU 参考视觉接近，但跨驱动不保证逐字节一致，因此
-golden PNG 和确定性保证仍以 `cpu` 为准。
+默认后端为 `auto`：小场景使用 CPU，只有在存在硬件适配器、通过 f32 精度
+保护、满足 60% 显存预算且成本模型预测 GPU 更快时才使用 GPU。单视角 `gpu`
+支持分页流式渲染；多视角 GPU 任务保留完整 Mesh，以便一次上传服务所有视角。
+若二进制未启用 `gpu` 特性、没有硬件适配器或只有软件适配器，`auto` 使用 CPU；
+显式 `gpu` 会以 `BACKEND_UNAVAILABLE` 失败。GPU 输出与 CPU 参考视觉接近，
+但跨驱动不保证逐字节一致，因此 golden PNG 和确定性保证仍以 `cpu` 为准。
 
 `--precision fast` 只影响 CPU 投影。默认 `exact` 路径不变；`fast` 用 f32
 存储屏幕点，缩小编译后的投影表并加快投影和 tile 读取，但可能改变少量像素的
