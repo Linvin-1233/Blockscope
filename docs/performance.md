@@ -718,9 +718,12 @@ mesh for every video frame.
 Measured with the release build, 12-thread host, GTX 1650 SUPER, D3D12,
 color-only materials, 256x256, supersample 1, 12 yaw frames, sphere fit on:
 
-| Input | Per-frame full renders | Resident session | Speedup | Resident bytes |
+| Input | 12-frame full renders | 12-frame resident session | Speedup | Resident bytes |
 |---|---:|---:|---:|---:|
 | `000002` | 2,567.9 ms | 413.5 ms | 6.21x | 201.9 MB |
+
+Both time columns are totals for the 12-frame loop; divide by 12 for the
+per-frame average.
 
 The resident geometry is a hard VRAM constraint: `000001` color-only needs
 about 7.27 GB for the instance table plus targets, above the 1.29 GB working-set
