@@ -761,6 +761,58 @@ The command uses an external ffmpeg. MP4 is H.264/yuv420p with an opaque
 background and even dimensions; GIF is a two-pass palette encode with optional
 1-bit transparency.
 
+### Video frame-loop memory and speed (2026-11-07)
+
+Measured on the same host, release build, ffmpeg 2026-03-12-git, with a
+41,127-block private fixture and the 26.2 client jar: 1024x1024, supersample 2,
+60 fps, 600 frames, GPU backend and NVENC via `--encoder auto`.
+
+Readback reuse (`GpuFrameSession` owns one readback buffer and resolves directly
+from the mapped range):
+
+| Metric | Before | After |
+|---|---:|---:|
+| Peak process RSS | 260.2 MiB | **179.8 MiB** |
+| Peak private bytes | 379.9 MiB | 364.9 MiB |
+| Total time | 11.15 s | **9.69 s** |
+
+Resident translucent geometry (pre-extract translucent quads instead of
+scanning every page per frame), interleaved 3x A/B under the same load:
+
+| Metric | Baseline median | Resident median |
+|---|---:|---:|
+| `projectUs` | 4.21 s | **3.12 s** |
+| Total command time | 11.51 s | **10.61 s** |
+
+After both changes, three runs measured a median 183.9 MiB peak RSS and
+370.0 MiB peak private bytes. GPU VRAM delta stayed in the 260-330 MiB range,
+within measurement noise; the readback and resident changes target host memory
+and CPU-side per-frame work, not VRAM. External ffmpeg peaked around 190 MiB
+working set.
+
+Rejected video-path experiments:
+
+| Idea | Result | Verdict |
+|---|---|---|
+| Parallel translucent projection per frame | `projectUs` 3.33 -> 4.18 s | reverted; thread setup cost exceeded the gain |
+| Reused translucent vertex buffer | `translucentUs` 1.10 -> 0.72 s, total within noise | reverted; no user-visible win |
+| Specialized 1x/2x resolve loops | `resolveUs` unchanged within noise | reverted |
+
+NVENC CQ is not equivalent to x264 CRF. Calibrating low/medium/high to
+CQ 32/28/23 gives:
+
+| Quality | NVENC size (600 frames) | NVENC SSIM | libx264 reference |
+|---|---:|---:|---|
+| low | 7.9 MB | 0.941 | SSIM 0.918 |
+| medium | **13.3 MB** | **0.959** | 11.3 MB, SSIM 0.957 |
+| high | 21.2 MB | 0.976 | SSIM 0.973 |
+
+Medium output dropped from 21.2 MB to 13.3 MB (-37%) while matching libx264
+medium visual quality. SSIM values are from a static frame against the GPU
+render; the libx264 medium size is the full 600-frame output, while the low and
+high libx264 sizes were not recorded. Video quality varies with motion and
+content.
+
 ## Model UV cache (2026-11-07)
 
 `PaletteTables` now caches the Q12-encoded UVs of every model quad once per

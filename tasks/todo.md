@@ -92,10 +92,13 @@ Spec: `tasks/video-export-spec.md`
       `--ffmpeg`, and the supervisor `--video-timeout`.
 - [x] Hardware encoder probing: lazy device probe at the target output size,
       `auto` fallback to libx264, explicit `ENCODER_UNAVAILABLE`.
-- [ ] Manual smoke test on a machine with a real hardware encoder and ffmpeg
-      on `PATH`, including MP4/GIF through `serve` and `supervise`.
-- [ ] Record the 1024x1024, 180-frame CPU/GPU and software/hardware encoder
-      benchmark in `docs/performance.md` once a real fixture is available.
+- [x] Manual smoke test with NVENC, ffmpeg, and a client jar: MP4/GIF through
+      `animate`, `serve`, and `supervise`. QSV/AMF/VAAPI/VideoToolbox still need
+      testing on the matching hardware matrix.
+- [x] Record the 600-frame 1024x1024 video memory, CPU/GPU, and
+      software/hardware encoder results in `docs/performance.md`.
+- [ ] Optional: repeat the encoder matrix on release hardware for every
+      advertised hardware family.
 
 ## Pending verification
 
