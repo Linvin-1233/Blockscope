@@ -123,6 +123,52 @@ fn animate_rejects_render_only_camera_flags() {
 }
 
 #[test]
+fn animate_encodes_mp4_with_auto_when_ffmpeg_is_available() {
+    let Some(ffmpeg) = std::env::var("BLOCKSCOPE_FFMPEG").ok() else {
+        eprintln!("skipping ffmpeg animate test: set BLOCKSCOPE_FFMPEG");
+        return;
+    };
+    let file = write_fixture(&basic_fixture());
+    let dir = tempfile::tempdir().unwrap();
+    let output_path = dir.path().join("out.mp4");
+    let output = run(&[
+        "animate",
+        file.path().to_str().unwrap(),
+        "--output",
+        output_path.to_str().unwrap(),
+        "--keyframe",
+        "0:45:30",
+        "--keyframe",
+        "0.2:50:30",
+        "--duration",
+        "0.2",
+        "--fps",
+        "10",
+        "--width",
+        "256",
+        "--height",
+        "256",
+        "--supersample",
+        "1",
+        "--encoder",
+        "auto",
+        "--ffmpeg",
+        ffmpeg.as_str(),
+        "--json",
+    ]);
+
+    assert!(output.status.success(), "{}", stderr(&output));
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["frames"], 2);
+    assert_eq!(report["fps"], 10);
+    assert!(
+        report["encoder"].as_str().unwrap().starts_with("h264_") || report["encoder"] == "libx264"
+    );
+    let bytes = std::fs::read(&output_path).unwrap();
+    assert_eq!(&bytes[4..8], b"ftyp");
+}
+
+#[test]
 fn animate_rejects_format_extension_mismatch() {
     let file = write_fixture(&basic_fixture());
     let dir = tempfile::tempdir().unwrap();

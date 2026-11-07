@@ -64,7 +64,7 @@ blockscope preview model.litematic -t
 
 多视角渲染时，单视角输出 `out.png`，多视角输出 `out-45.png`、`out-225.png` 等。`serve` 模式的输出命名为 `{id}.png`（单视角）或 `{id}-{yaw}.png`（多视角）。有完整 mesh 时，多视角会按 `--threads` 预算并行渲染；输出顺序不变，并且每个视角会在下一批开始前写出并释放缓冲，内存不会随视角数量无限增长。
 
-`animate` 将关键帧相机采样为视频。关键帧格式为 `TIME:YAW:ELEVATION`，单位为秒和角度；每个关键帧重复一次 `--keyframe`。MP4 使用 H.264，需要不透明背景和偶数尺寸；GIF 支持 1 位透明。`--ffmpeg` 可指定外部可执行文件，最低支持 4.4。`--encoder auto` 和 `software` 当前解析为 libx264；显式硬件编码器会在硬件探测接入前返回 `ENCODER_UNAVAILABLE`。
+`animate` 将关键帧相机采样为视频。关键帧格式为 `TIME:YAW:ELEVATION`，单位为秒和角度；每个关键帧重复一次 `--keyframe`。MP4 使用 H.264，需要不透明背景和偶数尺寸；GIF 支持 1 位透明。`--ffmpeg` 可指定外部可执行文件，最低支持 4.4。`--encoder auto` 会在首次使用时按输出尺寸探测硬件编码器，失败时回退到 libx264；`software` 强制使用 libx264，显式硬件编码器未编译或不可用时返回 `ENCODER_UNAVAILABLE`，不会静默回退。使用 GPU 后端时，`--json` 会在 `gpuStages` 中报告聚合的 GPU 阶段耗时。
 
 终端图像会先适配可见网格：渲染尺寸超过窗口时只向终端指定一个字符维度，由终端按原始宽高比缩小图像。摘要先输出、图像最后输出，后续文字不会把它顶出屏幕。在 `tmux` 或 `screen` 内（默认会丢弃图形序列，除非开启 passthrough），自动检测会退化为半块字符；需要时用 `--terminal-protocol` 覆盖。当 stdout 不是终端（管道、日志、被捕获的 shell）时会给出警告，因为转义序列无法显示。
 

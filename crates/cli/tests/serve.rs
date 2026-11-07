@@ -74,7 +74,7 @@ fn serve_renders_two_jobs_and_shuts_down() {
     let (mut child, mut stdin, mut lines) = start();
     let hello = read_json(&mut lines);
     assert_eq!(hello["type"], "hello");
-    assert_eq!(hello["protocolVersion"], 3);
+    assert_eq!(hello["protocolVersion"], 4);
     assert!(hello["suggestedWorkers"].as_u64().unwrap() >= 1);
     assert!(hello["defaultTier"]["width"].as_u64().unwrap() >= 1);
 
@@ -98,6 +98,7 @@ fn serve_renders_two_jobs_and_shuts_down() {
         assert_eq!(result["id"], id);
         assert!(result["sceneHash"].as_str().unwrap().len() == 64);
 
+        assert_eq!(result["outputs"][0]["kind"], "image");
         let path = result["outputs"][0]["path"].as_str().unwrap();
         let bytes = std::fs::read(path).unwrap();
         assert!(bytes.starts_with(&[0x89, b'P', b'N', b'G']));

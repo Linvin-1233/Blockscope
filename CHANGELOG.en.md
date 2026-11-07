@@ -34,9 +34,29 @@ User-facing changes are recorded here. The format follows
 - Add `animate` and the `litematic-video` crate: keyframed camera timelines,
   MP4/GIF ffmpeg encoding, a resident GPU frame session, and a per-frame CPU
   fallback.
+- Raise `serve`/`supervise` to protocol v4 with MP4/GIF video jobs:
+  `hello.video` capabilities, `animation`/`encoder`/`quality` request fields,
+  `kind: "video"` results, `encodeMs`, and `--ffmpeg`. `supervise` adds
+  `--video-timeout` (default 600 seconds) so video jobs are not limited by the
+  60 second image timeout.
+- `--encoder auto` now probes NVENC, Quick Sync, AMF, VideoToolbox, and VAAPI at
+  the target output size in platform order, then falls back to libx264. An
+  explicit hardware encoder that is unavailable returns `ENCODER_UNAVAILABLE`
+  instead of falling back silently.
+- Parse `YYYY-MM-DD-git-...` nightly ffmpeg version strings.
 
 ### Performance
 
+- The GPU video frame session reuses its readback buffer and resolves directly
+  from the mapped range, avoiding a 16 MiB copy per frame. On the 600-frame
+  1024x1024 ss2 benchmark, peak process RSS fell from 260.2 MiB to 179.8 MiB and
+  total time from 11.15 s to 9.69 s.
+- The GPU video frame session extracts translucent geometry once, so the frame
+  loop no longer scans every mesh page per frame. An interleaved A/B measured
+  `projectUs` median 4.21 s -> 3.12 s and total time 11.51 s -> 10.61 s.
+- NVENC quality is calibrated against libx264 as CQ 32/28/23. Medium output for
+  600 frames drops from 21.2 MB to 13.3 MB, with static-frame SSIM 0.959 versus
+  0.957 for libx264 medium.
 - Mesh building caches each model quad's Q12 texture coordinates per resolved
   palette entry instead of re-encoding them for every emitted block. A
   full-mesh `000002` client-jar benchmark measured a 9.3% lower mesh median over

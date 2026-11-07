@@ -25,9 +25,26 @@
   相机 uniform 并重新投影半透明层，为视频导出复用 GPU 资源。
 - 新增 `animate` 命令和 `litematic-video` crate：关键帧相机时间线、MP4/GIF
   ffmpeg 编码、GPU 常驻帧会话与 CPU 逐帧回退。
+- `serve`/`supervise` 协议升级到 v4，支持 MP4/GIF 视频任务：`hello.video`
+  能力、`animation`/`encoder`/`quality` 请求字段、`kind: "video"` 结果、
+  `encodeMs` 以及 `--ffmpeg`。`supervise` 新增 `--video-timeout`（默认 600 秒），
+  视频任务不再受 60 秒图片超时限制。
+- `--encoder auto` 现在会在目标输出尺寸上探测 NVENC、Quick Sync、AMF、
+  VideoToolbox 和 VAAPI，并按平台优先级选择可用硬件编码器；探测失败回退
+  libx264。显式硬件编码器不可用时返回 `ENCODER_UNAVAILABLE`，不会静默回退。
+- ffmpeg 版本解析支持 `YYYY-MM-DD-git-...` 形式的 nightly 构建。
 
 ### 性能
 
+- GPU 视频帧会话复用 readback buffer 并直接从映射内存 resolve，避免每帧
+  16 MiB 的额外拷贝。600 帧 1024x1024 ss2 基准的进程峰值 RSS 从 260.2 MiB
+  降到 179.8 MiB，总时间从 11.15 s 降到 9.69 s。
+- GPU 视频帧会话在初始化时抽取半透明 quad，帧循环不再逐帧扫描全部网格页。
+  交错 A/B 中 `projectUs` 中位数从 4.21 s 降到 3.12 s，总时间从 11.51 s
+  降到 10.61 s。
+- NVENC 质量映射按 libx264 校准为 CQ 32/28/23。medium 的 600 帧输出从
+  21.2 MB 降到 13.3 MB，静态帧 SSIM 0.959，与 libx264 medium 的 0.957
+  相当。
 - 网格构建按解析后的 palette 条目缓存每个模型 quad 的 Q12 纹理坐标，不再为
   每个输出方块重复编码 UV。`000002` client-jar 全量网格基准在 16 轮交替测试中
   mesh 中位数下降 9.3%，PNG 输出逐字节一致。

@@ -358,9 +358,9 @@ pub(super) struct Triangle {
     /// Projected screen coordinates. Bounded by the output size, so f32 is
     /// enough for subpixel precision and costs half of the f64 representation.
     pub(super) points: [[f32; 3]; 3],
-    color: [u8; 4],
-    shade: f32,
-    ao: [u8; 3],
+    pub(super) color: [u8; 4],
+    pub(super) shade: f32,
+    pub(super) ao: [u8; 3],
     pub(super) uvs: [[i16; 2]; 3],
     pub(super) texture: u16,
     /// The average depth is kept as f64 so the sort order is independent of the

@@ -88,7 +88,17 @@ Spec: `tasks/video-export-spec.md`
 - [x] Add `GpuFrameSession::render_frames` and a GPU parity/loop test.
 - [x] Add the `litematic-video` timeline and ffmpeg encoder, plus
       `blockscope animate` with CPU fallback.
-- [ ] Service protocol v4 and hardware encoders (next slice).
+- [x] Service protocol v4: `hello.video`, video requests/results,
+      `--ffmpeg`, and the supervisor `--video-timeout`.
+- [x] Hardware encoder probing: lazy device probe at the target output size,
+      `auto` fallback to libx264, explicit `ENCODER_UNAVAILABLE`.
+- [x] Manual smoke test with NVENC, ffmpeg, and a client jar: MP4/GIF through
+      `animate`, `serve`, and `supervise`. QSV/AMF/VAAPI/VideoToolbox still need
+      testing on the matching hardware matrix.
+- [x] Record the 600-frame 1024x1024 video memory, CPU/GPU, and
+      software/hardware encoder results in `docs/performance.md`.
+- [ ] Optional: repeat the encoder matrix on release hardware for every
+      advertised hardware family.
 
 ## Pending verification
 

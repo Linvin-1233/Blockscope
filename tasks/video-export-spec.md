@@ -1,6 +1,6 @@
 # Spec: Animated video export (`video-export`)
 
-**Status:** Draft for review
+**Status:** Implemented (CLI, protocol v4, and hardware probing)
 **Date:** 2026-11-04
 **Owner:** CLI / rendering
 **Depends on:** optional `gpu` feature, external `ffmpeg`

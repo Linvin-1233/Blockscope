@@ -799,21 +799,28 @@ pub(super) fn composite_wboit(
     queue.submit(Some(encoder.finish()));
 }
 
-pub(super) fn read_back(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    color: &wgpu::Texture,
-    width: u32,
-    height: u32,
-    row_stride: u32,
-    size: u64,
-) -> Result<Vec<u8>, GpuFailure> {
-    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+pub(super) fn create_readback_buffer(device: &wgpu::Device, size: u64) -> wgpu::Buffer {
+    device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("blockscope gpu readback"),
         size,
         usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
         mapped_at_creation: false,
-    });
+    })
+}
+
+/// Copy the color target into `buffer`, map it, and hand the mapped bytes to
+/// `resolve`. The caller owns the buffer so a frame session can reuse it.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn read_back<T>(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    color: &wgpu::Texture,
+    buffer: &wgpu::Buffer,
+    width: u32,
+    height: u32,
+    row_stride: u32,
+    resolve: impl FnOnce(&[u8]) -> T,
+) -> Result<T, GpuFailure> {
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("blockscope gpu readback"),
     });
@@ -825,7 +832,7 @@ pub(super) fn read_back(
             aspect: wgpu::TextureAspect::All,
         },
         wgpu::TexelCopyBufferInfo {
-            buffer: &buffer,
+            buffer,
             layout: wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(row_stride),
@@ -867,16 +874,15 @@ pub(super) fn read_back(
         }
     }
 
-    let data = slice
-        .get_mapped_range()
-        .map_err(|error| {
-            GpuFailure::Failed(RenderError::gpu(format!(
-                "GPU readback view failed: {error}"
-            )))
-        })?
-        .to_vec();
+    let data = slice.get_mapped_range().map_err(|error| {
+        GpuFailure::Failed(RenderError::gpu(format!(
+            "GPU readback view failed: {error}"
+        )))
+    })?;
+    let result = resolve(&data);
+    drop(data);
     buffer.unmap();
-    Ok(data)
+    Ok(result)
 }
 
 pub(super) fn align_to(value: usize, alignment: usize) -> usize {

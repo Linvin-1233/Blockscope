@@ -105,6 +105,16 @@ fn keeps_a_caller_supplied_hash() {
 }
 
 #[test]
+fn video_jobs_use_the_video_timeout() {
+    let image = Some(Duration::from_secs(60));
+    let video = Some(Duration::from_secs(600));
+    assert_eq!(job_timeout(false, video, image), image);
+    assert_eq!(job_timeout(true, video, image), video);
+    assert_eq!(job_timeout(true, None, image), None);
+    assert_eq!(job_timeout(false, video, None), None);
+}
+
+#[test]
 fn route_key_returns_empty_hash_for_unreadable_paths() {
     let line = json!({
         "type": "render",
