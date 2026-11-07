@@ -8,8 +8,8 @@ use crate::{
 use clap::Args;
 use litematic_render::terminal::enable_windows_virtual_terminal;
 use litematic_render::{
-    Background, LightingProfile, RenderBackend, RenderOptions, RenderOutput, RenderStatistics,
-    StreamingRenderer, TerminalOptions, TerminalProtocol, detect_terminal_pixels,
+    Background, LightingProfile, RenderBackend, RenderOptions, RenderOutput, RenderPrecision,
+    RenderStatistics, StreamingRenderer, TerminalOptions, TerminalProtocol, detect_terminal_pixels,
     detect_terminal_protocol, detect_terminal_size, encode_terminal, fit_terminal_cells, write_png,
 };
 use std::env;
@@ -84,6 +84,9 @@ pub(crate) struct RenderArgs {
     /// Rasterization backend: cpu, gpu, or auto (default).
     #[arg(long, default_value = "auto", value_name = "BACKEND")]
     backend: String,
+    /// CPU projection precision: exact (default) or fast.
+    #[arg(long, default_value = "exact", value_name = "PRECISION")]
+    precision: String,
     /// Supersampling factor: 1, 2, 3, or 4.
     #[arg(long, default_value_t = 2, value_name = "N")]
     supersample: u32,
@@ -145,6 +148,12 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
             args.backend
         ))
     })?;
+    let precision = RenderPrecision::parse(&args.precision).ok_or_else(|| {
+        CliError::input(format!(
+            "INVALID_RENDER_OPTIONS: unknown precision '{}'",
+            args.precision
+        ))
+    })?;
     let views = parse_views(&args)?;
     let view_count = views.len();
     let texture_filter = parse_texture_filter(&args.assets.texture_filter)?;
@@ -182,6 +191,7 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
                 threads: args.threads,
                 texture_filter,
                 backend,
+                precision,
                 ..Default::default()
             };
             apply_render_limits(args.limits.force_limits, &mut options);

@@ -2,7 +2,7 @@ use super::RenderStatistics;
 use super::bin::{TileJob, bin_quads, bin_triangles, effective_tile_size, tile_jobs, worker_count};
 use super::downsample::downsample;
 use super::geometry::to_u8;
-use super::project::{QuadRender, Triangle, merge_page_statistics, push_page_quads};
+use super::project::{QuadTable, Triangle, merge_page_statistics, project_pages_for_slice};
 use super::spill::{
     DEFAULT_TRANSLUCENT_BUDGET, TranslucentParts, TranslucentStore, TranslucentWriter,
 };
@@ -330,7 +330,7 @@ impl StreamTile {
 
 /// Projected geometry for one worker's slice of a streamed page chunk.
 struct ChunkPart {
-    quads: Vec<QuadRender>,
+    quads: QuadTable,
     bins: Vec<Vec<u32>>,
     translucent: Vec<Triangle>,
     statistics: RenderStatistics,
@@ -398,20 +398,8 @@ fn project_slice(
     height: u32,
     tile_size: u32,
 ) -> ChunkPart {
-    let mut quads = Vec::with_capacity(pages.iter().map(|page| page.quads.len()).sum());
-    let mut translucent = Vec::new();
     let mut statistics = RenderStatistics::default();
-    for page in pages {
-        push_page_quads(
-            page,
-            camera,
-            options,
-            &mut statistics,
-            &mut quads,
-            &mut translucent,
-        );
-    }
-
+    let (quads, translucent) = project_pages_for_slice(pages, camera, options, &mut statistics);
     let bins = bin_quads(&quads, width, height, tile_size);
     ChunkPart {
         quads,
@@ -452,7 +440,7 @@ fn render_parts_tile(
 
     for part in parts {
         for &index in &part.bins[tile_index] {
-            buffer.rasterize_quad(&part.quads[index as usize]);
+            buffer.rasterize_table_quad(&part.quads, index);
         }
     }
 }

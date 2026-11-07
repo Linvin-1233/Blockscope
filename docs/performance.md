@@ -160,6 +160,32 @@ Three experiments were measured and reverted:
 Absolute run times drift with host state; use the alternating A/B table for the
 P0 claim rather than comparing runs from different times.
 
+### Fast CPU projection (2026-11-07)
+
+`--precision fast` stores the CPU screen-space quad table as f32 instead of f64.
+`QuadRender` drops from 128 to 80 bytes, so projection writes and tile reads
+shrink; the default `exact` path and its golden PNGs are unchanged.
+
+Same-process A/B with the client jar, alternating exact and fast iterations on
+one parsed scene and mesh:
+
+| Case | Exact median | Fast median | Gain |
+| --- | ---: | ---: | ---: |
+| `000002` jar | 2,403.8 ms | 2,007.4 ms | 16.5% |
+| `000001` jar | 10,781.2 ms | 10,203.4 ms | 5.4% |
+
+Peak working set on the CLI path: `000001` exact 575-579 MB, fast 546-549 MB;
+`000002` is about 206 MB in both modes.
+
+Fast mode is explicitly approximate. On the same 1024x1024 jar renders it
+changed 297 pixels (0.028%, max channel delta 21, no alpha changes) on `000002`,
+and 66,978 pixels (6.388%, max delta 180, 75 alpha pixels) on `000001`. It is
+opt-in; use `exact` for byte-for-byte comparisons.
+
+A hybrid fast point (f32 x/y with f64 depth) was also measured. It reduced the
+`000001` difference only from 6.39% to 5.94% while cutting the `000002` gain
+from 16.5% to 10.7%, so the simpler f32 point is the shipped fast path.
+
 ## Review-fix performance check (2026-10-28)
 
 The review fixes do not change the single-view render hot path. The pre-review `HEAD` binary (`6b5a680`) and the current build were compared on the same host with the same commands:

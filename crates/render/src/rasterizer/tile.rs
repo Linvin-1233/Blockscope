@@ -1,7 +1,7 @@
 use super::TileProgress;
 use super::bin::TileJob;
-use super::geometry::{bounds, edge, intersects, quad_bounds, to_u8};
-use super::project::{QuadRender, Triangle, vertex_color};
+use super::geometry::{bounds, edge, to_u8};
+use super::project::{QuadPoint, QuadRender, QuadTable, Triangle, vertex_color};
 use crate::{Background, RenderOptions};
 use litematic_material::{TextureFilter, TextureSet};
 use litematic_mesh::{NO_TEXTURE, RenderLayer, decode_uv};
@@ -31,7 +31,7 @@ impl<'a> TileProgressSink<'a> {
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn render_tiles_parallel(
-    quads: &[QuadRender],
+    quads: &QuadTable,
     translucent: &[Triangle],
     options: &RenderOptions,
     jobs: &[TileJob],
@@ -95,7 +95,7 @@ pub(super) struct TileOutput {
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn render_tile(
-    quads: &[QuadRender],
+    quads: &QuadTable,
     translucent_triangles: &[Triangle],
     options: &RenderOptions,
     job: &TileJob,
@@ -131,26 +131,12 @@ pub(super) fn render_tile(
         };
 
         for &index in quad_candidates {
-            let quad = &quads[index as usize];
-            if !intersects(
-                &quad_bounds(&quad.points),
-                job.x0,
-                job.y0,
-                job.width,
-                job.height,
-            ) {
-                continue;
-            }
-            tile.rasterize_quad(quad);
+            tile.rasterize_table_quad(quads, index);
         }
 
         let mut translucent: Vec<&Triangle> = triangle_candidates
             .iter()
             .map(|&index| &translucent_triangles[index as usize])
-            .filter(|triangle| {
-                let points = triangle.points_f64();
-                intersects(&bounds(&points), job.x0, job.y0, job.width, job.height)
-            })
             .collect();
         translucent.sort_by(|left, right| right.depth_key.total_cmp(&left.depth_key));
 
@@ -285,7 +271,14 @@ impl RowEdge {
 }
 
 impl TileBuffer<'_> {
-    pub(super) fn rasterize_quad(&mut self, quad: &QuadRender) {
+    pub(super) fn rasterize_table_quad(&mut self, table: &QuadTable, index: u32) {
+        match table {
+            QuadTable::Exact(quads) => self.rasterize_quad(&quads[index as usize]),
+            QuadTable::Fast(quads) => self.rasterize_quad(&quads[index as usize]),
+        }
+    }
+
+    pub(super) fn rasterize_quad<P: QuadPoint>(&mut self, quad: &QuadRender<P>) {
         let colors = [
             vertex_color(quad.color, quad.shade, quad.ao[0]),
             vertex_color(quad.color, quad.shade, quad.ao[1]),
@@ -306,19 +299,20 @@ impl TileBuffer<'_> {
         };
 
         if quad.texture == NO_TEXTURE {
-            self.rasterize_quad_triangles::<false>(quad, &colors, &uvs);
+            self.rasterize_quad_triangles::<false, P>(quad, &colors, &uvs);
         } else {
-            self.rasterize_quad_triangles::<true>(quad, &colors, &uvs);
+            self.rasterize_quad_triangles::<true, P>(quad, &colors, &uvs);
         }
     }
 
-    fn rasterize_quad_triangles<const TEXTURED: bool>(
+    fn rasterize_quad_triangles<const TEXTURED: bool, P: QuadPoint>(
         &mut self,
-        quad: &QuadRender,
+        quad: &QuadRender<P>,
         colors: &[[f32; 4]; 4],
         uvs: &[[f32; 2]; 4],
     ) {
-        let points = [quad.points[0], quad.points[1], quad.points[2]];
+        let projected = quad.points.map(QuadPoint::to_f64);
+        let points = [projected[0], projected[1], projected[2]];
         let triangle_colors = [colors[0], colors[1], colors[2]];
         let triangle_uvs = [uvs[0], uvs[1], uvs[2]];
         self.rasterize_triangle::<TEXTURED>(
@@ -329,7 +323,7 @@ impl TileBuffer<'_> {
             quad.layer,
         );
 
-        let points = [quad.points[0], quad.points[2], quad.points[3]];
+        let points = [projected[0], projected[2], projected[3]];
         let triangle_colors = [colors[0], colors[2], colors[3]];
         let triangle_uvs = [uvs[0], uvs[2], uvs[3]];
         self.rasterize_triangle::<TEXTURED>(

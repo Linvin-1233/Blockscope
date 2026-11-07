@@ -2,8 +2,8 @@ mod support;
 
 use litematic_mesh::{ColorBlockCatalog, Mesh, MeshLimits, Rgba, build_mesh};
 use litematic_render::{
-    Background, LightingProfile, RenderErrorCode, RenderOptions, RenderOutput, StreamingRenderer,
-    render_mesh, write_png,
+    Background, LightingProfile, RenderErrorCode, RenderOptions, RenderOutput, RenderPrecision,
+    StreamingRenderer, render_mesh, write_png,
 };
 use litematic_scene::{BlockStateKey, Scene};
 use std::collections::BTreeMap;
@@ -510,6 +510,66 @@ fn spilled_translucent_matches_the_table_path() {
 
     assert_eq!(table.rgba, streamed.rgba);
     assert_eq!(table.statistics, streamed.statistics);
+}
+
+#[test]
+fn fast_precision_stays_close_to_the_exact_reference() {
+    let values: Vec<u32> = (0..60).map(|index| (index % 3) as u32).collect();
+    let scene = scene(vec![region(
+        "main",
+        [0, 0, 0],
+        [5, 3, 4],
+        &["minecraft:air", "minecraft:stone", "minecraft:water"],
+        &values,
+    )]);
+    let mesh = build(&scene);
+    let exact_options = RenderOptions {
+        width: 96,
+        height: 96,
+        supersample: 2,
+        precision: RenderPrecision::Exact,
+        ..Default::default()
+    };
+    let fast_options = RenderOptions {
+        precision: RenderPrecision::Fast,
+        ..exact_options.clone()
+    };
+
+    let exact = render_mesh(&scene, &mesh, &exact_options).unwrap();
+    let fast = render_mesh(&scene, &mesh, &fast_options).unwrap();
+
+    assert_eq!(exact.rgba.len(), fast.rgba.len());
+    let mut differing = 0u64;
+    let mut max_delta = 0u8;
+    let mut alpha_mismatch = 0u64;
+    for (left, right) in exact
+        .rgba
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(fast.rgba.as_chunks::<4>().0)
+    {
+        if left != right {
+            differing += 1;
+            if left[3] != right[3] {
+                alpha_mismatch += 1;
+            }
+            for channel in 0..4 {
+                max_delta = max_delta.max(left[channel].abs_diff(right[channel]));
+            }
+        }
+    }
+
+    let pixels = exact.rgba.len() as u64 / 4;
+    assert_eq!(alpha_mismatch, 0, "fast precision must keep alpha coverage");
+    assert!(
+        differing * 100 <= pixels,
+        "fast precision changed {differing} of {pixels} pixels"
+    );
+    assert!(
+        max_delta <= 2,
+        "fast precision moved a channel by {max_delta}"
+    );
 }
 
 #[test]

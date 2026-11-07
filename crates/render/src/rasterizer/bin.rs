@@ -1,5 +1,5 @@
 use super::geometry::{bounds, quad_bounds};
-use super::project::{QuadRender, Triangle};
+use super::project::{QuadPoint, QuadRender, QuadTable, Triangle};
 pub(super) use litematic_scene::worker_count;
 #[derive(Clone, Copy, Debug)]
 pub(super) struct TileJob {
@@ -35,7 +35,19 @@ pub(super) fn tile_jobs(width: u32, height: u32, tile_size: u32) -> Vec<TileJob>
 /// Group quads by the tiles their screen bounds cover, so each tile only visits
 /// candidates that can actually write a fragment.
 pub(super) fn bin_quads(
-    quads: &[QuadRender],
+    table: &QuadTable,
+    width: u32,
+    height: u32,
+    tile_size: u32,
+) -> Vec<Vec<u32>> {
+    match table {
+        QuadTable::Exact(quads) => bin_quads_typed(quads, width, height, tile_size),
+        QuadTable::Fast(quads) => bin_quads_typed(quads, width, height, tile_size),
+    }
+}
+
+fn bin_quads_typed<P: QuadPoint>(
+    quads: &[QuadRender<P>],
     width: u32,
     height: u32,
     tile_size: u32,
@@ -48,7 +60,7 @@ pub(super) fn bin_quads(
     let max_tile_y = f64::from(tiles_y - 1);
 
     for (index, quad) in quads.iter().enumerate() {
-        let bbox = quad_bounds(&quad.points);
+        let bbox = quad_bounds(&quad.points.map(QuadPoint::to_f64));
         if bbox[2] < 0.0
             || bbox[0] >= f64::from(width)
             || bbox[3] < 0.0

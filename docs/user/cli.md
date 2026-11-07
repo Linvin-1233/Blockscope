@@ -76,6 +76,7 @@ Terminal images are fitted to the visible grid: when the rendered pixel size wou
 | `--lighting flat-v1\|simple-ao-v1`                             | Lighting profile; default `simple-ao-v1`                                                                                          |
 | `--threads <N>`                                                | Mesh/rasterizer threads; `0` uses available parallelism, capped at 256                                                            |
 | `--backend cpu\|gpu\|auto`                                     | Rasterization backend; default `auto`; `cpu` is the byte-exact reference, `gpu` forces hardware and fails if unavailable           |
+| `--precision exact\|fast`                                      | CPU projection precision; default `exact`; `fast` stores screen points as f32 and trades a small pixel difference for speed and memory |
 | `--stream-mesh [auto\|on\|off]`                                | Build and render mesh in page chunks without retaining the full mesh; default `auto`; `off` retains the full mesh                 |
 | `--greedy-mesh`                                                | Merge coplanar unit faces with identical material and lighting; useful for large flat or repetitive surfaces, disabled by default |
 | `--force-limits`                                               | Raises input, scene, mesh, and pixel caps; can exhaust memory                                                                     |
@@ -97,6 +98,13 @@ or the adapter is software-only, `auto` uses the CPU. An explicit `gpu` request
 fails with `BACKEND_UNAVAILABLE` instead. GPU output is visually close to the
 CPU reference but is not byte-exact across drivers, so golden PNGs and
 determinism guarantees remain on `cpu`.
+
+`--precision fast` only affects CPU projection. The default `exact` path is
+unchanged. Fast stores screen points as f32, which shrinks the projected table
+and speeds up projection and tile reads, but can change edge coverage and
+nearest-neighbor texture sampling on a small fraction of pixels. Use it for
+previews or throughput, not for byte-for-byte comparisons. The GPU backend
+ignores the setting.
 
 ## Terminal Style and Progress
 

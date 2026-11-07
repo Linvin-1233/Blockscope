@@ -7,7 +7,7 @@ use crate::{
 };
 use clap::Args;
 use litematic_render::{
-    Background, LightingProfile, RenderBackend, RenderOptions, render_mesh,
+    Background, LightingProfile, RenderBackend, RenderOptions, RenderPrecision, render_mesh,
     render_mesh_with_progress, render_mesh_with_textures, render_mesh_with_textures_and_progress,
     will_stream, write_png,
 };
@@ -50,6 +50,9 @@ pub(crate) struct BenchArgs {
     /// Rasterization backend: cpu, gpu, or auto (default).
     #[arg(long, default_value = "auto", value_name = "BACKEND")]
     backend: String,
+    /// CPU projection precision: exact (default) or fast.
+    #[arg(long, default_value = "exact", value_name = "PRECISION")]
+    precision: String,
     /// Print the report as JSON.
     #[arg(long)]
     json: bool,
@@ -89,6 +92,12 @@ pub(crate) fn run(args: BenchArgs) -> Result<(), CliError> {
         CliError::input(format!(
             "INVALID_RENDER_OPTIONS: unknown backend '{}'",
             args.backend
+        ))
+    })?;
+    let precision = RenderPrecision::parse(&args.precision).ok_or_else(|| {
+        CliError::input(format!(
+            "INVALID_RENDER_OPTIONS: unknown precision '{}'",
+            args.precision
         ))
     })?;
     let texture_filter = parse_texture_filter(&args.assets.texture_filter)?;
@@ -139,6 +148,7 @@ pub(crate) fn run(args: BenchArgs) -> Result<(), CliError> {
         threads: args.threads,
         texture_filter,
         backend,
+        precision,
         ..Default::default()
     };
     apply_render_limits(args.limits.force_limits, &mut options);
@@ -241,6 +251,7 @@ pub(crate) fn run(args: BenchArgs) -> Result<(), CliError> {
             "supersample": options.supersample,
             "threads": options.threads,
             "backend": output.statistics.backend_used.as_str(),
+            "precision": options.precision.as_str(),
             "parseMs": parse_ms,
             "meshMs": mesh_ms,
             "renderMs": timing_json(&render),

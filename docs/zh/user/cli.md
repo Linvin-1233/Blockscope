@@ -74,6 +74,7 @@ blockscope preview model.litematic -t
 | `--background transparent\|#RRGGBB[AA]`                        | 背景，默认透明                                                        |
 | `--lighting flat-v1\|simple-ao-v1`                             | 光照配置，默认 `simple-ao-v1`                                         |
 | `--threads <N>`                                                | mesh/rasterizer 线程数，`0` 使用可用并行度，最多 256                  |
+| `--precision exact\|fast`                                      | CPU 投影精度，默认 `exact`；`fast` 用 f32 存储屏幕点，以少量像素差异换取速度和内存 |
 | `--stream-mesh [auto\|on\|off]`                                | 按页构建并渲染网格，不保留完整 Mesh；默认 `auto`，`off` 保留完整 Mesh |
 | `--greedy-mesh`                                                | 合并同材质、同光照的共面单位面；适合大平面和重复结构，默认关闭        |
 | `--force-limits`                                               | 提高输入、场景、网格和像素上限；可能耗尽内存                          |
@@ -90,6 +91,11 @@ GPU 后端需要完整 Mesh，不能与 `--stream-mesh on` 同用。若二进制
 特性或没有可用硬件适配器，显式 `gpu` 会以 `BACKEND_UNAVAILABLE` 失败；`auto`
 则回退到 CPU。GPU 输出与 CPU 参考视觉接近，但跨驱动不保证逐字节一致，因此
 golden PNG 和确定性保证仍以 `cpu` 为准。
+
+`--precision fast` 只影响 CPU 投影。默认 `exact` 路径不变；`fast` 用 f32
+存储屏幕点，缩小编译后的投影表并加快投影和 tile 读取，但可能改变少量像素的
+边缘覆盖和最近邻纹理采样。它适合预览和吞吐优先的场景，不适合逐字节比较。
+GPU 后端忽略该设置。
 
 ## 终端样式与进度
 

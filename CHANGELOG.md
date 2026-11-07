@@ -30,6 +30,9 @@
   下一个 bucket。`000001` client-jar 的受控 A/B 中 render 时间下降约 5%，
   峰值内存不变，PNG SHA-256 与之前一致。离屏 quad/triangle 不再进入 tile
   分箱，tile 内重复的包围盒检查已移除。
+- `render`/`bench` 新增 `--precision exact|fast`。默认 `exact` 路径不变；
+  `fast` 用 f32 存储 CPU 投影表，`QuadRender` 从 128 B 降到 80 B，真实 jar
+  上 render 提升约 5-16%，代价是少量像素差异。GPU 后端忽略该设置。
 
 ### 变更
 

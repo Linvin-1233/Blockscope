@@ -39,6 +39,10 @@ User-facing changes are recorded here. The format follows
   A/B on `000001` with the client jar measured about 5% lower render time with
   unchanged peak memory and the same PNG SHA-256. Off-screen quads and triangles
   no longer enter the tile bins, and the repeated tile bounding-box test is gone.
+- `render`/`bench` accept `--precision exact|fast`. The default exact path is
+  unchanged; fast stores the CPU projection table as f32, shrinking `QuadRender`
+  from 128 to 80 bytes and improving measured jar render time by about 5-16% at
+  the cost of a small pixel difference. The GPU backend ignores it.
 
 ### Changed
 

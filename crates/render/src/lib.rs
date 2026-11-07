@@ -12,7 +12,7 @@ pub use backend::RenderBackend;
 pub use camera::Camera;
 pub use error::{RenderError, RenderErrorCode};
 pub use litematic_material::TextureFilter;
-pub use options::{Background, LightingProfile, RenderOptions};
+pub use options::{Background, LightingProfile, RenderOptions, RenderPrecision};
 pub use png::write_png;
 #[cfg(feature = "gpu")]
 pub use rasterizer::GpuFrameSession;

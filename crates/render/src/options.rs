@@ -40,6 +40,35 @@ impl LightingProfile {
     }
 }
 
+/// CPU projection precision.
+///
+/// `Exact` keeps screen-space quad points in f64 and is the byte-exact
+/// reference. `Fast` stores them as f32, which shrinks the projected table and
+/// may move edge and texture-sampling pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RenderPrecision {
+    Exact,
+    Fast,
+}
+
+impl RenderPrecision {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Exact => "exact",
+            Self::Fast => "fast",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "exact" => Some(Self::Exact),
+            "fast" => Some(Self::Fast),
+            _ => None,
+        }
+    }
+}
+
 /// Background fill behind the scene.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Background {
@@ -81,6 +110,8 @@ pub struct RenderOptions {
     pub max_supersampled_pixels: u64,
     /// Use the page-streaming rasterizer even when the quad table would fit.
     pub force_streaming: bool,
+    /// CPU projection precision. GPU output ignores this setting.
+    pub precision: RenderPrecision,
     /// Rasterization backend. See [`RenderBackend`].
     pub backend: RenderBackend,
 }
@@ -103,6 +134,7 @@ impl Default for RenderOptions {
             max_pixels: 16_777_216,
             max_supersampled_pixels: 33_554_432,
             force_streaming: false,
+            precision: RenderPrecision::Exact,
             backend: RenderBackend::Auto,
         }
     }
@@ -213,5 +245,18 @@ mod tests {
     #[test]
     fn default_backend_is_auto() {
         assert_eq!(RenderOptions::default().backend, RenderBackend::Auto);
+    }
+
+    #[test]
+    fn default_precision_is_exact() {
+        assert_eq!(
+            RenderOptions::default().precision,
+            super::RenderPrecision::Exact
+        );
+        assert_eq!(
+            super::RenderPrecision::parse("fast"),
+            Some(super::RenderPrecision::Fast)
+        );
+        assert_eq!(super::RenderPrecision::parse("bogus"), None);
     }
 }

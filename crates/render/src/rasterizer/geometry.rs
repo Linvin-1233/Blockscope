@@ -1,10 +1,4 @@
 //! Small geometry helpers shared by projection, binning, and tile rasterization.
-pub(super) fn intersects(bbox: &[f64; 4], x0: u32, y0: u32, width: u32, height: u32) -> bool {
-    let max_x = f64::from(x0 + width);
-    let max_y = f64::from(y0 + height);
-    bbox[2] >= f64::from(x0) && bbox[0] < max_x && bbox[3] >= f64::from(y0) && bbox[1] < max_y
-}
-
 pub(super) fn bounds(points: &[[f64; 3]; 3]) -> [f64; 4] {
     let mut min_x = f64::INFINITY;
     let mut max_x = f64::NEG_INFINITY;

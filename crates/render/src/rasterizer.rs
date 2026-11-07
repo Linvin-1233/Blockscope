@@ -24,7 +24,7 @@ pub use policy::{
 use bin::{bin_quads, bin_triangles, effective_tile_size, tile_jobs, worker_count};
 use downsample::downsample;
 use gpu::{GpuFailure, try_render as try_gpu_render};
-use project::{QuadRender, Triangle, project_mesh_pages};
+use project::{QuadRender, QuadTable, Triangle, project_mesh_pages};
 pub use stream::StreamingRenderer;
 use stream::chunk_ranges;
 use tile::{TileProgressSink, render_tile, render_tiles_parallel};
@@ -142,7 +142,7 @@ pub fn render_mesh_with_textures_and_progress(
 /// Streaming revisits tiles across page chunks, so callers should show
 /// indeterminate progress instead of a tile percentage in that case.
 pub fn will_stream(mesh: &Mesh, options: &RenderOptions) -> bool {
-    options.force_streaming || table_bytes(mesh) > tile_buffer_bytes(options)
+    options.force_streaming || table_bytes(mesh, options) > tile_buffer_bytes(options)
 }
 
 fn render_mesh_internal(
@@ -222,7 +222,7 @@ fn render_mesh_internal(
 }
 
 fn rasterize(
-    quads: &[QuadRender],
+    quads: &QuadTable,
     translucent: &[Triangle],
     options: &RenderOptions,
     statistics: &mut RenderStatistics,
@@ -307,10 +307,12 @@ fn rasterize(
     }
 }
 
-fn table_bytes(mesh: &Mesh) -> u64 {
-    mesh.statistics
-        .quads
-        .saturating_mul(std::mem::size_of::<QuadRender>() as u64)
+fn table_bytes(mesh: &Mesh, options: &RenderOptions) -> u64 {
+    let size = match options.precision {
+        crate::RenderPrecision::Exact => std::mem::size_of::<QuadRender<[f64; 3]>>(),
+        crate::RenderPrecision::Fast => std::mem::size_of::<QuadRender<[f32; 3]>>(),
+    };
+    mesh.statistics.quads.saturating_mul(size as u64)
 }
 
 fn tile_buffer_bytes(options: &RenderOptions) -> u64 {

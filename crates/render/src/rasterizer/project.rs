@@ -1,7 +1,7 @@
 use super::RenderStatistics;
 use super::geometry::{bounds, dot3};
 use crate::camera::Camera;
-use crate::{LightingProfile, RenderOptions};
+use crate::{LightingProfile, RenderOptions, RenderPrecision};
 use litematic_mesh::{Mesh, MeshPage, NO_TEXTURE, RenderLayer, ambient_occlusion_level, decode_uv};
 
 pub(super) fn project_mesh_pages(
@@ -10,24 +10,86 @@ pub(super) fn project_mesh_pages(
     options: &RenderOptions,
     statistics: &mut RenderStatistics,
     threads: usize,
-) -> (Vec<QuadRender>, Vec<Triangle>) {
+) -> (QuadTable, Vec<Triangle>) {
     project_pages(&mesh.pages, camera, options, statistics, threads)
 }
 
-/// Project an arbitrary page slice. The GPU backend calls this once per
-/// retained page chunk so its staging buffers stay bounded.
+/// Project an arbitrary page slice and return a table matching the requested
+/// precision.
 pub(super) fn project_pages(
     pages: &[MeshPage],
     camera: &Camera,
     options: &RenderOptions,
     statistics: &mut RenderStatistics,
     threads: usize,
-) -> (Vec<QuadRender>, Vec<Triangle>) {
+) -> (QuadTable, Vec<Triangle>) {
+    match options.precision {
+        RenderPrecision::Exact => {
+            let (quads, translucent) =
+                project_pages_typed::<[f64; 3]>(pages, camera, options, statistics, threads);
+            (QuadTable::Exact(quads), translucent)
+        }
+        RenderPrecision::Fast => {
+            let (quads, translucent) =
+                project_pages_typed::<[f32; 3]>(pages, camera, options, statistics, threads);
+            (QuadTable::Fast(quads), translucent)
+        }
+    }
+}
+
+/// Project a contiguous page slice with the selected precision.
+pub(super) fn project_pages_for_slice(
+    pages: &[MeshPage],
+    camera: &Camera,
+    options: &RenderOptions,
+    statistics: &mut RenderStatistics,
+) -> (QuadTable, Vec<Triangle>) {
+    match options.precision {
+        RenderPrecision::Exact => {
+            let mut quads = Vec::with_capacity(pages.iter().map(|page| page.quads.len()).sum());
+            let mut translucent = Vec::new();
+            for page in pages {
+                push_page_quads::<[f64; 3]>(
+                    page,
+                    camera,
+                    options,
+                    statistics,
+                    &mut quads,
+                    &mut translucent,
+                );
+            }
+            (QuadTable::Exact(quads), translucent)
+        }
+        RenderPrecision::Fast => {
+            let mut quads = Vec::with_capacity(pages.iter().map(|page| page.quads.len()).sum());
+            let mut translucent = Vec::new();
+            for page in pages {
+                push_page_quads::<[f32; 3]>(
+                    page,
+                    camera,
+                    options,
+                    statistics,
+                    &mut quads,
+                    &mut translucent,
+                );
+            }
+            (QuadTable::Fast(quads), translucent)
+        }
+    }
+}
+
+fn project_pages_typed<P: QuadPoint>(
+    pages: &[MeshPage],
+    camera: &Camera,
+    options: &RenderOptions,
+    statistics: &mut RenderStatistics,
+    threads: usize,
+) -> (Vec<QuadRender<P>>, Vec<Triangle>) {
     if threads <= 1 || pages.len() <= 1 {
         let mut quads = Vec::new();
         let mut translucent = Vec::new();
         for page in pages {
-            push_page_quads(
+            push_page_quads::<P>(
                 page,
                 camera,
                 options,
@@ -41,7 +103,7 @@ pub(super) fn project_pages(
 
     let workers = threads.clamp(1, pages.len());
     let chunk_size = pages.len().div_ceil(workers);
-    let chunk_results: Vec<(Vec<QuadRender>, Vec<Triangle>, RenderStatistics)> =
+    let chunk_results: Vec<(Vec<QuadRender<P>>, Vec<Triangle>, RenderStatistics)> =
         std::thread::scope(|scope| {
             let handles: Vec<_> = pages
                 .chunks(chunk_size)
@@ -51,7 +113,7 @@ pub(super) fn project_pages(
                         let mut local_translucent = Vec::new();
                         let mut local_stats = RenderStatistics::default();
                         for page in chunk {
-                            push_page_quads(
+                            push_page_quads::<P>(
                                 page,
                                 camera,
                                 options,
@@ -94,12 +156,12 @@ pub(super) fn merge_page_statistics(target: &mut RenderStatistics, source: &Rend
     target.textured_triangles += source.textured_triangles;
 }
 
-pub(super) fn push_page_quads(
+pub(super) fn push_page_quads<P: QuadPoint>(
     page: &MeshPage,
     camera: &Camera,
     options: &RenderOptions,
     statistics: &mut RenderStatistics,
-    quads: &mut Vec<QuadRender>,
+    quads: &mut Vec<QuadRender<P>>,
     translucent: &mut Vec<Triangle>,
 ) {
     for quad in &page.quads {
@@ -187,7 +249,7 @@ pub(super) fn push_page_quads(
 
         if keep && layer != RenderLayer::Translucent {
             quads.push(QuadRender {
-                points: projected,
+                points: projected.map(P::from_f64),
                 color,
                 shade,
                 ao,
@@ -288,18 +350,54 @@ pub(super) fn push_page_translucent(
     }
 }
 
+/// A projected screen point stored in the requested precision.
+pub(super) trait QuadPoint: Copy + Send {
+    fn from_f64(value: [f64; 3]) -> Self;
+    fn to_f64(self) -> [f64; 3];
+}
+
+impl QuadPoint for [f64; 3] {
+    #[inline]
+    fn from_f64(value: [f64; 3]) -> Self {
+        value
+    }
+
+    #[inline]
+    fn to_f64(self) -> [f64; 3] {
+        self
+    }
+}
+
+impl QuadPoint for [f32; 3] {
+    #[inline]
+    fn from_f64(value: [f64; 3]) -> Self {
+        value.map(|component| component as f32)
+    }
+
+    #[inline]
+    fn to_f64(self) -> [f64; 3] {
+        self.map(f64::from)
+    }
+}
+
 /// An opaque or cutout quad, projected once and split into triangles per tile.
 /// Colors and texture coordinates are stored compactly; the exact float values
 /// are reconstructed when the quad is rasterized into a tile.
 #[derive(Debug, Clone)]
-pub(super) struct QuadRender {
-    pub(super) points: [[f64; 3]; 4],
+pub(super) struct QuadRender<P> {
+    pub(super) points: [P; 4],
     pub(super) color: [u8; 4],
     pub(super) shade: f32,
     pub(super) ao: [u8; 4],
     pub(super) uvs: [[i16; 2]; 4],
     pub(super) texture: u16,
     pub(super) layer: RenderLayer,
+}
+
+/// One projected table whose point storage follows `RenderPrecision`.
+pub(super) enum QuadTable {
+    Exact(Vec<QuadRender<[f64; 3]>>),
+    Fast(Vec<QuadRender<[f32; 3]>>),
 }
 
 /// A translucent triangle. Only translucent geometry needs sorting, so this is
@@ -412,29 +510,8 @@ impl Triangle {
         )
     }
 
-    /// Expand the compact screen points for binning and rasterization.
-    pub(super) fn points_f64(&self) -> [[f64; 3]; 3] {
-        self.points.map(|point| point.map(f64::from))
-    }
-
-    pub(super) fn colors(&self) -> [[f32; 4]; 3] {
-        [
-            vertex_color(self.color, self.shade, self.ao[0]),
-            vertex_color(self.color, self.shade, self.ao[1]),
-            vertex_color(self.color, self.shade, self.ao[2]),
-        ]
-    }
-
-    pub(super) fn uvs(&self) -> [[f32; 2]; 3] {
-        [
-            decode_uv(self.uvs[0]),
-            decode_uv(self.uvs[1]),
-            decode_uv(self.uvs[2]),
-        ]
-    }
-
-    /// Serialize one depth-bucket record. The tile index is not used by the
-    /// GPU translucent store, so it stays zero and is ignored on decode.
+    /// Encode a depth-bucket record. The tile field is unused by the GPU
+    /// translucent spill and kept for the shared record layout.
     #[cfg(feature = "gpu")]
     pub(super) fn encode_depth_record(&self) -> [u8; Self::RECORD_BYTES] {
         self.encode_record(0)
@@ -457,17 +534,44 @@ impl Triangle {
             depth_key,
         }
     }
+
+    /// Expand the compact screen points for binning and rasterization.
+    pub(super) fn points_f64(&self) -> [[f64; 3]; 3] {
+        self.points.map(|point| point.map(f64::from))
+    }
+
+    pub(super) fn colors(&self) -> [[f32; 4]; 3] {
+        [
+            vertex_color(self.color, self.shade, self.ao[0]),
+            vertex_color(self.color, self.shade, self.ao[1]),
+            vertex_color(self.color, self.shade, self.ao[2]),
+        ]
+    }
+
+    pub(super) fn uvs(&self) -> [[f32; 2]; 3] {
+        [
+            decode_uv(self.uvs[0]),
+            decode_uv(self.uvs[1]),
+            decode_uv(self.uvs[2]),
+        ]
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::Triangle;
+    use super::{QuadRender, Triangle};
 
     #[test]
     fn translucent_triangle_stays_compact() {
         // Twelve million retained triangles are the dominant textured path
         // cost; keep a regression from silently widening this struct.
         assert!(std::mem::size_of::<Triangle>() <= 72);
+    }
+
+    #[test]
+    fn fast_quad_table_is_compact() {
+        assert_eq!(std::mem::size_of::<QuadRender<[f64; 3]>>(), 128);
+        assert_eq!(std::mem::size_of::<QuadRender<[f32; 3]>>(), 80);
     }
 
     #[cfg(feature = "gpu")]

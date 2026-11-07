@@ -321,6 +321,46 @@ fn render_writes_png() {
 }
 
 #[test]
+fn render_accepts_fast_precision() {
+    let file = write_fixture(&basic_fixture());
+    let path = file.path().to_str().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let output_path = dir.path().join("fast.png");
+
+    let output = run(&[
+        "render",
+        path,
+        "--output",
+        output_path.to_str().unwrap(),
+        "--width",
+        "64",
+        "--height",
+        "64",
+        "--precision",
+        "fast",
+    ]);
+
+    assert!(output.status.success());
+    let bytes = fs::read(&output_path).unwrap();
+    assert!(bytes.starts_with(&[0x89, b'P', b'N', b'G']));
+}
+
+#[test]
+fn render_rejects_unknown_precision() {
+    let file = write_fixture(&basic_fixture());
+    let path = file.path().to_str().unwrap();
+
+    let output = run(&["render", path, "--precision", "bogus"]);
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(
+        stderr.contains("INVALID_RENDER_OPTIONS: unknown precision 'bogus'"),
+        "{stderr}"
+    );
+}
+
+#[test]
 fn parallel_views_match_sequential_outputs() {
     let file = write_fixture(&basic_fixture());
     let path = file.path().to_str().unwrap();

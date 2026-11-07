@@ -185,6 +185,10 @@ Cross-plant quads are emitted as double-sided pairs, so one side survives the cu
 
 Each edge function is affine in screen x on a fixed scanline, so the rasterizer solves the three zero crossings to bound the row, then walks the two endpoints in with the exact per-pixel edge test. A row only visits the pixels inside the triangle instead of the whole bounding box. Barycentric weights, depth, and color interpolation still use the same expressions in the same order, so accepted fragments are bit-identical while most rejected pixels are never visited. `pixelsTested` counts the fragments that remain after this clipping.
 
+### Projection precision
+
+The CPU projection table stores screen points as f64 by default. `--precision fast` stores them as f32, which shrinks `QuadRender` from 128 bytes to 80 bytes and reduces projection writes and tile reads. The exact path remains the byte-exact reference; golden PNGs and hash comparisons should stay on `exact`. Fast mode also stores depth as f32 and can change edge coverage and nearest-neighbor texture sampling on a small fraction of pixels. On the client-jar fixtures it changed 0.028% of pixels for `000002` (max channel delta 21) and 6.4% for `000001` (max delta 180, 73 alpha pixels). Use it for previews and throughput, not for exact parity.
+
 ### Untextured triangles
 
 The triangle loop is monomorphized on whether the quad has a texture. The untextured specialization drops the per-pixel texture-sample branch and UV interpolation entirely. On the 77.6M-quad color-only fixture, the 1024x1024 supersample-2 render dropped from 4.1 s to 3.9 s with identical output.
@@ -325,6 +329,7 @@ This is an approximation. It does not run Minecraft sky/block light propagation,
 | supersample                              | 2            |
 | threads                                  | 0 (auto)     |
 | texture filter                           | nearest      |
+| precision                                | exact        |
 | max pixels                               | 16,777,216   |
 | max supersampled pixels                  | 33,554,432   |
 
