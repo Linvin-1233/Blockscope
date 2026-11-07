@@ -177,8 +177,8 @@ pub(crate) fn run(args: AnimateArgs) -> Result<(), CliError> {
     };
     video_settings.validate().map_err(video_error)?;
     let ffmpeg = Ffmpeg::discover(args.ffmpeg.as_deref()).map_err(video_error)?;
-    ffmpeg
-        .resolve_encoder(encoder_choice, format)
+    let resolved_encoder = ffmpeg
+        .resolve_encoder(encoder_choice, format, args.width, args.height)
         .map_err(video_error)?;
 
     let mut base_options = RenderOptions {
@@ -311,7 +311,7 @@ pub(crate) fn run(args: AnimateArgs) -> Result<(), CliError> {
             "looped": plan.looped(),
             "easing": args.easing,
             "backend": actual_backend.as_str(),
-            "encoder": ffmpeg.resolve_encoder(encoder_choice, format).map_err(video_error)?,
+            "encoder": resolved_encoder.name(),
             "bytes": bytes,
             "parseMs": parse_ms,
             "meshMs": mesh_ms,
@@ -337,7 +337,10 @@ pub(crate) fn run(args: AnimateArgs) -> Result<(), CliError> {
             plan.duration()
         );
         ui::outln!("{MUTED}backend:{MUTED:#} {}", actual_backend.as_str());
-        ui::outln!("{MUTED}encoder:{MUTED:#} {bytes} bytes");
+        ui::outln!(
+            "{MUTED}encoder:{MUTED:#} {} ({bytes} bytes)",
+            resolved_encoder.name()
+        );
         ui::outln!(
             "{MUTED}timings:{MUTED:#} parse {parse_ms:.1} ms, mesh {mesh_ms:.1} ms, render {render_ms:.1} ms, encode {encode_ms:.1} ms, total {total_ms:.1} ms"
         );

@@ -1,7 +1,7 @@
 use litematic_video::{
     Encoder, Ffmpeg, Quality, VideoEncoder, VideoErrorCode, VideoFormat, VideoSettings,
 };
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 fn settings(format: VideoFormat, transparent: bool) -> VideoSettings {
     VideoSettings {
@@ -21,6 +21,17 @@ fn frame(red: u8) -> Vec<u8> {
     [red, 40, 80, 255].repeat(16 * 16)
 }
 
+fn discover() -> Option<Ffmpeg> {
+    let path = std::env::var_os("BLOCKSCOPE_FFMPEG").map(PathBuf::from);
+    match Ffmpeg::discover(path.as_deref()) {
+        Ok(ffmpeg) => Some(ffmpeg),
+        Err(_) => {
+            eprintln!("skipping ffmpeg integration test: ffmpeg is not installed");
+            None
+        }
+    }
+}
+
 #[test]
 fn missing_ffmpeg_is_reported_with_a_stable_code() {
     let error = Ffmpeg::discover(Some(Path::new("definitely-not-ffmpeg")))
@@ -30,8 +41,7 @@ fn missing_ffmpeg_is_reported_with_a_stable_code() {
 
 #[test]
 fn encodes_mp4_and_gif_when_ffmpeg_is_available() {
-    let Ok(ffmpeg) = Ffmpeg::discover(None) else {
-        eprintln!("skipping ffmpeg integration test: ffmpeg is not installed");
+    let Some(ffmpeg) = discover() else {
         return;
     };
     let dir = tempfile::tempdir().unwrap();
@@ -57,4 +67,38 @@ fn encodes_mp4_and_gif_when_ffmpeg_is_available() {
     assert!(gif_bytes > 0);
     let header = std::fs::read(&gif_path).unwrap();
     assert!(header.starts_with(b"GIF8"));
+}
+
+#[test]
+fn auto_encoder_falls_back_or_uses_hardware_at_the_target_size() {
+    let Some(ffmpeg) = discover() else {
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("auto.mp4");
+    let mut settings = settings(VideoFormat::Mp4, false);
+    settings.width = 256;
+    settings.height = 256;
+    settings.encoder = Encoder::Auto;
+
+    let resolved = ffmpeg
+        .resolve_encoder(
+            settings.encoder,
+            settings.format,
+            settings.width,
+            settings.height,
+        )
+        .expect("auto resolution must not fail");
+    let mut encoder = VideoEncoder::start(&ffmpeg, &settings, &path).expect("start auto encoder");
+    assert_eq!(encoder.encoder_name(), resolved.name());
+    let pixels = 256 * 256;
+    for index in 0..2 {
+        encoder
+            .write_frame(&[index * 40, 40, 80, 255].repeat(pixels))
+            .unwrap();
+    }
+    let bytes = encoder.finish().unwrap();
+    assert!(bytes > 0);
+    let header = std::fs::read(&path).unwrap();
+    assert_eq!(&header[4..8], b"ftyp");
 }

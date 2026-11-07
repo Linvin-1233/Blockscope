@@ -1,5 +1,7 @@
 use crate::VideoError;
-use crate::ffmpeg::{Encoder, Ffmpeg, Quality, VideoFormat, stderr_tail};
+use crate::ffmpeg::{
+    Encoder, Ffmpeg, Quality, ResolvedEncoder, VAAPI_DEVICE, VideoFormat, stderr_tail,
+};
 use std::ffi::OsString;
 use std::fs;
 use std::io::{Read, Write};
@@ -77,11 +79,34 @@ impl VideoEncoder {
         settings: &VideoSettings,
         output: &Path,
     ) -> Result<Self, VideoError> {
+        let resolved = ffmpeg.resolve_encoder(
+            settings.encoder,
+            settings.format,
+            settings.width,
+            settings.height,
+        )?;
+        Self::start_resolved(ffmpeg, settings, resolved, output)
+    }
+
+    pub fn start_resolved(
+        ffmpeg: &Ffmpeg,
+        settings: &VideoSettings,
+        resolved: ResolvedEncoder,
+        output: &Path,
+    ) -> Result<Self, VideoError> {
         settings.validate()?;
-        ffmpeg.resolve_encoder(settings.encoder, settings.format)?;
         match settings.format {
-            VideoFormat::Mp4 => Ok(Self::Mp4(Mp4Encoder::start(ffmpeg, settings, output)?)),
+            VideoFormat::Mp4 => Ok(Self::Mp4(Mp4Encoder::start(
+                ffmpeg, settings, resolved, output,
+            )?)),
             VideoFormat::Gif => Ok(Self::Gif(GifEncoder::start(ffmpeg, settings, output)?)),
+        }
+    }
+
+    pub fn encoder_name(&self) -> &'static str {
+        match self {
+            Self::Mp4(encoder) => encoder.resolved.name(),
+            Self::Gif(_) => "gif",
         }
     }
 
@@ -108,14 +133,20 @@ pub struct Mp4Encoder {
     stderr_thread: Option<JoinHandle<Vec<u8>>>,
     temp: Option<PathBuf>,
     output: PathBuf,
+    resolved: ResolvedEncoder,
     expected_frame_bytes: usize,
     frames: u64,
 }
 
 impl Mp4Encoder {
-    fn start(ffmpeg: &Ffmpeg, settings: &VideoSettings, output: &Path) -> Result<Self, VideoError> {
+    fn start(
+        ffmpeg: &Ffmpeg,
+        settings: &VideoSettings,
+        resolved: ResolvedEncoder,
+        output: &Path,
+    ) -> Result<Self, VideoError> {
         let temp = temporary_output_path(output, "mp4");
-        let args = mp4_args(settings, &temp);
+        let args = mp4_args(settings, resolved, &temp);
         let mut child = Command::new(ffmpeg.path())
             .args(&args)
             .stdin(Stdio::piped())
@@ -137,6 +168,7 @@ impl Mp4Encoder {
             stderr_thread,
             temp: Some(temp),
             output: output.to_path_buf(),
+            resolved,
             expected_frame_bytes: settings.frame_bytes()?,
             frames: 0,
         })
@@ -304,24 +336,71 @@ impl Drop for GifEncoder {
     }
 }
 
-fn mp4_args(settings: &VideoSettings, output: &Path) -> Vec<OsString> {
+fn mp4_args(settings: &VideoSettings, resolved: ResolvedEncoder, output: &Path) -> Vec<OsString> {
     let mut args = raw_input_args(settings, "pipe:0");
+    if resolved.is_hardware() && resolved.encoder() == Encoder::Vaapi {
+        args.splice(0..0, ["-vaapi_device".into(), VAAPI_DEVICE.into()]);
+    }
+    args.extend(["-an".into(), "-c:v".into(), resolved.name().into()]);
+    match resolved.encoder() {
+        Encoder::Software => args.extend([
+            "-preset".into(),
+            settings.quality.preset().into(),
+            "-crf".into(),
+            settings.quality.crf().into(),
+        ]),
+        Encoder::Nvenc => args.extend([
+            "-preset".into(),
+            "fast".into(),
+            "-rc".into(),
+            "vbr".into(),
+            "-cq".into(),
+            settings.quality.crf().into(),
+            "-b:v".into(),
+            "0".into(),
+        ]),
+        Encoder::Qsv => args.extend([
+            "-preset".into(),
+            "fast".into(),
+            "-global_quality".into(),
+            settings.quality.crf().into(),
+        ]),
+        Encoder::Amf => args.extend([
+            "-quality".into(),
+            settings.quality.amf_quality().into(),
+            "-rc".into(),
+            "cqp".into(),
+            "-qp_i".into(),
+            settings.quality.crf().into(),
+            "-qp_p".into(),
+            settings.quality.crf().into(),
+            "-qp_b".into(),
+            settings.quality.crf().into(),
+        ]),
+        Encoder::VideoToolbox => args.extend([
+            "-q:v".into(),
+            settings.quality.videotoolbox_quality().into(),
+        ]),
+        Encoder::Vaapi => {
+            args.extend(["-vf".into(), "format=nv12,hwupload".into()]);
+            args.extend(["-qp".into(), settings.quality.crf().into()]);
+        }
+        Encoder::Auto => unreachable!("auto is resolved before encoding"),
+    }
+    if resolved.encoder() == Encoder::Software {
+        args.extend([
+            "-threads".into(),
+            settings.encode_threads().to_string().into(),
+        ]);
+    }
+    if resolved.encoder() != Encoder::Vaapi {
+        args.extend(["-pix_fmt".into(), "yuv420p".into()]);
+    }
     args.extend([
-        "-an".into(),
-        "-c:v".into(),
-        "libx264".into(),
-        "-preset".into(),
-        settings.quality.preset().into(),
-        "-crf".into(),
-        settings.quality.crf().into(),
-        "-pix_fmt".into(),
-        "yuv420p".into(),
         "-movflags".into(),
         "+faststart".into(),
         "-map_metadata".into(),
         "-1".into(),
-        "-threads".into(),
-        settings.encode_threads().to_string().into(),
         "-f".into(),
         "mp4".into(),
         output.as_os_str().to_os_string(),
@@ -479,7 +558,7 @@ fn file_size(path: &Path) -> Result<u64, VideoError> {
 mod tests {
     use super::{gif_encode_args, gif_palette_args, mp4_args};
     use crate::encoder::VideoSettings;
-    use crate::ffmpeg::{Encoder, Quality, VideoFormat};
+    use crate::ffmpeg::{Encoder, Quality, ResolvedEncoder, VideoFormat};
     use std::path::Path;
 
     fn settings(format: VideoFormat, transparent: bool, looped: bool) -> VideoSettings {
@@ -496,16 +575,24 @@ mod tests {
         }
     }
 
+    fn strings(args: &[std::ffi::OsString]) -> Vec<String> {
+        args.iter()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    fn resolved(encoder: Encoder) -> ResolvedEncoder {
+        ResolvedEncoder::new(encoder, encoder.ffmpeg_name().unwrap_or("gif"))
+    }
+
     #[test]
     fn mp4_args_encode_rgba_to_h264_with_faststart() {
         let args = mp4_args(
             &settings(VideoFormat::Mp4, false, true),
+            resolved(Encoder::Software),
             Path::new("out.mp4"),
         );
-        let text: Vec<String> = args
-            .iter()
-            .map(|arg| arg.to_string_lossy().into_owned())
-            .collect();
+        let text = strings(&args);
         assert!(text.windows(2).any(|pair| pair == ["-c:v", "libx264"]));
         assert!(text.windows(2).any(|pair| pair == ["-pix_fmt", "yuv420p"]));
         assert!(
@@ -513,6 +600,60 @@ mod tests {
                 .any(|pair| pair == ["-movflags", "+faststart"])
         );
         assert!(text.windows(2).any(|pair| pair == ["-framerate", "24"]));
+        assert!(text.windows(2).any(|pair| pair == ["-crf", "23"]));
+        assert!(text.windows(2).any(|pair| pair == ["-threads", "2"]));
+    }
+
+    #[test]
+    fn hardware_encoders_use_their_own_quality_flags() {
+        let nvenc = strings(&mp4_args(
+            &settings(VideoFormat::Mp4, false, true),
+            resolved(Encoder::Nvenc),
+            Path::new("out.mp4"),
+        ));
+        assert!(nvenc.windows(2).any(|pair| pair == ["-c:v", "h264_nvenc"]));
+        assert!(nvenc.windows(2).any(|pair| pair == ["-cq", "23"]));
+        assert!(!nvenc.windows(2).any(|pair| pair == ["-crf", "23"]));
+        assert!(!nvenc.iter().any(|arg| arg == "-threads"));
+
+        let qsv = strings(&mp4_args(
+            &settings(VideoFormat::Mp4, false, true),
+            resolved(Encoder::Qsv),
+            Path::new("out.mp4"),
+        ));
+        assert!(qsv.windows(2).any(|pair| pair == ["-global_quality", "23"]));
+
+        let amf = strings(&mp4_args(
+            &settings(VideoFormat::Mp4, false, true),
+            resolved(Encoder::Amf),
+            Path::new("out.mp4"),
+        ));
+        assert!(amf.windows(2).any(|pair| pair == ["-quality", "balanced"]));
+        assert!(amf.windows(2).any(|pair| pair == ["-qp_i", "23"]));
+
+        let videotoolbox = strings(&mp4_args(
+            &settings(VideoFormat::Mp4, false, true),
+            resolved(Encoder::VideoToolbox),
+            Path::new("out.mp4"),
+        ));
+        assert!(videotoolbox.windows(2).any(|pair| pair == ["-q:v", "65"]));
+
+        let vaapi = strings(&mp4_args(
+            &settings(VideoFormat::Mp4, false, true),
+            resolved(Encoder::Vaapi),
+            Path::new("out.mp4"),
+        ));
+        assert!(
+            vaapi
+                .windows(2)
+                .any(|pair| pair == ["-vaapi_device", "/dev/dri/renderD128"])
+        );
+        assert!(
+            vaapi
+                .windows(2)
+                .any(|pair| pair == ["-vf", "format=nv12,hwupload"])
+        );
+        assert!(!vaapi.windows(2).any(|pair| pair == ["-pix_fmt", "yuv420p"]));
     }
 
     #[test]

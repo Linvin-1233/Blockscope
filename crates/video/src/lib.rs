@@ -11,7 +11,7 @@ mod timeline;
 
 pub use encoder::{VideoEncoder, VideoSettings};
 pub use error::{VideoError, VideoErrorCode};
-pub use ffmpeg::{Encoder, Ffmpeg, MINIMUM_VERSION, Quality, VideoFormat};
+pub use ffmpeg::{Encoder, Ffmpeg, MINIMUM_VERSION, Quality, ResolvedEncoder, VideoFormat};
 pub use timeline::{Animation, Easing, FramePlan, Keyframe};
 
 pub const CRATE_NAME: &str = "litematic-video";
