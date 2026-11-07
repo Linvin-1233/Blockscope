@@ -1,20 +1,15 @@
-#[cfg(feature = "gpu")]
-use crate::ui::WARNING;
 use crate::ui::progress::Progress;
 use crate::ui::{self, ACCENT, BOLD, MUTED};
+use crate::video::video_error;
 use crate::{
     AssetArgs, CliError, GEOMETRY_IGNORES_BLOCK_ENTITY_NBT, LimitArgs, MeshOptionArgs,
     PreparedScene, apply_render_limits, load_materials, load_scene, mesh_limits, parse_background,
     parse_texture_filter, prepare_scene, warn_forced,
 };
 use clap::Args;
-use litematic_render::{
-    Background, LightingProfile, RenderBackend, RenderOptions, RenderOutput, render_mesh,
-    render_mesh_with_textures,
-};
+use litematic_render::{Background, LightingProfile, RenderBackend, RenderOptions};
 use litematic_video::{
-    Animation, Easing, Encoder, Ffmpeg, FramePlan, Keyframe, Quality, VideoEncoder, VideoError,
-    VideoFormat, VideoSettings,
+    Animation, Easing, Encoder, Ffmpeg, Keyframe, Quality, VideoFormat, VideoSettings,
 };
 use std::path::PathBuf;
 use std::time::Instant;
@@ -177,7 +172,7 @@ pub(crate) fn run(args: AnimateArgs) -> Result<(), CliError> {
     };
     video_settings.validate().map_err(video_error)?;
     let ffmpeg = Ffmpeg::discover(args.ffmpeg.as_deref()).map_err(video_error)?;
-    let resolved_encoder = ffmpeg
+    ffmpeg
         .resolve_encoder(encoder_choice, format, args.width, args.height)
         .map_err(video_error)?;
 
@@ -228,75 +223,24 @@ pub(crate) fn run(args: AnimateArgs) -> Result<(), CliError> {
         mesh_ms,
     } = prepared?;
 
-    #[cfg(feature = "gpu")]
-    let textures = snapshot.as_ref().map(|snapshot| snapshot.textures());
-    #[cfg(feature = "gpu")]
-    let mut gpu_session: Option<litematic_render::GpuFrameSession<'_>> = None;
-    #[cfg(feature = "gpu")]
-    let mut actual_backend = RenderBackend::Cpu;
-    #[cfg(not(feature = "gpu"))]
-    let actual_backend = RenderBackend::Cpu;
-    match backend {
-        RenderBackend::Cpu => {}
-        RenderBackend::Gpu | RenderBackend::Auto => {
-            #[cfg(feature = "gpu")]
-            {
-                let first = frame_options(&base_options, &plan, 0, RenderBackend::Gpu);
-                match litematic_render::GpuFrameSession::new(&scene, &mesh, &first, textures) {
-                    Ok(session) => {
-                        gpu_session = Some(session);
-                        actual_backend = RenderBackend::Gpu;
-                    }
-                    Err(error) if backend == RenderBackend::Auto => {
-                        ui::errln!(
-                            "{WARNING}warning:{WARNING:#} GPU frame session unavailable, using CPU: {error}"
-                        );
-                    }
-                    Err(error) => return Err(CliError::from(error)),
-                }
-            }
-            #[cfg(not(feature = "gpu"))]
-            if backend == RenderBackend::Gpu {
-                return Err(CliError::input(
-                    "BACKEND_UNAVAILABLE: the GPU backend is not enabled in this build",
-                ));
-            }
-        }
-    }
-
     let encoder_stage = progress.stage("Encoding video");
-    let mut encoder =
-        VideoEncoder::start(&ffmpeg, &video_settings, &args.output).map_err(video_error)?;
     let render_stage = progress.stage("Rendering frames");
-    let mut render_ms = 0.0;
-    let mut encode_ms = 0.0;
-    for index in 0..plan.len() {
-        let frame_backend = if actual_backend == RenderBackend::Gpu {
-            RenderBackend::Gpu
-        } else {
-            RenderBackend::Cpu
-        };
-        let options = frame_options(&base_options, &plan, index, frame_backend);
-        render_stage.message(format!("Frame {}/{}", index + 1, plan.len()));
-        let render_started = Instant::now();
-        #[cfg(feature = "gpu")]
-        let output = if let Some(session) = gpu_session.as_mut() {
-            session.render_frame(&options).map_err(CliError::from)?
-        } else {
-            render_cpu(&scene, &mesh, snapshot.as_ref(), &options)?
-        };
-        #[cfg(not(feature = "gpu"))]
-        let output = render_cpu(&scene, &mesh, snapshot.as_ref(), &options)?;
-        render_ms += render_started.elapsed().as_secs_f64() * 1000.0;
-        let encode_started = Instant::now();
-        encoder.write_frame(&output.rgba).map_err(video_error)?;
-        encode_ms += encode_started.elapsed().as_secs_f64() * 1000.0;
-    }
+    let render = crate::video::render_video(
+        crate::video::VideoRender {
+            scene: &scene,
+            mesh: &mesh,
+            snapshot: snapshot.as_ref(),
+            options: base_options,
+            plan: &plan,
+            settings: &video_settings,
+            ffmpeg: &ffmpeg,
+            output: &args.output,
+        },
+        |index, total| render_stage.message(format!("Frame {}/{}", index + 1, total)),
+    )?;
     render_stage.finish();
-    let finish_started = Instant::now();
-    let bytes = encoder.finish().map_err(video_error)?;
-    encode_ms += finish_started.elapsed().as_secs_f64() * 1000.0;
     encoder_stage.finish();
+    let bytes = render.bytes;
 
     let total_ms = started.elapsed().as_secs_f64() * 1000.0;
     if args.json {
@@ -310,14 +254,19 @@ pub(crate) fn run(args: AnimateArgs) -> Result<(), CliError> {
             "durationSeconds": plan.duration(),
             "looped": plan.looped(),
             "easing": args.easing,
-            "backend": actual_backend.as_str(),
-            "encoder": resolved_encoder.name(),
+            "backend": render.backend.as_str(),
+            "encoder": render.encoder,
             "bytes": bytes,
             "parseMs": parse_ms,
             "meshMs": mesh_ms,
-            "renderMs": render_ms,
-            "encodeMs": encode_ms,
+            "renderMs": render.render_ms,
+            "encodeMs": render.encode_ms,
             "totalMs": total_ms,
+            "statistics": {
+                "triangles": render.statistics.triangles,
+                "culledBackfaces": render.statistics.culled_backfaces,
+                "backendUsed": render.statistics.backend_used.as_str(),
+            },
         });
         println!(
             "{}",
@@ -336,13 +285,15 @@ pub(crate) fn run(args: AnimateArgs) -> Result<(), CliError> {
             plan.fps(),
             plan.duration()
         );
-        ui::outln!("{MUTED}backend:{MUTED:#} {}", actual_backend.as_str());
+        ui::outln!("{MUTED}backend:{MUTED:#} {}", render.backend.as_str());
         ui::outln!(
             "{MUTED}encoder:{MUTED:#} {} ({bytes} bytes)",
-            resolved_encoder.name()
+            render.encoder
         );
         ui::outln!(
-            "{MUTED}timings:{MUTED:#} parse {parse_ms:.1} ms, mesh {mesh_ms:.1} ms, render {render_ms:.1} ms, encode {encode_ms:.1} ms, total {total_ms:.1} ms"
+            "{MUTED}timings:{MUTED:#} parse {parse_ms:.1} ms, mesh {mesh_ms:.1} ms, render {:.1} ms, encode {:.1} ms, total {total_ms:.1} ms",
+            render.render_ms,
+            render.encode_ms
         );
     }
     Ok(())
@@ -415,35 +366,4 @@ fn parse_keyframes(values: &[String]) -> Result<Vec<Keyframe>, CliError> {
         keyframes.push(Keyframe::new(time, yaw, elevation));
     }
     Ok(keyframes)
-}
-
-fn frame_options(
-    base: &RenderOptions,
-    plan: &FramePlan,
-    index: u32,
-    backend: RenderBackend,
-) -> RenderOptions {
-    let (yaw, elevation) = plan.camera_at(index).expect("frame index is in the plan");
-    let mut options = base.clone();
-    options.yaw = yaw;
-    options.elevation = elevation;
-    options.backend = backend;
-    options
-}
-
-fn render_cpu(
-    scene: &litematic_scene::Scene,
-    mesh: &litematic_mesh::Mesh,
-    snapshot: Option<&litematic_material::MaterialSnapshot>,
-    options: &RenderOptions,
-) -> Result<RenderOutput, CliError> {
-    match snapshot {
-        Some(snapshot) => render_mesh_with_textures(scene, mesh, options, snapshot.textures())
-            .map_err(CliError::from),
-        None => render_mesh(scene, mesh, options).map_err(CliError::from),
-    }
-}
-
-fn video_error(error: VideoError) -> CliError {
-    CliError::input(error.to_string())
 }

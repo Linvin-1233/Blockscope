@@ -16,6 +16,7 @@ mod runtime;
 mod serve;
 mod supervise;
 mod ui;
+mod video;
 
 pub(crate) use file_io::read_file_limited;
 pub(crate) use runtime::*;
