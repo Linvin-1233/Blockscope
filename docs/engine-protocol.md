@@ -35,7 +35,7 @@ supervisor                          worker
 ### Messages
 
 ```json
-{"type":"hello","protocolVersion":4,"engineVersion":"0.4.1","platform":"windows","cores":12,
+{"type":"hello","protocolVersion":4,"engineVersion":"0.5.0","platform":"windows","cores":12,
  "cpuQuota":null,"memoryLimitBytes":51401564160,"memoryAvailableBytes":21526179840,
  "suggestedWorkers":4,"suggestedThreads":3,"suggestedMaxQuads":54313181,
  "cacheBytes":10763089920,
@@ -324,7 +324,7 @@ Parser errors also pass through their stable `LitematicErrorCode` names, such as
 {
   "type": "hello",
   "protocolVersion": 4,
-  "engineVersion": "0.4.1",
+  "engineVersion": "0.5.0",
   "platform": "linux",
   "cores": 4,
   "memoryLimitBytes": 8589934592,

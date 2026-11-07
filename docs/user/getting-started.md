@@ -25,16 +25,16 @@ Download the installer or archive for your platform from [Releases](https://gith
 | macOS aarch64         | `aarch64-apple-darwin`       | `.tar.gz`       |
 | macOS x86_64          | `x86_64-apple-darwin`        | `.tar.gz`       |
 
-Names look like `blockscope-v0.4.1-x86_64-unknown-linux-musl.tar.gz`, and each file has a `.sha256` next to it with the extension removed (`blockscope-v0.4.1-x86_64-unknown-linux-musl.sha256`). Linux musl artifacts are linked statically against musl, the Linux GNU artifact requires glibc and the platform Vulkan loader, and the Windows artifact uses the static CRT. Windows, macOS, and Linux GNU archives enable the optional GPU feature; Linux musl archives are CPU-only.
+Names look like `blockscope-v0.5.0-x86_64-unknown-linux-musl.tar.gz`, and each file has a `.sha256` next to it with the extension removed (`blockscope-v0.5.0-x86_64-unknown-linux-musl.sha256`). Linux musl artifacts are linked statically against musl, the Linux GNU artifact requires glibc and the platform Vulkan loader, and the Windows artifact uses the static CRT. Windows, macOS, and Linux GNU archives enable the optional GPU feature; Linux musl archives are CPU-only.
 
 ### Linux
 
 ```bash
-curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.4.1/blockscope-v0.4.1-x86_64-unknown-linux-musl.tar.gz
-curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.4.1/blockscope-v0.4.1-x86_64-unknown-linux-musl.sha256
-sha256sum -c blockscope-v0.4.1-x86_64-unknown-linux-musl.sha256
-tar -xzf blockscope-v0.4.1-x86_64-unknown-linux-musl.tar.gz
-./blockscope-v0.4.1-x86_64-unknown-linux-musl/blockscope --version
+curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.5.0/blockscope-v0.5.0-x86_64-unknown-linux-musl.tar.gz
+curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.5.0/blockscope-v0.5.0-x86_64-unknown-linux-musl.sha256
+sha256sum -c blockscope-v0.5.0-x86_64-unknown-linux-musl.sha256
+tar -xzf blockscope-v0.5.0-x86_64-unknown-linux-musl.tar.gz
+./blockscope-v0.5.0-x86_64-unknown-linux-musl/blockscope --version
 ```
 
 For the GPU-enabled glibc archive, use the same commands with `x86_64-unknown-linux-gnu` in place of `x86_64-unknown-linux-musl`.
@@ -44,11 +44,11 @@ For the GPU-enabled glibc archive, use the same commands with `x86_64-unknown-li
 Use `aarch64-apple-darwin` for Apple Silicon (M-series) or `x86_64-apple-darwin` for Intel Macs:
 
 ```bash
-curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.4.1/blockscope-v0.4.1-aarch64-apple-darwin.tar.gz
-curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.4.1/blockscope-v0.4.1-aarch64-apple-darwin.sha256
-shasum -a 256 -c blockscope-v0.4.1-aarch64-apple-darwin.sha256
-tar -xzf blockscope-v0.4.1-aarch64-apple-darwin.tar.gz
-./blockscope-v0.4.1-aarch64-apple-darwin/blockscope --version
+curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.5.0/blockscope-v0.5.0-aarch64-apple-darwin.tar.gz
+curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.5.0/blockscope-v0.5.0-aarch64-apple-darwin.sha256
+shasum -a 256 -c blockscope-v0.5.0-aarch64-apple-darwin.sha256
+tar -xzf blockscope-v0.5.0-aarch64-apple-darwin.tar.gz
+./blockscope-v0.5.0-aarch64-apple-darwin/blockscope --version
 ```
 
 ### Windows: MSI installer (recommended)
@@ -56,7 +56,7 @@ tar -xzf blockscope-v0.4.1-aarch64-apple-darwin.tar.gz
 Installs per user, so no administrator rights are required:
 
 ```powershell
-$tag = "v0.4.1"
+$tag = "v0.5.0"
 $name = "blockscope-$tag-x86_64-pc-windows-msvc"
 Invoke-WebRequest "https://github.com/Linvin-1233/Blockscope/releases/download/$tag/$name.msi" -OutFile "$name.msi"
 Invoke-WebRequest "https://github.com/Linvin-1233/Blockscope/releases/download/$tag/$name.msi.sha256" -OutFile "$name.msi.sha256"
@@ -72,7 +72,7 @@ It installs to `%LOCALAPPDATA%\Programs\Blockscope` and appends that directory t
 Unpack it instead if you do not want an installed copy:
 
 ```powershell
-$tag = "v0.4.1"
+$tag = "v0.5.0"
 $name = "blockscope-$tag-x86_64-pc-windows-msvc"
 Invoke-WebRequest "https://github.com/Linvin-1233/Blockscope/releases/download/$tag/$name.zip" -OutFile "$name.zip"
 Invoke-WebRequest "https://github.com/Linvin-1233/Blockscope/releases/download/$tag/$name.sha256" -OutFile "$name.sha256"

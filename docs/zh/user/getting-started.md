@@ -25,16 +25,16 @@ title: "安装与快速开始"
 | macOS aarch64         | `aarch64-apple-darwin`       | `.tar.gz`       |
 | macOS x86_64          | `x86_64-apple-darwin`        | `.tar.gz`       |
 
-文件名形如 `blockscope-v0.4.1-x86_64-unknown-linux-musl.tar.gz`，旁边有去掉扩展名的 `.sha256` 校验文件（如 `blockscope-v0.4.1-x86_64-unknown-linux-musl.sha256`）。 Linux musl 产物静态链接 musl，Linux GNU 产物需要 glibc 和平台 Vulkan loader，Windows 产物静态链接 CRT。Windows、macOS 和 Linux GNU 发布包已启用可选 GPU 特性；Linux musl 发布包为 CPU-only。
+文件名形如 `blockscope-v0.5.0-x86_64-unknown-linux-musl.tar.gz`，旁边有去掉扩展名的 `.sha256` 校验文件（如 `blockscope-v0.5.0-x86_64-unknown-linux-musl.sha256`）。 Linux musl 产物静态链接 musl，Linux GNU 产物需要 glibc 和平台 Vulkan loader，Windows 产物静态链接 CRT。Windows、macOS 和 Linux GNU 发布包已启用可选 GPU 特性；Linux musl 发布包为 CPU-only。
 
 ### Linux
 
 ```bash
-curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.4.1/blockscope-v0.4.1-x86_64-unknown-linux-musl.tar.gz
-curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.4.1/blockscope-v0.4.1-x86_64-unknown-linux-musl.sha256
-sha256sum -c blockscope-v0.4.1-x86_64-unknown-linux-musl.sha256
-tar -xzf blockscope-v0.4.1-x86_64-unknown-linux-musl.tar.gz
-./blockscope-v0.4.1-x86_64-unknown-linux-musl/blockscope --version
+curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.5.0/blockscope-v0.5.0-x86_64-unknown-linux-musl.tar.gz
+curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.5.0/blockscope-v0.5.0-x86_64-unknown-linux-musl.sha256
+sha256sum -c blockscope-v0.5.0-x86_64-unknown-linux-musl.sha256
+tar -xzf blockscope-v0.5.0-x86_64-unknown-linux-musl.tar.gz
+./blockscope-v0.5.0-x86_64-unknown-linux-musl/blockscope --version
 ```
 
 GPU 版 glibc 压缩包使用相同命令，把 `x86_64-unknown-linux-musl` 换成 `x86_64-unknown-linux-gnu` 即可。
@@ -44,11 +44,11 @@ GPU 版 glibc 压缩包使用相同命令，把 `x86_64-unknown-linux-musl` 换�
 Apple Silicon（M 系列）选择 `aarch64-apple-darwin`，Intel Mac 选择 `x86_64-apple-darwin`：
 
 ```bash
-curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.4.1/blockscope-v0.4.1-aarch64-apple-darwin.tar.gz
-curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.4.1/blockscope-v0.4.1-aarch64-apple-darwin.sha256
-shasum -a 256 -c blockscope-v0.4.1-aarch64-apple-darwin.sha256
-tar -xzf blockscope-v0.4.1-aarch64-apple-darwin.tar.gz
-./blockscope-v0.4.1-aarch64-apple-darwin/blockscope --version
+curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.5.0/blockscope-v0.5.0-aarch64-apple-darwin.tar.gz
+curl -LO https://github.com/Linvin-1233/Blockscope/releases/download/v0.5.0/blockscope-v0.5.0-aarch64-apple-darwin.sha256
+shasum -a 256 -c blockscope-v0.5.0-aarch64-apple-darwin.sha256
+tar -xzf blockscope-v0.5.0-aarch64-apple-darwin.tar.gz
+./blockscope-v0.5.0-aarch64-apple-darwin/blockscope --version
 ```
 
 ### Windows：MSI 安装（推荐）
@@ -56,7 +56,7 @@ tar -xzf blockscope-v0.4.1-aarch64-apple-darwin.tar.gz
 按用户安装，不需要管理员权限：
 
 ```powershell
-$tag = "v0.4.1"
+$tag = "v0.5.0"
 $name = "blockscope-$tag-x86_64-pc-windows-msvc"
 Invoke-WebRequest "https://github.com/Linvin-1233/Blockscope/releases/download/$tag/$name.msi" -OutFile "$name.msi"
 Invoke-WebRequest "https://github.com/Linvin-1233/Blockscope/releases/download/$tag/$name.msi.sha256" -OutFile "$name.msi.sha256"
@@ -72,7 +72,7 @@ msiexec /i "$name.msi"
 不想安装时直接解压：
 
 ```powershell
-$tag = "v0.4.1"
+$tag = "v0.5.0"
 $name = "blockscope-$tag-x86_64-pc-windows-msvc"
 Invoke-WebRequest "https://github.com/Linvin-1233/Blockscope/releases/download/$tag/$name.zip" -OutFile "$name.zip"
 Invoke-WebRequest "https://github.com/Linvin-1233/Blockscope/releases/download/$tag/$name.sha256" -OutFile "$name.sha256"
