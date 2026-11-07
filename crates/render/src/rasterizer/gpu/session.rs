@@ -399,6 +399,7 @@ impl GpuRenderSession {
     fn finish_views_inner(mut self) -> Result<Vec<RenderOutput>, GpuFailure> {
         let device = &self.context.device;
         let queue = &self.context.queue;
+        let readback_buffer = backend::create_readback_buffer(device, self.readback_bytes);
         let mut outputs = Vec::with_capacity(self.views.len());
 
         for view in &mut self.views {
@@ -440,34 +441,38 @@ impl GpuRenderSession {
             }
 
             let readback_started = Instant::now();
-            let readback = match backend::read_back(
+            let mut resolve_us = 0;
+            let rgba = match backend::read_back(
                 device,
                 queue,
                 &view.targets.color,
+                &readback_buffer,
                 self.width,
                 self.height,
                 self.row_stride,
-                self.readback_bytes,
+                |readback| {
+                    let resolve_started = Instant::now();
+                    let rgba = resolve::resolve(
+                        readback,
+                        self.row_stride as usize,
+                        self.width,
+                        view.options.width,
+                        view.options.height,
+                        view.options.supersample,
+                        worker_count(view.options.threads, view.options.height as usize),
+                    );
+                    resolve_us = elapsed_us(resolve_started);
+                    rgba
+                },
             ) {
-                Ok(readback) => readback,
+                Ok(rgba) => rgba,
                 Err(error) => {
                     atlas::clear_cache();
                     return Err(error);
                 }
             };
-            self.timings.readback_us += elapsed_us(readback_started);
-
-            let resolve_started = Instant::now();
-            let rgba = resolve::resolve(
-                &readback,
-                self.row_stride as usize,
-                self.width,
-                view.options.width,
-                view.options.height,
-                view.options.supersample,
-                worker_count(view.options.threads, view.options.height as usize),
-            );
-            self.timings.resolve_us += elapsed_us(resolve_started);
+            self.timings.readback_us += elapsed_us(readback_started).saturating_sub(resolve_us);
+            self.timings.resolve_us += resolve_us;
 
             outputs.push(RenderOutput {
                 width: view.options.width,

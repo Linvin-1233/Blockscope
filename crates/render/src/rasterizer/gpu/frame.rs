@@ -36,7 +36,7 @@ pub struct GpuFrameSession<'a> {
     width: u32,
     height: u32,
     row_stride: u32,
-    readback_bytes: u64,
+    readback_buffer: wgpu::Buffer,
     frame_origin: [i32; 3],
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
@@ -96,6 +96,7 @@ impl<'a> GpuFrameSession<'a> {
             ))));
         }
 
+        let readback_buffer = backend::create_readback_buffer(device, readback_bytes);
         let (gpu_camera, frame_origin) =
             super::camera_uniform(scene, &camera).map_err(GpuFailure::Unavailable)?;
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -193,7 +194,7 @@ impl<'a> GpuFrameSession<'a> {
             width,
             height,
             row_stride: row_stride as u32,
-            readback_bytes,
+            readback_buffer,
             frame_origin,
             camera_buffer,
             camera_bind_group,
@@ -337,28 +338,31 @@ impl<'a> GpuFrameSession<'a> {
         }
 
         let readback_started = Instant::now();
-        let readback = backend::read_back(
+        let mut resolve_us = 0;
+        let rgba = backend::read_back(
             device,
             queue,
             &self.targets.color,
+            &self.readback_buffer,
             self.width,
             self.height,
             self.row_stride,
-            self.readback_bytes,
+            |readback| {
+                let resolve_started = Instant::now();
+                let rgba = resolve::resolve(
+                    readback,
+                    self.row_stride as usize,
+                    self.width,
+                    options.width,
+                    options.height,
+                    options.supersample,
+                    worker_count(options.threads, options.height as usize),
+                );
+                resolve_us = elapsed_us(resolve_started);
+                rgba
+            },
         )?;
-        let readback_us = elapsed_us(readback_started);
-
-        let resolve_started = Instant::now();
-        let rgba = resolve::resolve(
-            &readback,
-            self.row_stride as usize,
-            self.width,
-            options.width,
-            options.height,
-            options.supersample,
-            worker_count(options.threads, options.height as usize),
-        );
-        let resolve_us = elapsed_us(resolve_started);
+        let readback_us = elapsed_us(readback_started).saturating_sub(resolve_us);
 
         let mut timings = if self.frames_rendered == 0 {
             self.setup_timings.clone()
