@@ -1,7 +1,4 @@
-use super::super::project::{QuadRender, Triangle, vertex_color};
-use litematic_mesh::RenderLayer;
-
-pub(super) const FLAG_CUTOUT: u8 = 1;
+use super::super::project::Triangle;
 
 /// Interleaved vertex consumed by the offscreen pipeline.
 ///
@@ -59,24 +56,6 @@ impl Viewport {
             (1.0 - point[1] / self.height * 2.0) as f32,
             ((point[2] - self.depth_min) / self.depth_span).clamp(0.0, 0.999_999) as f32,
         ]
-    }
-}
-
-pub(super) fn push_quad(vertices: &mut Vec<GpuVertex>, quad: &QuadRender, viewport: &Viewport) {
-    let flags = if quad.layer == RenderLayer::Cutout {
-        FLAG_CUTOUT
-    } else {
-        0
-    };
-    for index in [0usize, 1, 2, 0, 2, 3] {
-        vertices.push(GpuVertex {
-            position: viewport.position(quad.points[index]),
-            color: vertex_color(quad.color, quad.shade, quad.ao[index]),
-            uv: quad.uvs[index],
-            texture: quad.texture,
-            flags,
-            _pad: 0,
-        });
     }
 }
 

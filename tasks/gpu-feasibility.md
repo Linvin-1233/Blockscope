@@ -32,9 +32,11 @@ opt-in for three reasons:
 - `litematic-render` feature `gpu` (`wgpu` 30, `pollster`, `bytemuck`),
   disabled by default.
 - `RenderBackend::{Cpu, Gpu, Auto}` and `RenderOptions.backend`; statistics
-  report `backendUsed`. `Auto` uses the GPU at 50,000 projected quads and falls
-  back to the CPU when no hardware adapter is available. An explicit `gpu`
-  request fails with `BACKEND_UNAVAILABLE`.
+  report `backendUsed`. The later `gpu-performance` path replaced the fixed
+  50,000-quad threshold with the measured policy in
+  `tasks/gpu-performance-plan.md`; `auto` falls back to the CPU when no hardware
+  adapter is available. An explicit `gpu` request fails with
+  `BACKEND_UNAVAILABLE`.
 - Process-wide cached device and opaque/translucent pipelines. The first render
   pays adapter and shader setup; later renders do not.
 - CPU `f64` projection and backface culling reused from the CPU path, followed

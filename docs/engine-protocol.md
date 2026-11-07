@@ -68,9 +68,19 @@ supervisor                          worker
 | `format`        | string   | `png`          | `png` only in v3                                                                                                                                       |
 | `outputDir`     | string   | required       | Absolute directory; created if missing                                                                                                                 |
 | `threads`       | integer  | `0`            | Mesh and rasterizer threads; `0` uses all cores, capped at 256                                                                                         |
+| `backend`       | string   | `auto`         | `cpu`, `gpu`, or `auto`; `cpu` is byte-exact, `gpu` fails when no hardware adapter is usable                                                           |
+| `streamMesh`    | string   | `off`          | `off`, `on`, or `auto`; page streaming without the full mesh, single view only                                                                         |
 | `elevation`     | number   | `30`           | Degrees, `-89.9..=89.9`                                                                                                                                |
 
 `width * height` must not exceed 16,777,216 output pixels. Supersampling multiplies both sides, so the internal image must not exceed 33,554,432 pixels. The worker validates all render options and creates `outputDir` before parsing the input or building a mesh.
+
+`backend` defaults to `auto`. The worker uses a deterministic policy: it chooses
+the GPU only for a hardware adapter, a safe f32 scene span, an allocation inside
+the 60 percent VRAM working set, at least 10,000 quads, and a predicted 5 percent
+win. `auto` may therefore return approximate GPU output; exact callers must send
+`cpu`. An explicit `gpu` request returns `BACKEND_UNAVAILABLE` instead of
+silently using the CPU. `streamMesh=on` supports one view; multi-view requests
+must omit it or use `off`. Streaming bypasses the scene/mesh cache.
 
 Paths must be absolute. The worker rejects relative paths with `INVALID_REQUEST`, so behaviour does not depend on the worker's working directory.
 
@@ -188,6 +198,8 @@ Paths must be absolute. The worker rejects relative paths with `INVALID_REQUEST`
 | `PNG_ENCODE_FAILED`           | maybe     | Encoder failure; retry once                                                                     |
 | `TEMP_STORAGE_FAILED`         | yes       | Translucent spill could not create, write, or read its temporary bucket files                   |
 | `TRANSLUCENT_BUDGET_EXCEEDED` | no        | Translucent geometry exceeded the in-memory budget on a target without spill storage            |
+| `BACKEND_UNAVAILABLE`         | no        | Explicit `gpu` has no usable hardware adapter, safe precision, or VRAM budget                   |
+| `GPU_RENDER_FAILED`           | no        | GPU device loss or a failure after a draw was submitted                                         |
 | `IO_ERROR`                    | maybe     | Input or output file access failed                                                              |
 | `INTERNAL_ERROR`              | maybe     | Bug; retry once, then report                                                                    |
 | `TIMEOUT`                     | yes       | Emitted by the supervisor, not the engine                                                       |

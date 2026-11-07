@@ -43,15 +43,21 @@ jobs:
             os: ubuntu-latest
           - target: aarch64-unknown-linux-musl
             os: ubuntu-latest
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            features: gpu
           - target: x86_64-pc-windows-msvc
             os: windows-latest
+            features: gpu
             # Link the static CRT so the executable runs without the
             # Visual C++ redistributable.
             rustflags: -C target-feature=+crt-static
           - target: aarch64-apple-darwin
             os: macos-latest
+            features: gpu
           - target: x86_64-apple-darwin
             os: macos-latest
+            features: gpu
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
@@ -65,6 +71,7 @@ jobs:
           bin: blockscope
           package: blockscope-cli
           target: ${{ matrix.target }}
+          features: ${{ matrix.features || '' }}
           archive: $bin-$tag-$target
           tar: unix
           zip: windows

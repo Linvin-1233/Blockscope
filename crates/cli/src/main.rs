@@ -388,6 +388,10 @@ impl CliError {
             message: format!("INTERNAL_ERROR: {error}"),
         }
     }
+
+    fn is_backend_unavailable(&self) -> bool {
+        self.message.starts_with("BACKEND_UNAVAILABLE")
+    }
 }
 
 impl fmt::Display for CliError {

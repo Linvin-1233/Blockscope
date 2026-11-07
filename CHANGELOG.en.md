@@ -8,6 +8,30 @@ User-facing changes are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- GPU performance path: compact `GpuQuad` instances with shader-side camera
+  transform and UV decode, page streaming, a process-wide texture atlas cache,
+  and bounded-memory translucency using coarse depth buckets plus WBOIT.
+  Single-view GPU streaming and shared-upload multi-view sessions are
+  available.
+- `render`, `bench`, and `serve` now default to `--backend auto`. The policy
+  considers the hardware adapter, CPU thread count, mesh size, resolution,
+  streaming mode, and the 60 percent VRAM budget; small or uncertain scenes stay
+  on the CPU. `cpu` remains the byte-exact explicit override.
+- `serve` requests accept optional `streamMesh` (`off`/`on`/`auto`) for
+  single-view GPU page streaming; `statistics.backendUsed` reports the backend
+  that produced each image.
+- Windows, macOS, and Linux GNU release archives enable the GPU feature; Linux
+  musl and wasm remain CPU-only. Build the container image with
+  `--build-arg GPU=1` for GPU support.
+- `render`/`bench` accept `--sphere-fit`, which frames the scene's
+  rotation-invariant bounding sphere so turntables and multi-view animations do
+  not pulse closer and farther as yaw changes.
+- Add the library-level `GpuFrameSession` frame loop: opaque/cutout geometry is
+  uploaded once, then each frame only rewrites the camera uniform and
+  re-projects the translucent layer, reusing GPU resources for video export.
+
 ### Performance
 
 - CPU streaming render now writes translucent spill data on a background thread
@@ -28,6 +52,10 @@ User-facing changes are recorded here. The format follows
   warning, and docs are gone. Use `--stream-mesh`, `--greedy-mesh`, and
   resolution controls for large structures instead.
 - `render --stream-mesh=auto` is now equivalent to `on`; it always streams pages.
+- `auto` may produce approximate GPU output. Select `cpu` when byte-exact
+  output is required. The 96x96 parity scenes keep a maximum channel delta of
+  1, but the differing-pixel ratio remains above the spec's 0.1 percent target
+  and is recorded as not met in `docs/performance.md`.
 - The `serve`/`supervise` protocol version is now 3: `lod` and `lodMs` are gone
   from requests and results, `defaultLod` is gone from the supervisor hello, and
   cache entries are keyed by `inputHash` only.

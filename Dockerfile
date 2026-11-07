@@ -7,7 +7,15 @@ COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
 COPY crates ./crates
 COPY xtask ./xtask
 
-RUN cargo build --release -p blockscope-cli
+# GPU support needs host device passthrough and drivers at run time. The
+# default image stays CPU-only; build with --build-arg GPU=1 for a GPU-enabled
+# image on a platform that can load a driver.
+ARG GPU=0
+RUN if [ "$GPU" = "1" ]; then \
+        cargo build --release -p blockscope-cli --features gpu; \
+    else \
+        cargo build --release -p blockscope-cli; \
+    fi
 
 FROM debian:bookworm-slim
 

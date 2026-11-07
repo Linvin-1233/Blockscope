@@ -14,10 +14,17 @@ pub use error::{RenderError, RenderErrorCode};
 pub use litematic_material::TextureFilter;
 pub use options::{Background, LightingProfile, RenderOptions};
 pub use png::write_png;
+#[cfg(feature = "gpu")]
+pub use rasterizer::GpuFrameSession;
+#[cfg(feature = "gpu")]
+pub use rasterizer::GpuRenderSession;
+#[cfg(feature = "gpu")]
+pub use rasterizer::gpu_working_set_bytes;
 pub use rasterizer::{
-    RenderOutput, RenderStatistics, StreamingRenderer, TileProgress, render_mesh,
+    BackendDecision, BackendPolicyInput, GpuAdapterKind, GpuStageTimings, RenderOutput,
+    RenderStatistics, StreamingRenderer, TileProgress, decide_backend, render_mesh,
     render_mesh_with_progress, render_mesh_with_textures, render_mesh_with_textures_and_progress,
-    will_stream,
+    select_backend, will_stream,
 };
 pub use terminal::{
     TerminalOptions, TerminalProtocol, cell_footprint, detect_terminal_pixels,

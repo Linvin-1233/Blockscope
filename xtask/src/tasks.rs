@@ -55,6 +55,8 @@ pub fn build_static() -> Result<()> {
             "blockscope-cli",
             "--bin",
             "blockscope",
+            "--features",
+            "gpu",
         ])
         .env("RUSTFLAGS", "-C target-feature=+crt-static"))
 }

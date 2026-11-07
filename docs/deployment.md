@@ -6,11 +6,32 @@ The engine is a single static-ish binary with no runtime service dependencies. I
 
 Tagged releases publish standalone, statically linked binaries for Linux, macOS, and Windows (using musl on Linux and static CRT on Windows). For binary downloads, checksum verification, and desktop installer guides, see [Installation and Quick Start](./user/getting-started.md).
 
-Release artifacts are CPU-only. GPU support is an optional source-build feature
-(`--features gpu`) and needs a hardware adapter plus platform drivers. Static
-musl binaries cannot load the Vulkan loader at runtime, so GPU deployments
-should use a glibc build; containers additionally need the GPU device passthrough
-and driver packages. See [Rendering and PNG Output](./rendering.md#gpu-backend).
+Release artifacts follow the platform capability matrix:
+
+| Platform | Primary GPU backend | GPU feature | Fallback |
+| --- | --- | --- | --- |
+| Windows x64 (MSVC) | D3D12, Vulkan | enabled | CPU |
+| macOS arm64 / x64 | Metal | enabled | CPU |
+| Linux x86_64 GNU | Vulkan | enabled | CPU |
+| Linux x86_64/aarch64 musl | none | disabled | CPU |
+| wasm / Cloudflare Workers | none | disabled | CPU |
+
+`auto` is the default backend in every artifact. It selects a hardware GPU only
+when the policy predicts a win and falls back to the CPU before producing
+output when the adapter, driver, precision guard, or VRAM budget rejects the
+GPU. `--backend cpu` is the byte-exact reference and explicit override.
+
+Static musl binaries cannot load the Vulkan loader at runtime, and a Worker
+isolate has no GPU. Those are platform constraints, not missing code paths.
+Linux containers need GPU device passthrough and driver packages; build the
+image with `--build-arg GPU=1` to compile the feature. Windows, macOS, and Linux
+GNU users can also build from source with `--features gpu`.
+
+The engine uses 60 percent of adapter VRAM as its working budget. Linux reads
+the value from sysfs; Windows and macOS use a conservative floor unless the
+operator sets `BLOCKSCOPE_GPU_VRAM_BYTES`. `WGPU_BACKEND` restricts the wgpu
+backend (for example `vulkan` or `dx12`). GPU output is vendor-dependent and
+not byte-exact; see [Rendering and PNG Output](./rendering.md#gpu-backend).
 
 ## Cutting a Release
 
@@ -56,13 +77,20 @@ Expected output: `cores: 1`, `cpuQuotaMilli: 1000`, `memoryLimitBytes: 107374182
 
 ## CI
 
-`.github/workflows/ci.yml` runs three jobs:
+`.github/workflows/ci.yml` runs four jobs:
 
-- `test` on `ubuntu-latest`, `windows-latest`, and `macos-latest`: fmt, clippy with `-D warnings`, and the full workspace test suite.
-- `container` on `ubuntu-latest`: builds the image, then runs `capacity` and a protocol smoke test inside `--cpus=1 --memory=1g` so cgroup parsing is exercised on every push.
-- `installer` on `windows-latest`: builds the static binary and MSI, runs the install/uninstall lifecycle test, and uploads the artifacts.
+- `test` on `ubuntu-latest`, `windows-latest`, and `macos-latest`: fmt, clippy with `-D warnings`, the full workspace test suite, and a GPU-feature compile (`just check-gpu`).
+- `wasm` on `ubuntu-latest`: clippy for the Worker target, which stays CPU-only.
+- `container` on `ubuntu-latest`: builds the CPU image, then runs `capacity` and a protocol smoke test inside `--cpus=1 --memory=1g` so cgroup parsing is exercised on every push.
+- `installer` on `windows-latest`: builds the GPU-enabled static binary and MSI, runs the install/uninstall lifecycle test, and uploads the artifacts.
 
-`.github/workflows/release.yml` runs on a `v*` tag: it checks that the tag matches `[workspace.package] version`, creates the GitHub Release from `CHANGELOG.md`, and uploads five platform archives with sha256 files plus the Windows MSI and its checksum. Running the workflow manually builds and packages the same five targets with `dry-run`; the MSI publish step runs only for tag pushes, so the pipeline can be verified before the first tag exists.
+Hardware parity and performance tests are not part of the default hosted-runner
+gate because those runners have no GPU. Run `cargo test -p litematic-render
+--features gpu --test gpu` on a machine with an adapter; the tests print
+`BACKEND_UNAVAILABLE` and skip when none exists. Use a self-hosted GPU runner
+for release validation.
+
+`.github/workflows/release.yml` runs on a `v*` tag: it checks that the tag matches `[workspace.package] version`, creates the GitHub Release from `CHANGELOG.md`, and uploads six platform archives with sha256 files plus the Windows MSI and its checksum. Windows, macOS, and Linux GNU archives enable the GPU feature; musl archives stay CPU-only. Running the workflow manually builds and packages the same targets with `dry-run`; the MSI publish step runs only for tag pushes, so the pipeline can be verified before the first tag exists.
 
 ## Capacity reference
 

@@ -17,6 +17,10 @@ fmt-check:
 clippy:
     cargo clippy --workspace --all-targets -- -D warnings
 
+# Compile and lint the optional GPU feature on every supported platform
+check-gpu:
+    cargo clippy --workspace --all-targets --features litematic-render/gpu,blockscope-cli/gpu -- -D warnings
+
 # Check the Worker crate for the wasm runtime target
 check-wasm:
     cargo clippy -p blockscope-worker --target wasm32-unknown-unknown -- -D warnings

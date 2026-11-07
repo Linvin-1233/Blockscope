@@ -10,6 +10,16 @@ title: "Docker"
 docker build -t blockscope .
 ```
 
+默认镜像为 CPU-only。GPU 镜像需要宿主机驱动、设备透传和可选特性：
+
+```bash
+docker build --build-arg GPU=1 -t blockscope:gpu .
+```
+
+Linux 上需要支持 Vulkan 或 D3D12 的宿主和对应设备节点（例如
+`--device /dev/dri`）；镜像不包含驱动。GPU 输出为近似结果，`auto` 在看不到
+适配器时仍会回退到 CPU。
+
 ## 容量检测
 
 ```bash

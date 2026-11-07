@@ -1,43 +1,44 @@
-use super::super::RenderStatistics;
-use super::super::bin::worker_count;
-use super::super::project::{Triangle, project_pages};
-use super::super::stream::chunk_ranges;
-use super::vertex::{self, GpuVertex, Viewport};
-use super::{GpuFailure, atlas, resolve};
+use super::GpuFailure;
+use super::budget;
+use super::vertex::{self, GpuVertex};
 use crate::{Camera, RenderError, RenderOptions, RenderOutput};
-use litematic_material::{TextureFilter, TextureSet};
+use litematic_material::TextureSet;
 use litematic_mesh::Mesh;
 use litematic_scene::Scene;
 use std::sync::{Arc, Mutex, OnceLock, mpsc};
 use wgpu::util::DeviceExt;
 
-const COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
-const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
-const TRANSLUCENT_BATCH_TRIANGLES: usize = 1_000_000;
-
-#[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct Globals {
-    filter_mode: u32,
-    _padding: [u32; 3],
-}
+pub(super) const COLOR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
+pub(super) const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+pub(super) const WBOIT_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
+pub(super) const TRANSLUCENT_BATCH_TRIANGLES: usize = 1_000_000;
+/// Upper bound for one instance upload. Larger page chunks are split so the
+/// three-slot staging ring stays inside the documented GPU working budget.
+pub(super) const MAX_INSTANCE_BATCH_BYTES: u64 = 32 * 1024 * 1024;
 
 /// Process-wide device and pipelines.
 ///
 /// Pipeline creation and shader compilation are expensive and look like render
 /// time until the first readback. Caching them once per process makes repeated
 /// renders (multi-view jobs, `serve`, tests) pay that cost once.
-struct GpuContext {
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    bind_group_layout: wgpu::BindGroupLayout,
-    opaque_pipeline: wgpu::RenderPipeline,
-    translucent_pipeline: wgpu::RenderPipeline,
-    errors: ErrorSlot,
+pub(super) struct GpuContext {
+    pub(super) device: wgpu::Device,
+    pub(super) queue: wgpu::Queue,
+    pub(super) bind_group_layout: wgpu::BindGroupLayout,
+    pub(super) camera_layout: wgpu::BindGroupLayout,
+    pub(super) wboit_composite_layout: wgpu::BindGroupLayout,
+    pub(super) instance_pipeline: wgpu::RenderPipeline,
+    pub(super) translucent_pipeline: wgpu::RenderPipeline,
+    pub(super) wboit_pipeline: wgpu::RenderPipeline,
+    pub(super) wboit_composite_pipeline: wgpu::RenderPipeline,
+    pub(super) wboit_supported: bool,
+    pub(super) working_set_bytes: u64,
+    pub(super) errors: ErrorSlot,
 }
 
-fn shared_context() -> Result<Arc<GpuContext>, GpuFailure> {
-    static CONTEXT: OnceLock<Result<Arc<GpuContext>, String>> = OnceLock::new();
+static CONTEXT: OnceLock<Result<Arc<GpuContext>, String>> = OnceLock::new();
+
+pub(super) fn shared_context() -> Result<Arc<GpuContext>, GpuFailure> {
     CONTEXT
         .get_or_init(|| {
             init_context()
@@ -48,8 +49,30 @@ fn shared_context() -> Result<Arc<GpuContext>, GpuFailure> {
         .map_err(|message| GpuFailure::Unavailable(RenderError::unavailable(message)))
 }
 
+pub(super) fn context_initialized() -> bool {
+    CONTEXT.get().is_some_and(|context| context.is_ok())
+}
+
+/// Probe the adapter once for the backend policy. This does not create a
+/// device or pipelines, so a CPU-only job never pays shader compilation.
+pub(super) fn adapter_profile() -> Option<super::AdapterProfile> {
+    static PROFILE: OnceLock<Option<super::AdapterProfile>> = OnceLock::new();
+    *PROFILE.get_or_init(|| {
+        let adapter = request_adapter().ok()?;
+        let info = adapter.get_info();
+        let wboit_supported = wboit_supported(&adapter);
+        Some(super::AdapterProfile {
+            software: info.device_type == wgpu::DeviceType::Cpu,
+            working_set_bytes: budget::working_set_bytes(budget::detect_vram_bytes(
+                info.device_type,
+            )),
+            wboit_supported,
+        })
+    })
+}
+
 fn init_context() -> Result<GpuContext, GpuFailure> {
-    let (device, queue, errors) = create_device()?;
+    let (device, queue, wboit_supported, working_set_bytes, errors) = create_device()?;
     let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("blockscope gpu bind group layout"),
         entries: &[
@@ -85,23 +108,69 @@ fn init_context() -> Result<GpuContext, GpuFailure> {
             },
         ],
     });
+    let camera_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("blockscope gpu camera layout"),
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::VERTEX,
+            ty: wgpu::BindingType::Buffer {
+                ty: wgpu::BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: None,
+            },
+            count: None,
+        }],
+    });
+    let wboit_composite_layout =
+        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("blockscope gpu wboit composite layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+            ],
+        });
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("blockscope gpu pipeline layout"),
         bind_group_layouts: &[Some(&bind_group_layout)],
+        immediate_size: 0,
+    });
+    let wboit_composite_pipeline_layout =
+        device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("blockscope gpu wboit composite pipeline layout"),
+            bind_group_layouts: &[Some(&wboit_composite_layout)],
+            immediate_size: 0,
+        });
+    let instance_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("blockscope gpu instance pipeline layout"),
+        bind_group_layouts: &[Some(&bind_group_layout), Some(&camera_layout)],
         immediate_size: 0,
     });
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("blockscope gpu shader"),
         source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
     });
-    let opaque_pipeline = create_pipeline(
-        &device,
-        &pipeline_layout,
-        &shader,
-        "blockscope gpu opaque",
-        None,
-        true,
-    );
+    let instance_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("blockscope gpu instance shader"),
+        source: wgpu::ShaderSource::Wgsl(include_str!("instance.wgsl").into()),
+    });
     let translucent_pipeline = create_pipeline(
         &device,
         &pipeline_layout,
@@ -120,7 +189,25 @@ fn init_context() -> Result<GpuContext, GpuFailure> {
             },
         }),
         false,
+        &[vertex::layout()],
     );
+    let instance_pipeline = create_pipeline(
+        &device,
+        &instance_pipeline_layout,
+        &instance_shader,
+        "blockscope gpu instance",
+        None,
+        true,
+        &[super::instance::layout()],
+    );
+    let wboit_pipeline =
+        create_wboit_pipeline(&device, &pipeline_layout, &shader, &[vertex::layout()]);
+    let wboit_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("blockscope gpu wboit composite shader"),
+        source: wgpu::ShaderSource::Wgsl(include_str!("wboit.wgsl").into()),
+    });
+    let wboit_composite_pipeline =
+        create_composite_pipeline(&device, &wboit_composite_pipeline_layout, &wboit_shader);
     if let Some(message) = take_error(&errors) {
         return Err(GpuFailure::Unavailable(RenderError::unavailable(format!(
             "GPU pipeline initialization failed: {message}"
@@ -130,8 +217,14 @@ fn init_context() -> Result<GpuContext, GpuFailure> {
         device,
         queue,
         bind_group_layout,
-        opaque_pipeline,
+        camera_layout,
+        wboit_composite_layout,
+        instance_pipeline,
         translucent_pipeline,
+        wboit_pipeline,
+        wboit_composite_pipeline,
+        wboit_supported,
+        working_set_bytes,
         errors,
     })
 }
@@ -143,232 +236,27 @@ pub(super) fn render(
     options: &RenderOptions,
     textures: Option<&TextureSet>,
 ) -> Result<RenderOutput, GpuFailure> {
-    let internal_width = options.internal_width();
-    let internal_height = options.internal_height();
-    let context = shared_context()?;
-    let device = &context.device;
-    let queue = &context.queue;
-    // A previous render may have failed before its readback drained the slot.
-    let _ = take_error(&context.errors);
-
-    let limits = device.limits();
-    if internal_width > limits.max_texture_dimension_2d
-        || internal_height > limits.max_texture_dimension_2d
-    {
-        return Err(GpuFailure::Unavailable(RenderError::unavailable(format!(
-            "output {internal_width}x{internal_height} exceeds the GPU texture limit {}",
-            limits.max_texture_dimension_2d
-        ))));
-    }
-
-    let row_stride = align_to(
-        internal_width as usize * 4,
-        wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as usize,
-    );
-    let readback_bytes = row_stride as u64 * u64::from(internal_height);
-    if readback_bytes > limits.max_buffer_size {
-        return Err(GpuFailure::Unavailable(RenderError::unavailable(format!(
-            "readback needs {readback_bytes} bytes, GPU buffer limit is {}",
-            limits.max_buffer_size
-        ))));
-    }
-
-    let atlas =
-        atlas::build(textures, limits.max_texture_dimension_2d).map_err(GpuFailure::Unavailable)?;
-    let atlas_texture = upload_texture(device, queue, atlas.width, atlas.height, &atlas.rgba);
-    let atlas_view = atlas_texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-    let mut rect_data = atlas.rects;
-    if rect_data.is_empty() {
-        rect_data.push([0; 4]);
-    }
-    let rect_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("blockscope gpu texture rects"),
-        contents: bytemuck::cast_slice(&rect_data),
-        usage: wgpu::BufferUsages::STORAGE,
-    });
-
-    let filter = match options.texture_filter {
-        TextureFilter::Nearest => 0,
-        TextureFilter::Linear => 1,
-    };
-    let globals = Globals {
-        filter_mode: filter,
-        _padding: [0; 3],
-    };
-    let globals_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("blockscope gpu globals"),
-        contents: bytemuck::bytes_of(&globals),
-        usage: wgpu::BufferUsages::UNIFORM,
-    });
-
-    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("blockscope gpu bind group"),
-        layout: &context.bind_group_layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(&atlas_view),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: globals_buffer.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 2,
-                resource: rect_buffer.as_entire_binding(),
-            },
-        ],
-    });
-
-    let color = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("blockscope gpu color"),
-        size: wgpu::Extent3d {
-            width: internal_width,
-            height: internal_height,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: COLOR_FORMAT,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-        view_formats: &[],
-    });
-    let depth = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("blockscope gpu depth"),
-        size: wgpu::Extent3d {
-            width: internal_width,
-            height: internal_height,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: DEPTH_FORMAT,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-        view_formats: &[],
-    });
-    let color_view = color.create_view(&wgpu::TextureViewDescriptor::default());
-    let depth_view = depth.create_view(&wgpu::TextureViewDescriptor::default());
-
-    clear_targets(device, queue, &color_view, &depth_view, options.background);
-
-    let (depth_min, depth_max) = depth_range(scene, camera);
-    let viewport = Viewport::new(internal_width, internal_height, depth_min, depth_max);
-    let mut statistics = RenderStatistics {
-        width: options.width,
-        height: options.height,
-        supersample: options.supersample,
-        internal_width,
-        internal_height,
-        backend_used: crate::RenderBackend::Gpu,
-        ..Default::default()
-    };
-    let mut translucent: Vec<Triangle> = Vec::new();
-
-    for range in chunk_ranges(&mesh.pages) {
-        let chunk = &mesh.pages[range];
-        let threads = worker_count(options.threads, chunk.len());
-        let (quads, chunk_translucent) =
-            project_pages(chunk, camera, options, &mut statistics, threads);
-        translucent.extend(chunk_translucent);
-
-        if quads.is_empty() {
-            continue;
-        }
-        let mut vertices = Vec::with_capacity(quads.len() * 6);
-        for quad in &quads {
-            vertex::push_quad(&mut vertices, quad, &viewport);
-        }
-        let buffer = vertex_buffer(device, &vertices)?;
-        draw(
-            device,
-            queue,
-            &color_view,
-            &depth_view,
-            &context.opaque_pipeline,
-            &bind_group,
-            &buffer,
-            vertices.len(),
-            false,
-        );
-    }
-
-    translucent.sort_by(|left, right| right.depth_key.total_cmp(&left.depth_key));
-    for batch in translucent.chunks(TRANSLUCENT_BATCH_TRIANGLES) {
-        let mut vertices = Vec::with_capacity(batch.len() * 3);
-        for triangle in batch {
-            vertex::push_triangle(&mut vertices, triangle, &viewport);
-        }
-        let buffer = vertex_buffer(device, &vertices)?;
-        draw(
-            device,
-            queue,
-            &color_view,
-            &depth_view,
-            &context.translucent_pipeline,
-            &bind_group,
-            &buffer,
-            vertices.len(),
-            true,
-        );
-    }
-
-    let readback = read_back(
-        device,
-        queue,
-        &color,
-        internal_width,
-        internal_height,
-        row_stride as u32,
-        readback_bytes,
-    )?;
-    if let Some(message) = take_error(&context.errors) {
-        return Err(GpuFailure::Failed(RenderError::gpu(message)));
-    }
-
-    let rgba = resolve::resolve(
-        &readback,
-        row_stride,
-        internal_width,
-        options.width,
-        options.height,
-        options.supersample,
-        // Match the CPU path: 0 means available parallelism, not one thread.
-        worker_count(options.threads, options.height as usize),
-    );
-    Ok(RenderOutput {
-        width: options.width,
-        height: options.height,
-        rgba,
-        statistics,
-    })
+    let mut session = super::GpuRenderSession::new_with_camera(scene, camera, options, textures)?;
+    session.render_pages_inner(&mesh.pages)?;
+    session.finish_inner()
 }
 
-type ErrorSlot = Arc<Mutex<Option<String>>>;
+pub(super) type ErrorSlot = Arc<Mutex<Option<String>>>;
 
-fn take_error(errors: &ErrorSlot) -> Option<String> {
+pub(super) fn take_error(errors: &ErrorSlot) -> Option<String> {
     errors.lock().ok().and_then(|mut slot| slot.take())
 }
 
-fn create_device() -> Result<(wgpu::Device, wgpu::Queue, ErrorSlot), GpuFailure> {
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
-    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-        power_preference: wgpu::PowerPreference::HighPerformance,
-        force_fallback_adapter: false,
-        compatible_surface: None,
-        apply_limit_buckets: false,
-    }))
-    .map_err(|error| {
-        GpuFailure::Unavailable(RenderError::unavailable(format!("no GPU adapter: {error}")))
-    })?;
-
-    if adapter.get_info().device_type == wgpu::DeviceType::Cpu {
+fn create_device() -> Result<(wgpu::Device, wgpu::Queue, bool, u64, ErrorSlot), GpuFailure> {
+    let adapter = request_adapter()?;
+    let info = adapter.get_info();
+    if info.device_type == wgpu::DeviceType::Cpu {
         return Err(GpuFailure::Unavailable(RenderError::unavailable(
             "only a software GPU adapter is available",
         )));
     }
+    let wboit_supported = wboit_supported(&adapter);
+    let working_set_bytes = budget::working_set_bytes(budget::detect_vram_bytes(info.device_type));
 
     let limits = adapter.limits();
     let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
@@ -395,7 +283,30 @@ fn create_device() -> Result<(wgpu::Device, wgpu::Queue, ErrorSlot), GpuFailure>
         }
     }));
 
-    Ok((device, queue, errors))
+    Ok((device, queue, wboit_supported, working_set_bytes, errors))
+}
+
+fn request_adapter() -> Result<wgpu::Adapter, GpuFailure> {
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance,
+        force_fallback_adapter: false,
+        compatible_surface: None,
+        apply_limit_buckets: false,
+    }))
+    .map_err(|error| {
+        GpuFailure::Unavailable(RenderError::unavailable(format!("no GPU adapter: {error}")))
+    })
+}
+
+fn wboit_supported(adapter: &wgpu::Adapter) -> bool {
+    let features = adapter.get_texture_format_features(WBOIT_FORMAT);
+    features
+        .allowed_usages
+        .contains(wgpu::TextureUsages::RENDER_ATTACHMENT)
+        && features
+            .flags
+            .contains(wgpu::TextureFormatFeatureFlags::BLENDABLE)
 }
 
 fn create_pipeline(
@@ -405,8 +316,10 @@ fn create_pipeline(
     label: &str,
     blend: Option<wgpu::BlendState>,
     depth_write_enabled: bool,
+    buffers: &[wgpu::VertexBufferLayout<'static>],
 ) -> wgpu::RenderPipeline {
-    let buffers = [Some(vertex::layout())];
+    let buffers: Vec<Option<wgpu::VertexBufferLayout<'static>>> =
+        buffers.iter().cloned().map(Some).collect();
     let targets = [Some(wgpu::ColorTargetState {
         format: COLOR_FORMAT,
         blend,
@@ -453,50 +366,7 @@ fn create_pipeline(
     })
 }
 
-fn upload_texture(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    width: u32,
-    height: u32,
-    rgba: &[u8],
-) -> wgpu::Texture {
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("blockscope gpu atlas"),
-        size: wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8Unorm,
-        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-        view_formats: &[],
-    });
-    queue.write_texture(
-        wgpu::TexelCopyTextureInfo {
-            texture: &texture,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        },
-        rgba,
-        wgpu::TexelCopyBufferLayout {
-            offset: 0,
-            bytes_per_row: Some(width * 4),
-            rows_per_image: Some(height),
-        },
-        wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-    );
-    texture
-}
-
-fn clear_targets(
+pub(super) fn clear_targets(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     color: &wgpu::TextureView,
@@ -546,7 +416,7 @@ fn clear_targets(
     queue.submit(Some(encoder.finish()));
 }
 
-fn vertex_buffer(
+pub(super) fn vertex_buffer(
     device: &wgpu::Device,
     vertices: &[GpuVertex],
 ) -> Result<wgpu::Buffer, GpuFailure> {
@@ -566,8 +436,184 @@ fn vertex_buffer(
     )
 }
 
+fn create_wboit_pipeline(
+    device: &wgpu::Device,
+    layout: &wgpu::PipelineLayout,
+    shader: &wgpu::ShaderModule,
+    buffers: &[wgpu::VertexBufferLayout<'static>],
+) -> wgpu::RenderPipeline {
+    let buffers: Vec<Option<wgpu::VertexBufferLayout<'static>>> =
+        buffers.iter().cloned().map(Some).collect();
+    let targets = [
+        Some(wgpu::ColorTargetState {
+            format: WBOIT_FORMAT,
+            blend: Some(wgpu::BlendState {
+                color: wgpu::BlendComponent {
+                    src_factor: wgpu::BlendFactor::One,
+                    dst_factor: wgpu::BlendFactor::One,
+                    operation: wgpu::BlendOperation::Add,
+                },
+                alpha: wgpu::BlendComponent {
+                    src_factor: wgpu::BlendFactor::One,
+                    dst_factor: wgpu::BlendFactor::One,
+                    operation: wgpu::BlendOperation::Add,
+                },
+            }),
+            write_mask: wgpu::ColorWrites::ALL,
+        }),
+        Some(wgpu::ColorTargetState {
+            format: WBOIT_FORMAT,
+            blend: Some(wgpu::BlendState {
+                color: wgpu::BlendComponent {
+                    src_factor: wgpu::BlendFactor::Zero,
+                    dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                    operation: wgpu::BlendOperation::Add,
+                },
+                alpha: wgpu::BlendComponent {
+                    src_factor: wgpu::BlendFactor::Zero,
+                    dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                    operation: wgpu::BlendOperation::Add,
+                },
+            }),
+            write_mask: wgpu::ColorWrites::ALL,
+        }),
+    ];
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("blockscope gpu wboit"),
+        layout: Some(layout),
+        vertex: wgpu::VertexState {
+            module: shader,
+            entry_point: Some("vs_main"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            buffers: &buffers,
+        },
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: None,
+            unclipped_depth: false,
+            polygon_mode: wgpu::PolygonMode::Fill,
+            conservative: false,
+        },
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: Some(false),
+            depth_compare: Some(wgpu::CompareFunction::Less),
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        }),
+        multisample: wgpu::MultisampleState {
+            count: 1,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some("fs_wboit"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            targets: &targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
+fn create_composite_pipeline(
+    device: &wgpu::Device,
+    layout: &wgpu::PipelineLayout,
+    shader: &wgpu::ShaderModule,
+) -> wgpu::RenderPipeline {
+    let targets = [Some(wgpu::ColorTargetState {
+        format: COLOR_FORMAT,
+        blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+        write_mask: wgpu::ColorWrites::ALL,
+    })];
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("blockscope gpu wboit composite"),
+        layout: Some(layout),
+        vertex: wgpu::VertexState {
+            module: shader,
+            entry_point: Some("vs_main"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            buffers: &[],
+        },
+        primitive: wgpu::PrimitiveState {
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            front_face: wgpu::FrontFace::Ccw,
+            cull_mode: None,
+            unclipped_depth: false,
+            polygon_mode: wgpu::PolygonMode::Fill,
+            conservative: false,
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState {
+            count: 1,
+            mask: !0,
+            alpha_to_coverage_enabled: false,
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: Some("fs_main"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            targets: &targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
-fn draw(
+pub(super) fn draw_instances(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    color: &wgpu::TextureView,
+    depth: &wgpu::TextureView,
+    pipeline: &wgpu::RenderPipeline,
+    atlas_bind_group: &wgpu::BindGroup,
+    camera_bind_group: &wgpu::BindGroup,
+    buffer: &wgpu::Buffer,
+    instance_count: usize,
+) {
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("blockscope gpu instance draw"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("blockscope gpu instance"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: color,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: depth,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(pipeline);
+        pass.set_bind_group(0, atlas_bind_group, &[]);
+        pass.set_bind_group(1, camera_bind_group, &[]);
+        pass.set_vertex_buffer(0, buffer.slice(..));
+        pass.draw(0..6, 0..instance_count as u32);
+    }
+    queue.submit(Some(encoder.finish()));
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn draw(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     color: &wgpu::TextureView,
@@ -617,7 +663,143 @@ fn draw(
     queue.submit(Some(encoder.finish()));
 }
 
-fn read_back(
+pub(super) fn clear_wboit_targets(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    accum: &wgpu::TextureView,
+    reveal: &wgpu::TextureView,
+) {
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("blockscope gpu wboit clear"),
+    });
+    encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("blockscope gpu wboit clear"),
+        color_attachments: &[
+            Some(wgpu::RenderPassColorAttachment {
+                view: accum,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                    store: wgpu::StoreOp::Store,
+                },
+            }),
+            Some(wgpu::RenderPassColorAttachment {
+                view: reveal,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    }),
+                    store: wgpu::StoreOp::Store,
+                },
+            }),
+        ],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+        multiview_mask: None,
+    });
+    queue.submit(Some(encoder.finish()));
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn draw_wboit(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    accum: &wgpu::TextureView,
+    reveal: &wgpu::TextureView,
+    depth: &wgpu::TextureView,
+    pipeline: &wgpu::RenderPipeline,
+    bind_group: &wgpu::BindGroup,
+    buffer: &wgpu::Buffer,
+    vertex_count: usize,
+) {
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("blockscope gpu wboit draw"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("blockscope gpu wboit"),
+            color_attachments: &[
+                Some(wgpu::RenderPassColorAttachment {
+                    view: accum,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                }),
+                Some(wgpu::RenderPassColorAttachment {
+                    view: reveal,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                }),
+            ],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: depth,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(pipeline);
+        pass.set_bind_group(0, bind_group, &[]);
+        pass.set_vertex_buffer(0, buffer.slice(..));
+        pass.draw(0..vertex_count as u32, 0..1);
+    }
+    queue.submit(Some(encoder.finish()));
+}
+
+pub(super) fn composite_wboit(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    color: &wgpu::TextureView,
+    pipeline: &wgpu::RenderPipeline,
+    bind_group: &wgpu::BindGroup,
+) {
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("blockscope gpu wboit composite"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("blockscope gpu wboit composite"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: color,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(pipeline);
+        pass.set_bind_group(0, bind_group, &[]);
+        pass.draw(0..3, 0..1);
+    }
+    queue.submit(Some(encoder.finish()));
+}
+
+pub(super) fn read_back(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     color: &wgpu::Texture,
@@ -697,23 +879,6 @@ fn read_back(
     Ok(data)
 }
 
-fn depth_range(scene: &Scene, camera: &Camera) -> (f64, f64) {
-    let min = scene.bounds.min;
-    let max = scene.bounds.max_exclusive;
-    let mut near = f64::INFINITY;
-    let mut far = f64::NEG_INFINITY;
-    for x in [min[0], max[0]] {
-        for y in [min[1], max[1]] {
-            for z in [min[2], max[2]] {
-                let depth = camera.project([x as f64, y as f64, z as f64])[2];
-                near = near.min(depth);
-                far = far.max(depth);
-            }
-        }
-    }
-    (near, far)
-}
-
-fn align_to(value: usize, alignment: usize) -> usize {
+pub(super) fn align_to(value: usize, alignment: usize) -> usize {
     value.div_ceil(alignment) * alignment
 }

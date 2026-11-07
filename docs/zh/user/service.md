@@ -17,7 +17,12 @@ blockscope serve --client-jar client.jar --threads 4 --cache 2
 - `--force-limits`：提高资源上限；只应对可信输入使用
 - `--ignore-block-entity-nbt`：跳过容器 NBT
 
-worker 在资源包准备完成后输出一行 `hello`，之后才接受 job。
+worker 在资源包准备完成后输出一行 `hello`，之后才接受 job。`hello.backends`
+列出 `cpu`、`auto`，以及编译了 `gpu` 特性时的 `gpu`。请求默认使用 `auto`：
+小场景走 CPU，只有硬件适配器、f32 精度保护、60% 显存预算和成本模型都
+预测有收益时才使用 GPU。`cpu` 是逐字节精确的显式覆盖；`gpu` 强制硬件，
+不可用时返回 `BACKEND_UNAVAILABLE`。每个结果都通过
+`statistics.backendUsed` 报告实际后端。
 
 ## 请求示例
 
@@ -41,6 +46,9 @@ worker 在资源包准备完成后输出一行 `hello`，之后才接受 job。
 - `input.hash` 可选，是调用方声明的 SHA-256 身份；命中缓存时 worker 信任该值并不再读取文件，未命中时才重新计算并校验
 - `supervise` 会把为路由计算出的 hash 注入请求，因此经 supervisor 的重复输入也能走免读缓存路径
 - `views` 为空时默认 `[45]`，最多 64 个角度；有完整 mesh 时多视角并行渲染
+- `backend` 为 `cpu`、`gpu` 或 `auto`，默认 `auto`。`cpu` 逐字节精确；`gpu` 在无可用硬件适配器时返回 `BACKEND_UNAVAILABLE`；`auto` 可能返回近似 GPU 输出，需要精确结果时请检查 `statistics.backendUsed`
+- `streamMesh` 为 `off`（默认）、`on` 或 `auto`，按页构建并渲染且不保留完整 mesh，每个请求只支持一个视角。`off` 保留可缓存的完整 mesh 路径；流式请求不会写入 scene/mesh 缓存
+- `auto` 下的 GPU 分配、驱动、精度或显存预算失败会在写出任何输出前回退到 CPU；第一次 GPU draw 之后的失败是致命错误，不会留下部分 PNG
 - 输出文件为 `{id}.png` 或 `{id}-{yaw}.png`；调用方必须保证 `id` 和 `outputDir` 在并发任务中唯一，重复 `id` 或重复视角会覆盖同一路径
 - 完整字段、结果和错误码见 [引擎协议 v3](/engine-protocol)
 

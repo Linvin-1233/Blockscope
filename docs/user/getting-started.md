@@ -98,16 +98,18 @@ Artifacts:
 
 Add `target/release` to `PATH` or use the full path.
 
-The default build is CPU-only. To add the optional offscreen GPU rasterizer
-(requires a hardware adapter and platform GPU drivers):
+The default source build is CPU-only. To add the optional offscreen GPU
+rasterizer (requires a hardware adapter and platform GPU drivers):
 
 ```bash
 cargo build --release -p blockscope-cli --features gpu
 ```
 
-The resulting binary still defaults to `--backend cpu`; pass `--backend gpu` or
-`--backend auto` to use it. The static Linux musl release binaries are built
-without this feature because they cannot load the Vulkan loader at runtime.
+The resulting binary defaults to `--backend auto`, which uses the GPU only when
+the policy predicts a win; `--backend cpu` is the byte-exact override. Windows,
+macOS, and Linux GNU release archives enable this feature. Static Linux musl
+release binaries are built without it because they cannot load the Vulkan
+loader at runtime.
 
 ## Test
 

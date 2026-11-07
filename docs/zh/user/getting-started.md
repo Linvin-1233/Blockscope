@@ -105,8 +105,9 @@ GPU 驱动）：
 cargo build --release -p blockscope-cli --features gpu
 ```
 
-该二进制仍默认使用 `--backend cpu`；传入 `--backend gpu` 或 `--backend auto`
-才会启用。Linux musl 静态发布包不包含此特性，因为静态二进制无法在运行时加载
+该二进制默认使用 `--backend auto`，仅在策略预测有收益时启用 GPU；
+`--backend cpu` 是逐字节精确的显式覆盖。Windows、macOS 和 Linux GNU 发布包已
+启用该特性。Linux musl 静态发布包不包含此特性，因为静态二进制无法在运行时加载
 Vulkan loader。
 
 ## 运行测试

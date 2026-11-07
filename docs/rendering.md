@@ -20,50 +20,94 @@ Scene + Mesh
 
 ## GPU Backend
 
-GPU rendering is an opt-in build feature:
+GPU rendering is a runtime-selected feature. Windows, macOS, and Linux GNU
+release artifacts compile it; source builds enable it with `--features gpu`.
+Linux musl and wasm stay CPU-only.
 
 ```bash
 cargo build --release -p blockscope-cli --features gpu
-cargo run --release -p blockscope-cli --features gpu -- render model.litematic --backend gpu
+cargo run --release -p blockscope-cli --features gpu -- render model.litematic --backend auto
 ```
 
-The default remains `--backend cpu`, and `--backend auto` uses the GPU only for
-meshes with at least 50,000 quads. `auto` falls back to the CPU when the build
-or host cannot provide a hardware adapter. The service protocol accepts the
-same `backend` value (`cpu`, `gpu`, or `auto`; default `cpu`) and advertises
-`backends` in its `hello` message.
+The default backend is `auto`, which runs a deterministic policy and reports
+the backend that produced the image through `backendUsed`. `--backend cpu` is
+the byte-exact reference and the explicit exactness override; `--backend gpu`
+still forces the GPU and fails with `BACKEND_UNAVAILABLE` when no hardware
+adapter exists. The service protocol accepts the same `backend` value (`cpu`,
+`gpu`, or `auto`; default `auto`) and advertises `backends` in its `hello`
+message.
+
+`auto` chooses the GPU only when the estimated render is faster: at least
+10,000 quads, a hardware adapter, a safe f32 scene span, an allocation inside
+the 60 percent VRAM working set, and a predicted 5 percent win over the CPU
+cost model. When the GPU context is uninitialized and the CPU has eight or more
+threads, `auto` prefers the exact CPU for single-view one-shot jobs because
+shader compilation and device setup cannot be amortized; multi-view jobs and
+weak CPUs can still choose the GPU. The model uses the resolved thread count,
+internal pixel count, view count, and streaming mode; the measured R1/R2
+results are in
+[performance.md](./performance.md#gpu-performance-path-final-results-2026-11-06).
+When detection is uncertain the policy prefers the CPU.
 
 The backend is offscreen: it creates an instance, a high-performance adapter,
 a device, a color target, and a depth target, then reads the RGBA pixels back.
 It rejects software adapters (`DeviceType::Cpu`), so explicit `gpu` fails with
-`BACKEND_UNAVAILABLE` instead of silently using a slow fallback. The device and
-both render pipelines are cached for the process lifetime; the first GPU render
-pays adapter and shader-compilation setup, later renders do not.
+`BACKEND_UNAVAILABLE` instead of silently using a slow fallback. The device,
+pipelines, and texture atlas are cached for the process lifetime; the first GPU
+render pays adapter and shader-compilation setup, later renders do not.
+
+For frame sequences, `GpuFrameSession` uploads the opaque/cutout instance table
+once and keeps it resident. Each `render_frame` call rewrites only the camera
+uniform and re-projects the translucent layer, so a video loop does not rebuild
+or re-upload the solid mesh. Resident geometry is bounded by the 60 percent VRAM
+working set; large scenes still use the streaming `GpuRenderSession`.
 
 Implementation notes:
 
-- Opaque and cutout geometry is projected on the CPU with the same `f64`
-  camera and backface culling as the CPU path, then uploaded in the existing
-  page chunks (at most 600,000 quads per chunk).
-- Translucent triangles are sorted far-to-near across the whole mesh and drawn
-  in batches without depth writes. This is a global ordering; the CPU path sorts
-  per tile. The two can differ on intersecting translucent surfaces.
+- Opaque and cutout geometry uploads one 92-byte `GpuQuad` per quad and uses a
+  6-vertex instanced draw. The vertex shader performs the camera-relative
+  transform, UV decode, AO, and quad expansion. Backface culling remains a CPU
+  dot product for a single view and runs in the shader for shared multi-view
+  uploads.
+- Translucent triangles are quantized into 128 camera-depth buckets, spilled to
+  temporary files above the 262,144-record cap, and drawn far-to-near into
+  `Rgba16Float` accumulation and revealage targets. A full-screen composite
+  resolves Weighted Blended OIT over the opaque target. Within a bucket the
+  result is order-independent; across intersecting translucent surfaces it is
+  visually approximate, not the CPU's per-tile order.
 - Textures are shelf-packed into one RGBA8 atlas. Nearest and bilinear sampling
   are implemented in WGSL with the CPU's wrap and half-texel rules, which keeps
-  atlas neighbors from bleeding.
+  atlas neighbors from bleeding. The atlas and bind groups are cached per
+  material snapshot; the cache is one quarter of the VRAM working set, clamped
+  to 64-512 MiB.
 - The color target stores premultiplied alpha. Source-over blending matches the
   CPU accumulator, and the resolve pass box-filters supersamples before
   dividing by alpha, the same order as the CPU downsampler.
 - Solid backgrounds are cleared premultiplied; transparent backgrounds clear to
   zero.
-- GPU rendering requires a complete mesh. `--stream-mesh` is rejected with
-  `--backend gpu`; `auto` keeps the full mesh so it can choose a backend.
+- GPU rendering supports page streaming with `--backend gpu` and
+  `--stream-mesh=auto|on`: chunks feed `GpuRenderSession` and are dropped after
+  their draw. `auto` estimates the quad count from a deterministic page sample
+  before choosing the backend. Multi-view GPU jobs retain the full mesh so one
+  upload feeds every view; GPU streaming is single-view in v1.
+- GPU allocations are admitted inside 60 percent of adapter VRAM. The platform
+  probe reads sysfs on Linux; other platforms use a conservative 2 GiB
+  (discrete) or 1 GiB (integrated/virtual) floor. `BLOCKSCOPE_GPU_VRAM_BYTES`
+  overrides it. Instance uploads are split into 32 MiB batches so the
+  three-slot staging ring stays bounded.
+- The GPU vertex shader uses camera-relative f32 coordinates. Scenes whose
+  largest bounding-box span exceeds 16,777,216 blocks fall back to the CPU
+  (`auto`) or return `BACKEND_UNAVAILABLE` (explicit `gpu`). The precision test
+  keeps the projection error below 0.05 pixels at that limit.
 
-Parity with the CPU reference is visual, not byte-exact. On Metal (Apple M4
-Max), the opaque/cutout/translucent and textured parity tests differ on at most
-0.08% of pixels with a maximum channel delta of 1. Other vendors and drivers
-may move edge pixels further. GPU output therefore does not participate in the
-byte-exact golden PNG suite; the CPU backend remains the reference for goldens.
+Parity with the CPU reference is visual, not byte-exact. On the R1 D3D12 host,
+the 96x96 parity scenes keep a maximum channel delta of 1 with exact alpha
+coverage, but the differing-pixel counts are 11.3 percent for the translucent
+hybrid, 9.1 percent for opaque/cutout, and 2.7 percent for textured opaque. The
+spec's 0.1 percent differing-pixel target is recorded as not met; the maximum
+delta target is met. GPU output therefore does not participate in the byte-exact
+golden PNG suite; the CPU backend remains the reference for goldens and for
+callers that require exact output.
 
 ## Camera
 
@@ -72,6 +116,9 @@ byte-exact golden PNG suite; the CPU backend remains the reference for goldens.
 - Yaw follows the reference Litematic viewer: yaw 0 looks from +Z (south), yaw 45 looks from the south-west, and yaw 225 looks from the north-east. The default view therefore shows the south and west faces of the structure.
 - The camera looks at the center of the scene bounds.
 - The scene is fitted with padding; default padding is 16 px.
+- `--sphere-fit` switches the fit from the yaw-dependent projected silhouette to
+  the rotation-invariant bounding sphere. Use it for turntables or animated
+  camera orbits so the framing does not pulse as yaw changes.
 - World positions are `MeshPage.origin + page-local vertex`.
 - Screen Y is flipped so image coordinates follow PNG top-left origin.
 - Smaller camera depth means closer to the camera.

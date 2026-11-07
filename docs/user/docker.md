@@ -10,6 +10,18 @@ The image contains only `blockscope`; it does not include Minecraft assets. Moun
 docker build -t blockscope .
 ```
 
+The default image is CPU-only. GPU builds need the host driver, device
+passthrough, and the optional feature:
+
+```bash
+docker build --build-arg GPU=1 -t blockscope:gpu .
+```
+
+On Linux this requires a Vulkan or D3D12-capable host and the corresponding
+device nodes (for example `--device /dev/dri`); the container does not bundle
+drivers. GPU output is approximate and `auto` still falls back to the CPU when
+no adapter is visible.
+
 ## Capacity
 
 ```bash

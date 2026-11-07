@@ -32,7 +32,50 @@ Plan: `tasks/gpu-feasibility.md`
       `hello.backends` / `backendUsed`.
 - [x] Add parity and CLI/service tests; skip when no hardware adapter exists.
 - [x] Document determinism, streaming, deployment, and measured performance.
-- [ ] Decide whether release artifacts should ship a separate glibc GPU build.
+- [x] Review the updated `tasks/gpu-performance-spec.md` and resolve the
+      remaining calibration, parity-tolerance, and platform-matrix questions.
+      The 0.1% parity target is documented as not met; bucket and WBOIT defaults
+      are calibrated; musl/wasm stay CPU-only.
+- [x] Decide whether release artifacts should ship a separate glibc GPU build.
+      Linux x86_64 GNU is added as a GPU-enabled artifact; musl remains
+      CPU-only.
+
+## GPU performance path
+
+Spec: `tasks/gpu-performance-spec.md`
+Plan: `tasks/gpu-performance-plan.md`
+
+- [ ] Prerequisite: CPU streaming chunk policy and multi-view reuse landed.
+- [x] Phase 1: baseline and shared texture/atlas cache (Tasks 1-4).
+  - [x] Task 1: GPU stage timings.
+  - [x] Task 2: record baseline matrix and parity baseline.
+  - [x] Task 3: shared texture storage.
+  - [x] Task 4: GPU atlas cache.
+- [x] Phase 2: GPU transform and compact instances (Tasks 5-9).
+  - [x] Task 5: GpuQuad layout and CPU cull/encode.
+  - [x] Task 6: camera-relative transform and precision guard.
+  - [x] Task 7: opaque/cutout instanced draw.
+  - [x] Task 8: textured/lit/cutout shader path.
+  - [x] Task 9: remove the old opaque projection path.
+- [x] Phase 3: GPU page streaming and multi-view (Tasks 10-14).
+  - [x] Task 10: GpuRenderSession and staging ring.
+  - [x] Task 11: wire GPU streaming through the CLI.
+  - [x] Task 12: GPU allocation fallback and error paths.
+  - [x] Task 13: multi-view session targets.
+  - [x] Task 14: multi-view CLI and service wiring.
+- [x] Phase 4: coarse depth buckets and WBOIT (Tasks 15-17).
+  - [x] Task 15: translucent depth bucket spill and cleanup.
+  - [x] Task 16: WBOIT targets, pipeline, and composite.
+  - [x] Task 17: composite calibration and fallback (client-jar wall-time
+        gate recorded as not met).
+- [x] Task 18: hardware-aware `auto` policy.
+- [x] Task 19: service policy and streaming documentation.
+- [ ] Task 20: release matrix, CI, and final report. Workflows, docs, and the
+      changelog are updated; the release workflow dry run and hardware matrix
+      sign-off remain with the maintainer.
+- [ ] Checkpoint F: success criteria are documented as not met for the 0.1%
+      parity target and the two `000001` wall-time gates; GPU artifacts and
+      human release approval remain pending.
 
 ## Pending verification
 

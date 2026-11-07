@@ -84,6 +84,7 @@ fn help_lists_render_options() {
         "--height",
         "--yaw",
         "--elevation",
+        "--sphere-fit",
         "--threads",
         "--stream-mesh",
         "--terminal-protocol",

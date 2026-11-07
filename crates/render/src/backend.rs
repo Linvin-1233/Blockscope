@@ -4,15 +4,15 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum RenderBackend {
-    /// Deterministic CPU tile rasterizer. This is the default and the only
-    /// backend on builds without the `gpu` feature.
+    /// Deterministic CPU tile rasterizer. This is the byte-exact reference and
+    /// an explicit override; `Auto` is the default.
     #[default]
     Cpu,
     /// Offscreen wgpu rasterizer. Fails with `BACKEND_UNAVAILABLE` when the
     /// build or host cannot provide an adapter.
     Gpu,
-    /// Use the GPU for large meshes and the CPU otherwise, falling back to the
-    /// CPU when GPU initialization fails.
+    /// Use the measured policy to pick the CPU or GPU and fall back to the CPU
+    /// when GPU setup fails before the first draw.
     Auto,
 }
 

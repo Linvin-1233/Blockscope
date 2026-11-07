@@ -1,6 +1,7 @@
 use crate::source::AssetSource;
 use std::collections::HashMap;
 use std::io::Cursor;
+use std::sync::Arc;
 
 const MAX_TEXTURE_SIZE: u32 = 2048;
 const MAX_TEXTURE_BYTES: u64 = 256 * 1024 * 1024;
@@ -35,19 +36,55 @@ impl Texture {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug)]
 pub struct TextureSet {
-    textures: Vec<Texture>,
+    /// Shared so cloning a set for a material snapshot only bumps refcounts.
+    textures: Vec<Arc<Texture>>,
     /// Per-texture alpha flag, computed once when the texture is decoded.
     transparency: Vec<bool>,
     lookup: HashMap<String, Option<u16>>,
     bytes: u64,
     missing: u64,
+    /// Identity token for process-wide GPU resource caches. A clone gets a new
+    /// token because it can be mutated independently of the source set.
+    identity: Arc<()>,
+}
+
+impl Default for TextureSet {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Clone for TextureSet {
+    fn clone(&self) -> Self {
+        Self {
+            textures: self.textures.clone(),
+            transparency: self.transparency.clone(),
+            lookup: self.lookup.clone(),
+            bytes: self.bytes,
+            missing: self.missing,
+            identity: Arc::new(()),
+        }
+    }
 }
 
 impl TextureSet {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            textures: Vec::new(),
+            transparency: Vec::new(),
+            lookup: HashMap::new(),
+            bytes: 0,
+            missing: 0,
+            identity: Arc::new(()),
+        }
+    }
+
+    /// Weak identity used to key process-wide GPU caches without keeping the
+    /// texture set alive.
+    pub fn identity(&self) -> std::sync::Weak<()> {
+        Arc::downgrade(&self.identity)
     }
 
     pub fn len(&self) -> usize {
@@ -101,17 +138,20 @@ impl TextureSet {
 
         let id = u16::try_from(self.textures.len()).ok()?;
         let has_alpha = rgba.as_chunks::<4>().0.iter().any(|pixel| pixel[3] < 255);
-        self.textures.push(Texture {
+        self.textures.push(Arc::new(Texture {
             width,
             height,
             rgba,
-        });
+        }));
         self.transparency.push(has_alpha);
+        // Cached GPU resources key on this token; a texture added after a cache
+        // entry exists must not keep serving the old atlas.
+        self.identity = Arc::new(());
         Some(id)
     }
 
     pub fn get(&self, id: u16) -> Option<&Texture> {
-        self.textures.get(usize::from(id))
+        self.textures.get(usize::from(id)).map(Arc::as_ref)
     }
 
     pub fn has_transparency(&self, id: u16) -> bool {
@@ -341,6 +381,57 @@ mod tests {
         assert!((blended[1] - 0.5).abs() < 1e-6);
         assert!((blended[2] - 0.5).abs() < 1e-6);
         assert!((blended[3] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn clone_shares_texture_storage() {
+        let dir = tempfile::tempdir().unwrap();
+        write_png(
+            &dir.path()
+                .join("assets/minecraft/textures/block/shared.png"),
+            1,
+            1,
+            &[255, 0, 0, 255],
+        );
+        let mut source = AssetSource::new();
+        source.add_dir(dir.path()).unwrap();
+        let mut textures = TextureSet::new();
+        let id = textures.load(&source, "block/shared").unwrap();
+        let original = textures.get(id).unwrap() as *const Texture;
+
+        let cloned = textures.clone();
+
+        assert_eq!(
+            cloned.get(id).unwrap() as *const Texture,
+            original,
+            "cloning a texture set must not copy texture storage"
+        );
+        assert_eq!(cloned.bytes(), textures.bytes());
+        assert!(
+            !std::sync::Weak::ptr_eq(&textures.identity(), &cloned.identity()),
+            "a mutable clone must get a distinct cache identity"
+        );
+    }
+
+    #[test]
+    fn loading_a_texture_changes_identity() {
+        let dir = tempfile::tempdir().unwrap();
+        let textures_dir = dir.path().join("assets/minecraft/textures/block");
+        write_png(&textures_dir.join("first.png"), 1, 1, &[255, 0, 0, 255]);
+        write_png(&textures_dir.join("second.png"), 1, 1, &[0, 255, 0, 255]);
+        let mut source = AssetSource::new();
+        source.add_dir(dir.path()).unwrap();
+        let mut textures = TextureSet::new();
+        textures.load(&source, "block/first").unwrap();
+        let first = textures.identity();
+
+        textures.load(&source, "block/second").unwrap();
+        let second = textures.identity();
+
+        assert!(
+            !std::sync::Weak::ptr_eq(&first, &second),
+            "adding a texture must invalidate the cache identity"
+        );
     }
 
     #[test]

@@ -103,3 +103,24 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     // blending with One / OneMinusSrcAlpha, matching the CPU accumulator.
     return vec4<f32>(color.rgb * color.a, color.a);
 }
+
+struct WboitOut {
+    @location(0) accum: vec4<f32>,
+    @location(1) reveal: vec4<f32>,
+};
+
+@fragment
+fn fs_wboit(input: VertexOutput) -> WboitOut {
+    var color = input.color;
+    if (input.texture < arrayLength(&rects)) {
+        color *= sample_texture(input.texture, input.uv);
+    }
+    let alpha = color.a;
+    let depth = clamp(input.clip_position.z, 0.0, 1.0);
+    let weight = clamp(0.03 / (1e-5 + pow(depth, 4.0)), 1e-5, 3000.0);
+
+    var out: WboitOut;
+    out.accum = vec4<f32>(color.rgb * alpha * weight, alpha * weight);
+    out.reveal = vec4<f32>(0.0, 0.0, 0.0, alpha);
+    return out;
+}

@@ -31,6 +31,10 @@ pub(crate) struct BenchArgs {
     /// Camera elevation in degrees.
     #[arg(long, default_value_t = 30.0, value_name = "DEGREES")]
     elevation: f32,
+    /// Fit a rotation-invariant bounding sphere instead of the yaw-dependent
+    /// silhouette.
+    #[arg(long)]
+    sphere_fit: bool,
     /// Supersampling factor: 1, 2, 3, or 4.
     #[arg(long, default_value_t = 2, value_name = "N")]
     supersample: u32,
@@ -43,8 +47,8 @@ pub(crate) struct BenchArgs {
     /// flat-v1 or simple-ao-v1.
     #[arg(long, default_value = "simple-ao-v1", value_name = "PROFILE")]
     lighting: String,
-    /// Rasterization backend: cpu, gpu, or auto.
-    #[arg(long, default_value = "cpu", value_name = "BACKEND")]
+    /// Rasterization backend: cpu, gpu, or auto (default).
+    #[arg(long, default_value = "auto", value_name = "BACKEND")]
     backend: String,
     /// Print the report as JSON.
     #[arg(long)]
@@ -128,6 +132,7 @@ pub(crate) fn run(args: BenchArgs) -> Result<(), CliError> {
         height: args.height,
         yaw: 45.0,
         elevation: args.elevation,
+        sphere_fit: args.sphere_fit,
         background: Background::Transparent,
         lighting,
         supersample: args.supersample,
@@ -145,7 +150,20 @@ pub(crate) fn run(args: BenchArgs) -> Result<(), CliError> {
     let mut last_output = None;
 
     for iteration in 0..args.iterations {
-        let gpu = options.backend != RenderBackend::Cpu;
+        let display_backend = if options.backend == RenderBackend::Auto {
+            crate::backend_decision(
+                &scene,
+                &options,
+                mesh.statistics.quads,
+                false,
+                snapshot.as_ref(),
+                1,
+            )
+            .backend
+        } else {
+            options.backend
+        };
+        let gpu = display_backend == RenderBackend::Gpu;
         let streaming = !gpu && will_stream(&mesh, &options);
         let show_tile_progress = !gpu && !streaming;
         let render_bar = show_tile_progress.then(|| progress.bar("Rendering"));

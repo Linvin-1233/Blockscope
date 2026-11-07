@@ -22,6 +22,24 @@ const DEFAULT_SUPERSAMPLE: u32 = 2;
 const DEFAULT_ELEVATION: f32 = 30.0;
 const DEFAULT_YAW: f32 = 45.0;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ServiceStreamMode {
+    Auto,
+    On,
+    Off,
+}
+
+impl ServiceStreamMode {
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "auto" => Some(Self::Auto),
+            "on" => Some(Self::On),
+            "off" => Some(Self::Off),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Args)]
 pub struct ServeArgs {
     #[command(flatten)]
@@ -89,9 +107,12 @@ struct RenderRequest {
     background: Option<String>,
     #[serde(default)]
     texture_filter: Option<String>,
-    /// Rasterization backend: cpu, gpu, or auto. Defaults to cpu.
+    /// Rasterization backend: cpu, gpu, or auto (default).
     #[serde(default)]
     backend: Option<String>,
+    /// Mesh streaming: off (default), on, or auto.
+    #[serde(default)]
+    stream_mesh: Option<String>,
     #[serde(default)]
     format: Option<String>,
     #[serde(default)]
@@ -306,7 +327,7 @@ fn process(
     let texture_filter =
         parse_texture_filter(request.texture_filter.as_deref().unwrap_or("nearest"))?;
     let backend =
-        RenderBackend::parse(request.backend.as_deref().unwrap_or("cpu")).ok_or_else(|| {
+        RenderBackend::parse(request.backend.as_deref().unwrap_or("auto")).ok_or_else(|| {
             CliError::input(format!(
                 "INVALID_RENDER_OPTIONS: unknown backend '{}'",
                 request.backend.as_deref().unwrap_or_default()
@@ -344,6 +365,28 @@ fn process(
     // count cannot force a full expensive job.
     for options in &view_options {
         options.validate().map_err(CliError::from)?;
+    }
+
+    let stream_mode = ServiceStreamMode::parse(request.stream_mesh.as_deref().unwrap_or("off"))
+        .ok_or_else(|| {
+            CliError::input(format!(
+                "INVALID_RENDER_OPTIONS: unknown streamMesh '{}'",
+                request.stream_mesh.as_deref().unwrap_or_default()
+            ))
+        })?;
+    let stream_mesh = match stream_mode {
+        ServiceStreamMode::Off => false,
+        ServiceStreamMode::On if view_options.len() > 1 => {
+            return Err(CliError::input(
+                "INVALID_RENDER_OPTIONS: streamMesh supports a single view",
+            ));
+        }
+        ServiceStreamMode::On => true,
+        // Auto keeps multi-view jobs on the shared full-mesh session.
+        ServiceStreamMode::Auto => view_options.len() == 1,
+    };
+    if stream_mesh {
+        return process_streaming(request, context, &view_options, started);
     }
 
     let limits = crate::decode_limits(context.force_limits, context.ignore_block_entity_nbt);
@@ -492,6 +535,147 @@ fn process(
             "meshMs": mesh_ms,
             "renderMs": render_total,
             "pngMs": png_total,
+            "totalMs": started.elapsed().as_secs_f64() * 1000.0,
+        },
+        "statistics": {
+            "triangles": statistics.triangles,
+            "culledBackfaces": statistics.culled_backfaces,
+            "textures": snapshot.as_ref().map(|value| value.textures().len()).unwrap_or(0),
+            "backendUsed": statistics.backend_used.as_str(),
+        },
+    }))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn process_streaming(
+    request: &RenderRequest,
+    context: &ServeContext<'_>,
+    view_options: &[RenderOptions],
+    started: Instant,
+) -> Result<Value, CliError> {
+    let options = view_options
+        .first()
+        .ok_or_else(|| CliError::input("INVALID_RENDER_OPTIONS: views must not be empty"))?;
+    if view_options.len() != 1 {
+        return Err(CliError::input(
+            "INVALID_RENDER_OPTIONS: streamMesh supports a single view",
+        ));
+    }
+
+    let limits = crate::decode_limits(context.force_limits, context.ignore_block_entity_nbt);
+    let input = crate::read_file_limited(&request.input.path, limits.max_input_bytes)?;
+    let input_hash = sha256(&input).to_hex();
+    if let Some(expected) = &request.input.hash
+        && !input_hash.eq_ignore_ascii_case(expected)
+    {
+        return Err(CliError::input(format!(
+            "INPUT_HASH_MISMATCH: expected {expected}, got {input_hash}"
+        )));
+    }
+
+    let parse_started = Instant::now();
+    let file =
+        LitematicFile::parse_bytes(&input, &limits, &crate::scene_limits(context.force_limits))
+            .map_err(CliError::from)?;
+    let scene = file.into_scene().map_err(CliError::from)?;
+    let parse_ms = parse_started.elapsed().as_secs_f64() * 1000.0;
+
+    let snapshot = context
+        .materials
+        .map(|materials| crate::material_snapshot(&scene, materials));
+    let threads = request.threads.unwrap_or(context.default_threads);
+    let mut options = options.clone();
+    let auto_backend = options.backend == RenderBackend::Auto;
+    if auto_backend {
+        let estimate = crate::estimate_scene_quads(
+            &scene,
+            snapshot.as_ref(),
+            &context.mesh_limits,
+            threads,
+            context.mesh_options,
+        )?;
+        options.backend =
+            crate::backend_decision(&scene, &options, estimate, true, snapshot.as_ref(), 1).backend;
+    }
+
+    let mut renderer =
+        match crate::stream_target(options.backend, &scene, &options, snapshot.as_ref()) {
+            Ok(renderer) => renderer,
+            Err(error) if auto_backend && error.is_backend_unavailable() => {
+                crate::ui::errln!(
+                    "{}warning:{:#} GPU setup failed, falling back to CPU streaming: {}",
+                    crate::ui::WARNING,
+                    crate::ui::WARNING,
+                    error.message
+                );
+                options.backend = RenderBackend::Cpu;
+                crate::stream_target(RenderBackend::Cpu, &scene, &options, snapshot.as_ref())?
+            }
+            Err(error) => return Err(error),
+        };
+    let mut render_chunk_ms = 0.0;
+    let mut render_error = None;
+    let mesh_started = Instant::now();
+    crate::build_scene_mesh_streaming(
+        &scene,
+        snapshot.as_ref(),
+        &context.mesh_limits,
+        threads,
+        context.mesh_options,
+        None,
+        |pages| {
+            let chunk_started = Instant::now();
+            if render_error.is_none()
+                && let Err(error) = renderer.render_pages(pages)
+            {
+                render_error = Some(error);
+            }
+            render_chunk_ms += chunk_started.elapsed().as_secs_f64() * 1000.0;
+        },
+    )?;
+    let mesh_total_ms = mesh_started.elapsed().as_secs_f64() * 1000.0;
+    if let Some(error) = render_error {
+        return Err(CliError::from(error));
+    }
+    let finish_started = Instant::now();
+    let output = renderer.finish().map_err(CliError::from)?;
+    let render_ms = render_chunk_ms + finish_started.elapsed().as_secs_f64() * 1000.0;
+
+    let name = format!("{}.png", request.id);
+    let path = request.output_dir.join(name);
+    let png_started = Instant::now();
+    let file = File::create(&path)
+        .map_err(|error| CliError::input(format!("IO_ERROR: {}: {error}", path.display())))?;
+    let mut writer = BufWriter::new(file);
+    write_png(&output, &mut writer).map_err(CliError::from)?;
+    writer
+        .flush()
+        .map_err(|error| CliError::input(format!("IO_ERROR: {}: {error}", path.display())))?;
+    let png_ms = png_started.elapsed().as_secs_f64() * 1000.0;
+    let bytes = fs::metadata(&path).map(|meta| meta.len()).unwrap_or(0);
+
+    let statistics = output.statistics;
+    Ok(json!({
+        "type": "result",
+        "id": request.id,
+        "ok": true,
+        "inputHash": input_hash,
+        "sceneHash": scene.scene_hash().to_hex(),
+        "cacheHit": false,
+        "outputs": [{
+            "path": path.display().to_string(),
+            "yaw": options.yaw,
+            "width": output.width,
+            "height": output.height,
+            "bytes": bytes,
+            "renderMs": render_ms,
+            "pngMs": png_ms,
+        }],
+        "timings": {
+            "parseMs": parse_ms,
+            "meshMs": (mesh_total_ms - render_chunk_ms).max(0.0),
+            "renderMs": render_ms,
+            "pngMs": png_ms,
             "totalMs": started.elapsed().as_secs_f64() * 1000.0,
         },
         "statistics": {

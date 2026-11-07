@@ -195,6 +195,66 @@ fn streamed_mesh_matches_full_render() {
     );
 }
 
+#[cfg(feature = "gpu")]
+#[test]
+fn gpu_streamed_mesh_matches_gpu_full_render() {
+    let file = write_fixture(&basic_fixture());
+    let path = file.path().to_str().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let full_path = dir.path().join("gpu-full.png");
+
+    let full = run(&[
+        "render",
+        path,
+        "--output",
+        full_path.to_str().unwrap(),
+        "--width",
+        "64",
+        "--height",
+        "64",
+        "--backend",
+        "gpu",
+        "--stream-mesh=off",
+    ]);
+    if !full.status.success()
+        && String::from_utf8_lossy(&full.stderr).contains("BACKEND_UNAVAILABLE")
+    {
+        eprintln!("skipping GPU streaming CLI test: no adapter");
+        return;
+    }
+    assert!(
+        full.status.success(),
+        "gpu full render failed: {}",
+        String::from_utf8_lossy(&full.stderr)
+    );
+
+    for mode in ["on", "auto"] {
+        let output_path = dir.path().join(format!("gpu-streamed-{mode}.png"));
+        let streamed = run(&[
+            "render",
+            path,
+            "--output",
+            output_path.to_str().unwrap(),
+            "--width",
+            "64",
+            "--height",
+            "64",
+            "--backend",
+            "gpu",
+            &format!("--stream-mesh={mode}"),
+        ]);
+        assert!(
+            streamed.status.success(),
+            "gpu streamed ({mode}) render failed: {}",
+            String::from_utf8_lossy(&streamed.stderr)
+        );
+        assert_eq!(
+            fs::read(&full_path).unwrap(),
+            fs::read(&output_path).unwrap()
+        );
+    }
+}
+
 #[test]
 fn default_mesh_streaming_matches_full_render() {
     let file = write_fixture(&basic_fixture());
@@ -352,6 +412,64 @@ fn render_multi_view_writes_two_files() {
     assert!(dir.path().join("render-225.png").exists());
 }
 
+#[cfg(feature = "gpu")]
+#[test]
+fn gpu_multi_view_matches_sequential_views() {
+    let file = write_fixture(&basic_fixture());
+    let path = file.path().to_str().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let batched_path = dir.path().join("batched.png");
+    let batched = run(&[
+        "render",
+        path,
+        "--output",
+        batched_path.to_str().unwrap(),
+        "--width",
+        "64",
+        "--height",
+        "64",
+        "--backend",
+        "gpu",
+        "--views",
+        "45,225",
+    ]);
+    if !batched.status.success()
+        && String::from_utf8_lossy(&batched.stderr).contains("BACKEND_UNAVAILABLE")
+    {
+        eprintln!("skipping GPU multi-view CLI test: no adapter");
+        return;
+    }
+    assert!(
+        batched.status.success(),
+        "gpu multi-view failed: {}",
+        String::from_utf8_lossy(&batched.stderr)
+    );
+
+    for yaw in ["45", "225"] {
+        let single_path = dir.path().join(format!("single-{yaw}.png"));
+        let single = run(&[
+            "render",
+            path,
+            "--output",
+            single_path.to_str().unwrap(),
+            "--width",
+            "64",
+            "--height",
+            "64",
+            "--backend",
+            "gpu",
+            "--yaw",
+            yaw,
+        ]);
+        assert!(single.status.success());
+        let batched_view = dir.path().join(format!("batched-{yaw}.png"));
+        assert_eq!(
+            fs::read(&single_path).unwrap(),
+            fs::read(&batched_view).unwrap()
+        );
+    }
+}
+
 #[test]
 fn render_json_parses() {
     let file = write_fixture(&basic_fixture());
@@ -378,6 +496,11 @@ fn render_json_parses() {
     assert_eq!(stats.supersample, 2);
     assert_eq!(stats.internal_width, 128);
     assert!(stats.triangles > 0);
+    assert_eq!(
+        stats.backend_used,
+        litematic_render::RenderBackend::Cpu,
+        "auto must keep a small reference scene on the CPU"
+    );
 }
 
 #[test]
@@ -726,18 +849,28 @@ fn render_gpu_backend_requires_a_gpu_build() {
 }
 
 #[test]
-fn render_rejects_streaming_with_a_gpu_backend() {
+fn render_allows_streaming_with_a_gpu_backend() {
+    let file = write_fixture(&basic_fixture());
+    let dir = tempfile::tempdir().unwrap();
+    let output_path = dir.path().join("gpu-streamed.png");
     let output = run(&[
         "render",
-        "missing.litematic",
+        file.path().to_str().unwrap(),
+        "--output",
+        output_path.to_str().unwrap(),
         "--backend",
         "gpu",
         "--stream-mesh",
     ]);
-    assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(
-        stderr.contains("GPU backends do not support --stream-mesh"),
-        "{stderr}"
-    );
+    if output.status.success() {
+        assert!(output_path.exists());
+    } else {
+        assert!(stderr.contains("BACKEND_UNAVAILABLE"), "{stderr}");
+        assert!(
+            !stderr.contains("GPU backends do not support --stream-mesh"),
+            "{stderr}"
+        );
+        assert!(!output_path.exists());
+    }
 }

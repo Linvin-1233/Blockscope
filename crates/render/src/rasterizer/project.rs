@@ -199,6 +199,95 @@ pub(super) fn push_page_quads(
     }
 }
 
+/// Project only translucent quads into the retained triangle list.
+///
+/// The instanced opaque/cutout path no longer projects those quads on the CPU.
+/// This companion keeps the translucent path unchanged without paying for
+/// opaque projection.
+#[cfg(feature = "gpu")]
+pub(super) fn push_page_translucent(
+    page: &MeshPage,
+    camera: &Camera,
+    options: &RenderOptions,
+    statistics: &mut RenderStatistics,
+    translucent: &mut Vec<Triangle>,
+) {
+    for quad in &page.quads {
+        if quad.layer != RenderLayer::Translucent {
+            continue;
+        }
+
+        let normal = quad.normal;
+        if dot3(
+            [
+                f64::from(normal[0]),
+                f64::from(normal[1]),
+                f64::from(normal[2]),
+            ],
+            camera.forward(),
+        ) >= 0.0
+        {
+            statistics.culled_backfaces += 1;
+            continue;
+        }
+
+        let mut projected = [[0.0f64; 3]; 4];
+        for (index, vertex) in quad.vertices.iter().enumerate() {
+            let world = [
+                f64::from(page.origin[0]) + f64::from(vertex.position[0]),
+                f64::from(page.origin[1]) + f64::from(vertex.position[1]),
+                f64::from(page.origin[2]) + f64::from(vertex.position[2]),
+            ];
+            projected[index] = camera.project(world);
+        }
+
+        let shade = if quad.shade {
+            options.lighting.face_shade(quad.normal)
+        } else {
+            1.0
+        };
+        let color = quad.color;
+        let ao = match options.lighting {
+            LightingProfile::FlatV1 => [3u8; 4],
+            LightingProfile::SimpleAoV1 => quad.ao,
+        };
+        let uvs = [
+            quad.vertices[0].uv,
+            quad.vertices[1].uv,
+            quad.vertices[2].uv,
+            quad.vertices[3].uv,
+        ];
+
+        for indices in [[0usize, 1, 2], [0, 2, 3]] {
+            let points = [
+                projected[indices[0]],
+                projected[indices[1]],
+                projected[indices[2]],
+            ];
+            let bbox = bounds(&points);
+            if bbox[0] > bbox[2] || bbox[1] > bbox[3] {
+                continue;
+            }
+
+            statistics.translucent_triangles += 1;
+            if quad.texture != NO_TEXTURE {
+                statistics.textured_triangles += 1;
+            }
+            statistics.triangles += 1;
+            let depth_key = (points[0][2] + points[1][2] + points[2][2]) / 3.0;
+            translucent.push(Triangle {
+                points: points.map(|point| point.map(|value| value as f32)),
+                color,
+                shade,
+                ao: [ao[indices[0]], ao[indices[1]], ao[indices[2]]],
+                uvs: [uvs[indices[0]], uvs[indices[1]], uvs[indices[2]]],
+                texture: quad.texture,
+                depth_key,
+            });
+        }
+    }
+}
+
 /// An opaque or cutout quad, projected once and split into triangles per tile.
 /// Colors and texture coordinates are stored compactly; the exact float values
 /// are reconstructed when the quad is rasterized into a tile.
@@ -343,6 +432,31 @@ impl Triangle {
             decode_uv(self.uvs[2]),
         ]
     }
+
+    /// Serialize one depth-bucket record. The tile index is not used by the
+    /// GPU translucent store, so it stays zero and is ignored on decode.
+    #[cfg(feature = "gpu")]
+    pub(super) fn encode_depth_record(&self) -> [u8; Self::RECORD_BYTES] {
+        self.encode_record(0)
+    }
+
+    #[cfg(feature = "gpu")]
+    pub(super) fn decode_depth_record(bytes: &[u8]) -> Self {
+        Self::decode_record(bytes).1
+    }
+
+    #[cfg(all(test, feature = "gpu"))]
+    pub(super) fn for_test(depth_key: f64) -> Self {
+        Self {
+            points: [[0.0; 3]; 3],
+            color: [255; 4],
+            shade: 1.0,
+            ao: [3; 3],
+            uvs: [[0; 2]; 3],
+            texture: NO_TEXTURE,
+            depth_key,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -354,5 +468,21 @@ mod tests {
         // Twelve million retained triangles are the dominant textured path
         // cost; keep a regression from silently widening this struct.
         assert!(std::mem::size_of::<Triangle>() <= 72);
+    }
+
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn depth_record_round_trips() {
+        let triangle = Triangle::for_test(1.25);
+        let record = triangle.encode_depth_record();
+        let decoded = Triangle::decode_depth_record(&record);
+
+        assert_eq!(decoded.depth_key, triangle.depth_key);
+        assert_eq!(decoded.points, triangle.points);
+        assert_eq!(decoded.color, triangle.color);
+        assert_eq!(decoded.shade, triangle.shade);
+        assert_eq!(decoded.ao, triangle.ao);
+        assert_eq!(decoded.uvs, triangle.uvs);
+        assert_eq!(decoded.texture, triangle.texture);
     }
 }

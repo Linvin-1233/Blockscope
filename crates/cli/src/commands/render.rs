@@ -2,8 +2,8 @@ use crate::ui::progress::Progress;
 use crate::ui::{self, ACCENT, HEADER, MUTED, WARNING};
 use crate::{
     AssetArgs, CliError, GEOMETRY_IGNORES_BLOCK_ENTITY_NBT, LimitArgs, MeshOptionArgs,
-    PreparedScene, apply_render_limits, load_materials, load_scene, mesh_limits, parse_background,
-    parse_texture_filter, warn_forced,
+    PreparedScene, StreamTarget, apply_render_limits, load_materials, load_scene, mesh_limits,
+    parse_background, parse_texture_filter, stream_target, warn_forced,
 };
 use clap::Args;
 use litematic_render::terminal::enable_windows_virtual_terminal;
@@ -71,14 +71,18 @@ pub(crate) struct RenderArgs {
     /// Camera elevation in degrees.
     #[arg(long, default_value_t = 30.0, value_name = "DEGREES")]
     elevation: f32,
+    /// Fit a rotation-invariant bounding sphere instead of the yaw-dependent
+    /// silhouette. Use for turntables or animated camera orbits.
+    #[arg(long)]
+    sphere_fit: bool,
     /// "transparent" or #RRGGBB / #RRGGBBAA.
     #[arg(long, default_value = "transparent", value_name = "COLOR")]
     background: String,
     /// flat-v1 or simple-ao-v1.
     #[arg(long, default_value = "simple-ao-v1", value_name = "PROFILE")]
     lighting: String,
-    /// Rasterization backend: cpu, gpu, or auto.
-    #[arg(long, default_value = "cpu", value_name = "BACKEND")]
+    /// Rasterization backend: cpu, gpu, or auto (default).
+    #[arg(long, default_value = "auto", value_name = "BACKEND")]
     backend: String,
     /// Supersampling factor: 1, 2, 3, or 4.
     #[arg(long, default_value_t = 2, value_name = "N")]
@@ -163,18 +167,7 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
     } else {
         None
     };
-    if backend != RenderBackend::Cpu && matches!(args.stream_mesh, StreamMeshMode::On) {
-        return Err(CliError::input(
-            "INVALID_RENDER_OPTIONS: GPU backends do not support --stream-mesh",
-        ));
-    }
-    // GPU rendering needs the complete page table: it chunks pages internally.
-    // Auto retains the mesh too so it can choose based on the quad count. The CPU
-    // path keeps the upstream streaming default.
-    let stream_mesh =
-        backend == RenderBackend::Cpu && !matches!(args.stream_mesh, StreamMeshMode::Off);
-
-    let view_options: Vec<RenderOptions> = views
+    let mut view_options: Vec<RenderOptions> = views
         .iter()
         .map(|&yaw| {
             let mut options = RenderOptions {
@@ -182,6 +175,7 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
                 height: args.height,
                 yaw,
                 elevation: args.elevation,
+                sphere_fit: args.sphere_fit,
                 background,
                 lighting,
                 supersample: args.supersample,
@@ -215,10 +209,51 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
     materials_stage.finish();
 
     let limits = mesh_limits(args.limits.force_limits);
-    let (scene, snapshot, mesh, mut mesh_ms_total) = if stream_mesh {
+
+    // Decide streaming before meshing so `auto` can avoid a full-mesh peak.
+    // GPU streaming is single-view; an auto GPU win with several views falls
+    // back to the shared full-mesh session so one upload feeds every view.
+    let stream_requested = match backend {
+        RenderBackend::Cpu => !matches!(args.stream_mesh, StreamMeshMode::Off),
+        RenderBackend::Gpu => view_count == 1 && !matches!(args.stream_mesh, StreamMeshMode::Off),
+        RenderBackend::Auto => !matches!(args.stream_mesh, StreamMeshMode::Off),
+    };
+    let mut stream_mesh = stream_requested;
+    let mut effective_backend = backend;
+    let mut prepared_snapshot = None;
+
+    if stream_mesh && backend == RenderBackend::Auto {
         let snapshot = materials
             .as_ref()
             .map(|materials| crate::material_snapshot(&scene, materials));
+        let estimate = crate::estimate_scene_quads(
+            &scene,
+            snapshot.as_ref(),
+            &limits,
+            args.threads,
+            args.mesh.options(),
+        )?;
+        let decision = crate::backend_decision(
+            &scene,
+            &view_options[0],
+            estimate,
+            true,
+            snapshot.as_ref(),
+            view_count,
+        );
+        effective_backend = decision.backend;
+        if effective_backend == RenderBackend::Gpu && view_count > 1 {
+            stream_mesh = false;
+        }
+        prepared_snapshot = snapshot;
+    }
+
+    let (scene, snapshot, mesh, mut mesh_ms_total) = if stream_mesh {
+        let snapshot = prepared_snapshot.or_else(|| {
+            materials
+                .as_ref()
+                .map(|materials| crate::material_snapshot(&scene, materials))
+        });
         (scene, snapshot, None, 0.0)
     } else {
         let bar = progress.bar("Building mesh");
@@ -244,10 +279,32 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
         (scene, snapshot, Some(mesh), mesh_ms)
     };
 
+    if let Some(mesh) = &mesh {
+        view_options = crate::resolve_view_backends(&scene, mesh, snapshot.as_ref(), &view_options);
+        effective_backend = view_options[0].backend;
+        if effective_backend == RenderBackend::Auto {
+            effective_backend = crate::backend_decision(
+                &scene,
+                &view_options[0],
+                mesh.statistics.quads,
+                false,
+                snapshot.as_ref(),
+                view_options.len(),
+            )
+            .backend;
+        }
+    } else {
+        for options in &mut view_options {
+            if options.backend == RenderBackend::Auto {
+                options.backend = effective_backend;
+            }
+        }
+    }
+
     let mut results = Vec::with_capacity(view_count);
     if let Some(mesh) = &mesh {
         let single_tile_progress = view_count == 1
-            && backend == RenderBackend::Cpu
+            && view_options[0].backend == RenderBackend::Cpu
             && !litematic_render::will_stream(mesh, &view_options[0]);
         let tile_bar = single_tile_progress.then(|| progress.bar("Rendering"));
         let tile_update = |done, total| {
@@ -297,12 +354,26 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
         result?;
     } else {
         for (view_index, options) in view_options.iter().enumerate() {
-            let mut renderer = StreamingRenderer::new(
+            let mut renderer = match stream_target(
+                effective_backend,
                 &scene,
                 options,
-                snapshot.as_ref().map(|snapshot| snapshot.textures()),
-            )
-            .map_err(CliError::from)?;
+                snapshot.as_ref(),
+            ) {
+                Ok(renderer) => renderer,
+                Err(error) if backend == RenderBackend::Auto && error.is_backend_unavailable() => {
+                    ui::errln!(
+                        "{WARNING}warning:{WARNING:#} GPU setup failed, falling back to CPU streaming: {}",
+                        error.message
+                    );
+                    StreamTarget::Cpu(Box::new(StreamingRenderer::new(
+                        &scene,
+                        options,
+                        snapshot.as_ref().map(|snapshot| snapshot.textures()),
+                    )?))
+                }
+                Err(error) => return Err(error),
+            };
             let mut render_chunk_ms = 0.0;
             let mut spill_error = None;
             let build_started = Instant::now();

@@ -512,3 +512,121 @@ fn serve_renders_with_the_gpu_backend() {
     let _bye = read_json(&mut lines);
     assert!(child.wait().unwrap().success());
 }
+
+#[test]
+fn serve_streams_a_single_view() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = fixture(dir.path());
+    let output_dir = dir.path().join("stream-out");
+    let (mut child, mut stdin, mut lines) = start();
+    let _hello = read_json(&mut lines);
+
+    send(
+        &mut stdin,
+        &json!({
+            "type": "render",
+            "id": "stream-job",
+            "input": { "path": input.display().to_string() },
+            "views": [45],
+            "width": 64,
+            "height": 64,
+            "supersample": 1,
+            "streamMesh": "on",
+            "outputDir": output_dir.display().to_string(),
+        }),
+    );
+    let result = read_json(&mut lines);
+    assert_eq!(result["ok"], true, "{result}");
+    assert_eq!(result["cacheHit"], false);
+    assert_eq!(result["statistics"]["backendUsed"], "cpu");
+    let path = result["outputs"][0]["path"].as_str().unwrap();
+    assert!(
+        std::fs::read(path)
+            .unwrap()
+            .starts_with(&[0x89, b'P', b'N', b'G'])
+    );
+
+    send(&mut stdin, &json!({ "type": "shutdown" }));
+    let _bye = read_json(&mut lines);
+    assert!(child.wait().unwrap().success());
+}
+
+#[cfg(feature = "gpu")]
+#[test]
+fn serve_streams_a_single_gpu_view() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = fixture(dir.path());
+    let output_dir = dir.path().join("gpu-stream-out");
+    let (mut child, mut stdin, mut lines) = start();
+    let _hello = read_json(&mut lines);
+
+    send(
+        &mut stdin,
+        &json!({
+            "type": "render",
+            "id": "gpu-stream-job",
+            "input": { "path": input.display().to_string() },
+            "views": [45],
+            "width": 64,
+            "height": 64,
+            "supersample": 1,
+            "backend": "gpu",
+            "streamMesh": "on",
+            "outputDir": output_dir.display().to_string(),
+        }),
+    );
+    let result = read_json(&mut lines);
+    if result["ok"] == false {
+        let code = result["error"]["code"].as_str().unwrap();
+        if code == "BACKEND_UNAVAILABLE" {
+            eprintln!("skipping GPU streaming serve test: {result}");
+        } else {
+            panic!("GPU streaming serve render failed: {result}");
+        }
+    } else {
+        assert_eq!(result["statistics"]["backendUsed"], "gpu");
+        let path = result["outputs"][0]["path"].as_str().unwrap();
+        assert!(
+            std::fs::read(path)
+                .unwrap()
+                .starts_with(&[0x89, b'P', b'N', b'G'])
+        );
+    }
+
+    send(&mut stdin, &json!({ "type": "shutdown" }));
+    let _bye = read_json(&mut lines);
+    assert!(child.wait().unwrap().success());
+}
+
+#[test]
+fn serve_rejects_multi_view_streaming() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = fixture(dir.path());
+    let (mut child, mut stdin, mut lines) = start();
+    let _hello = read_json(&mut lines);
+
+    send(
+        &mut stdin,
+        &json!({
+            "type": "render",
+            "id": "stream-multi",
+            "input": { "path": input.display().to_string() },
+            "views": [45, 225],
+            "streamMesh": "on",
+            "outputDir": dir.path().join("out").display().to_string(),
+        }),
+    );
+    let result = read_json(&mut lines);
+    assert_eq!(result["ok"], false);
+    assert_eq!(result["error"]["code"], "INVALID_RENDER_OPTIONS");
+    assert!(
+        result["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("single view")
+    );
+
+    send(&mut stdin, &json!({ "type": "shutdown" }));
+    let _bye = read_json(&mut lines);
+    assert!(child.wait().unwrap().success());
+}

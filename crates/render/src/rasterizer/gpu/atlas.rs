@@ -1,5 +1,8 @@
 use crate::RenderError;
-use litematic_material::TextureSet;
+use litematic_material::{TextureFilter, TextureSet};
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock, Weak};
+use wgpu::util::DeviceExt;
 
 /// One texture region inside the atlas. `xy` is the origin and `zw` the size.
 pub(super) type AtlasRect = [u32; 4];
@@ -11,6 +14,296 @@ pub(super) struct Atlas {
     /// Indexed by texture id. Missing ids keep a zero rect, which the shader
     /// treats as an untextured draw.
     pub(super) rects: Vec<AtlasRect>,
+}
+
+/// The cache budget is derived from the 60 percent VRAM working set by the GPU
+/// session. It stays at zero until the first texture-backed atlas is requested.
+const INITIAL_CACHE_BUDGET_BYTES: u64 = 0;
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct Globals {
+    filter_mode: u32,
+    _padding: [u32; 3],
+}
+
+#[derive(Clone)]
+struct AtlasBinding {
+    bind_group: wgpu::BindGroup,
+    _globals: wgpu::Buffer,
+}
+
+#[derive(Clone)]
+pub(super) struct CachedAtlas {
+    _texture: wgpu::Texture,
+    _view: wgpu::TextureView,
+    _rect_buffer: wgpu::Buffer,
+    nearest: AtlasBinding,
+    linear: AtlasBinding,
+    pub(super) bytes: u64,
+    pub(super) cache_hit: bool,
+}
+
+impl CachedAtlas {
+    pub(super) fn bind_group(&self, filter: TextureFilter) -> &wgpu::BindGroup {
+        match filter {
+            TextureFilter::Nearest => &self.nearest.bind_group,
+            TextureFilter::Linear => &self.linear.bind_group,
+        }
+    }
+}
+
+struct CacheEntry {
+    identity: Weak<()>,
+    atlas: CachedAtlas,
+    last_used: u64,
+}
+
+struct AtlasCache {
+    entries: HashMap<usize, CacheEntry>,
+    bytes: u64,
+    budget: u64,
+    clock: u64,
+}
+
+impl AtlasCache {
+    fn new(budget: u64) -> Self {
+        Self {
+            entries: HashMap::new(),
+            bytes: 0,
+            budget,
+            clock: 0,
+        }
+    }
+
+    fn tick(&mut self) -> u64 {
+        let now = self.clock;
+        self.clock = self.clock.saturating_add(1);
+        now
+    }
+
+    fn evict_dead(&mut self) {
+        let dead: Vec<(usize, u64)> = self
+            .entries
+            .iter()
+            .filter(|(_, entry)| entry.identity.strong_count() == 0)
+            .map(|(key, entry)| (*key, entry.atlas.bytes))
+            .collect();
+        for (key, bytes) in dead {
+            self.entries.remove(&key);
+            self.bytes = self.bytes.saturating_sub(bytes);
+        }
+    }
+
+    fn evict_over_budget(&mut self) {
+        while self.bytes > self.budget {
+            let Some(key) = self
+                .entries
+                .iter()
+                .min_by_key(|(_, entry)| entry.last_used)
+                .map(|(key, _)| *key)
+            else {
+                break;
+            };
+            if let Some(entry) = self.entries.remove(&key) {
+                self.bytes = self.bytes.saturating_sub(entry.atlas.bytes);
+            }
+        }
+    }
+}
+
+fn cache() -> &'static Mutex<AtlasCache> {
+    static CACHE: OnceLock<Mutex<AtlasCache>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(AtlasCache::new(INITIAL_CACHE_BUDGET_BYTES)))
+}
+
+pub(super) fn clear_cache() {
+    let mut cache = cache().lock().expect("atlas cache mutex poisoned");
+    cache.entries.clear();
+    cache.bytes = 0;
+}
+
+/// Return a cached atlas for `textures`, or build and cache one. A `None` or
+/// empty texture set produces a tiny uncached white atlas because it has no
+/// texture bytes worth sharing.
+pub(super) fn get_or_build(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    layout: &wgpu::BindGroupLayout,
+    textures: Option<&TextureSet>,
+    max_texture_dimension: u32,
+    cache_budget: u64,
+) -> Result<CachedAtlas, RenderError> {
+    {
+        let mut cache = cache().lock().expect("atlas cache mutex poisoned");
+        cache.budget = cache_budget;
+        cache.evict_over_budget();
+    }
+    let Some(textures) = textures.filter(|set| !set.is_empty()) else {
+        return build_cached(device, queue, layout, textures, max_texture_dimension);
+    };
+
+    let identity = textures.identity();
+    let key = Weak::as_ptr(&identity) as usize;
+
+    {
+        let mut cache = cache().lock().expect("atlas cache mutex poisoned");
+        cache.evict_dead();
+        let now = cache.tick();
+        if let Some(entry) = cache.entries.get_mut(&key) {
+            entry.last_used = now;
+            let mut atlas = entry.atlas.clone();
+            atlas.cache_hit = true;
+            return Ok(atlas);
+        }
+    }
+
+    let atlas = build_cached(device, queue, layout, Some(textures), max_texture_dimension)?;
+
+    let mut cache = cache().lock().expect("atlas cache mutex poisoned");
+    cache.evict_dead();
+    let now = cache.tick();
+    if let Some(entry) = cache.entries.get_mut(&key) {
+        entry.last_used = now;
+        let mut atlas = entry.atlas.clone();
+        atlas.cache_hit = true;
+        return Ok(atlas);
+    }
+
+    if atlas.bytes <= cache.budget {
+        cache.bytes = cache.bytes.saturating_add(atlas.bytes);
+        cache.entries.insert(
+            key,
+            CacheEntry {
+                identity,
+                atlas: atlas.clone(),
+                last_used: now,
+            },
+        );
+        cache.evict_over_budget();
+    }
+    Ok(atlas)
+}
+
+fn build_cached(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    layout: &wgpu::BindGroupLayout,
+    textures: Option<&TextureSet>,
+    max_texture_dimension: u32,
+) -> Result<CachedAtlas, RenderError> {
+    let atlas = build(textures, max_texture_dimension)?;
+    let bytes = atlas.rgba.len() as u64
+        + atlas.rects.len() as u64 * std::mem::size_of::<AtlasRect>() as u64
+        + 2 * std::mem::size_of::<Globals>() as u64;
+
+    let texture = upload_texture(device, queue, atlas.width, atlas.height, &atlas.rgba);
+    let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+    let mut rect_data = atlas.rects;
+    if rect_data.is_empty() {
+        rect_data.push([0; 4]);
+    }
+    let rect_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("blockscope gpu texture rects"),
+        contents: bytemuck::cast_slice(&rect_data),
+        usage: wgpu::BufferUsages::STORAGE,
+    });
+
+    let nearest = binding(device, layout, &view, &rect_buffer, 0);
+    let linear = binding(device, layout, &view, &rect_buffer, 1);
+    Ok(CachedAtlas {
+        _texture: texture,
+        _view: view,
+        _rect_buffer: rect_buffer,
+        nearest,
+        linear,
+        bytes,
+        cache_hit: false,
+    })
+}
+
+fn binding(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    view: &wgpu::TextureView,
+    rects: &wgpu::Buffer,
+    filter_mode: u32,
+) -> AtlasBinding {
+    let globals = Globals {
+        filter_mode,
+        _padding: [0; 3],
+    };
+    let globals_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("blockscope gpu globals"),
+        contents: bytemuck::bytes_of(&globals),
+        usage: wgpu::BufferUsages::UNIFORM,
+    });
+    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("blockscope gpu bind group"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: globals_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: rects.as_entire_binding(),
+            },
+        ],
+    });
+    AtlasBinding {
+        bind_group,
+        _globals: globals_buffer,
+    }
+}
+
+fn upload_texture(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    width: u32,
+    height: u32,
+    rgba: &[u8],
+) -> wgpu::Texture {
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("blockscope gpu atlas"),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    queue.write_texture(
+        wgpu::TexelCopyTextureInfo {
+            texture: &texture,
+            mip_level: 0,
+            origin: wgpu::Origin3d::ZERO,
+            aspect: wgpu::TextureAspect::All,
+        },
+        rgba,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(width * 4),
+            rows_per_image: Some(height),
+        },
+        wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+    );
+    texture
 }
 
 /// The bounded atlas side length. Texture resources top out at 2048 pixels, so

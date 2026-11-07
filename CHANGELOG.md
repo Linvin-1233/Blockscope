@@ -7,6 +7,23 @@
 
 ## [Unreleased]
 
+### 新增
+
+- GPU 渲染性能路径：紧凑 `GpuQuad` 实例与着色器内相机变换/UV 解码、按页流式
+  上传、进程级纹理图集缓存，以及基于粗粒度深度桶和 WBOIT 的有界内存半透明
+  合成。单视角 GPU 分页渲染和共享上传的多视角会话均可用。
+- `render`、`bench` 和 `serve` 默认使用 `--backend auto`。策略根据硬件适配器、
+  CPU 线程数、网格规模、分辨率、流式模式和 60% 显存预算预测收益；小场景和
+  不确定场景留在 CPU，`cpu` 仍是逐字节精确的显式覆盖。
+- `serve` 请求新增可选的 `streamMesh`（`off`/`on`/`auto`），支持单视角 GPU
+  分页渲染；`statistics.backendUsed` 报告实际后端。
+- Windows、macOS 和 Linux GNU 发布包启用 GPU 特性；Linux musl 与 wasm 保持
+  CPU-only。Docker 镜像可用 `--build-arg GPU=1` 编译 GPU 支持。
+- `render`/`bench` 新增 `--sphere-fit`：按旋转不变的包围球取景，转台和多视角
+  动画不会随 yaw 变化忽远忽近。
+- 新增库级 `GpuFrameSession` 帧循环：不透明/镂空几何只上传一次，后续帧仅更新
+  相机 uniform 并重新投影半透明层，为视频导出复用 GPU 资源。
+
 ### 性能
 
 - CPU 流式渲染把半透明 spill 写入移到后台线程，并在排序当前 bucket 时预读
@@ -24,6 +41,9 @@
   删除 scene LOD 模块、警告和文档。大结构请改用 `--stream-mesh`、
   `--greedy-mesh` 和分辨率控制。
 - `render --stream-mesh=auto` 现在等价于 `on`，始终按页流式构建网格。
+- `auto` 可能返回近似 GPU 输出；需要逐字节一致结果时显式使用 `cpu`。
+  GPU 与 CPU 在 96x96 参考场景上的最大通道差为 1，但差异像素比例仍高于
+  spec 的 0.1% 目标，已在 `docs/performance.md` 记录为未达成。
 - `serve`/`supervise` 协议版本提升到 3：请求和结果中不再有 `lod` 与 `lodMs`，
   supervisor 的 hello 不再有 `defaultLod`，缓存仅按 `inputHash` 命中。
 

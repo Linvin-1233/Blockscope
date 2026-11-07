@@ -21,6 +21,8 @@ jobs:
         with:
           tool: just
       - run: just check
+      # GPU support is optional at runtime but must compile on every platform.
+      - run: just check-gpu
 
   wasm:
     runs-on: ubuntu-latest

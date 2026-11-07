@@ -18,6 +18,12 @@ blockscope serve --client-jar client.jar --threads 4 --cache 2
 - `--ignore-block-entity-nbt`: skip container NBT
 
 The worker prints one `hello` line after materials are ready, then accepts jobs.
+`hello.backends` lists `cpu`, `auto`, and (when compiled) `gpu`. Requests default
+to `auto`: the worker uses the CPU for small scenes and the GPU only when the
+hardware adapter, f32 precision guard, 60 percent VRAM budget, and measured cost
+model predict a win. `cpu` is the byte-exact override; `gpu` forces hardware and
+fails with `BACKEND_UNAVAILABLE` when none is usable. Every result reports the
+backend that produced the image in `statistics.backendUsed`.
 
 ## Request Example
 
@@ -41,6 +47,9 @@ The worker prints one `hello` line after materials are ready, then accepts jobs.
 - `input.hash` is optional and is a caller-asserted SHA-256 identity; on a cache hit the worker trusts it and does not read the file, on a miss it recomputes and verifies the digest
 - `supervise` injects the hash it computed for routing, so repeated inputs also take the no-read cache path
 - An empty `views` array defaults to `[45]`; at most 64 angles are accepted; multiple views render concurrently when a complete mesh is available
+- `backend` is `cpu`, `gpu`, or `auto`; default `auto`. `cpu` is byte-exact, `gpu` returns `BACKEND_UNAVAILABLE` when no hardware adapter is usable, and `auto` may return approximate GPU output. Match the returned `statistics.backendUsed` when exactness matters
+- `streamMesh` is `off` (default), `on`, or `auto`. It builds and renders page chunks without retaining the full mesh and supports one view per request. `off` keeps the cacheable full-mesh path; streaming requests do not populate the scene/mesh cache
+- A GPU allocation, driver, precision, or VRAM-budget failure under `auto` falls back to the CPU before any output is written. A failure after the first GPU draw is fatal and never produces a partial PNG
 - Output files are `{id}.png` or `{id}-{yaw}.png`; callers must keep `id` and `outputDir` unique across concurrent jobs. Duplicate ids or yaw values overwrite the same path
 - Full fields, results, and error codes are in [Engine protocol v3](/engine-protocol)
 

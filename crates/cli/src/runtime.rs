@@ -7,11 +7,14 @@ use litematic_material::{AssetSource, MaterialSet, MaterialSnapshot, TextureFilt
 use litematic_mesh::{
     ColorBlockCatalog, Mesh, MeshBuildOptions, MeshLimits, MeshPage, MeshStatistics, PageProgress,
     Rgba, build_mesh_parallel_with_options_and_progress,
-    build_mesh_streaming_with_options_and_progress,
+    build_mesh_streaming_with_options_and_progress, estimate_mesh_quads,
 };
+#[cfg(feature = "gpu")]
+use litematic_render::GpuRenderSession;
 use litematic_render::{
-    Background, RenderOptions, RenderOutput, TileProgress, render_mesh, render_mesh_with_progress,
-    render_mesh_with_textures, render_mesh_with_textures_and_progress,
+    BackendDecision, Background, RenderBackend, RenderError, RenderOptions, RenderOutput,
+    StreamingRenderer, TileProgress, render_mesh, render_mesh_with_progress,
+    render_mesh_with_textures, render_mesh_with_textures_and_progress, select_backend,
 };
 use litematic_scene::Scene;
 use std::path::Path;
@@ -86,6 +89,150 @@ where
     }
 }
 
+/// Streaming renderer selected for a single view.
+pub(crate) enum StreamTarget<'a> {
+    Cpu(Box<StreamingRenderer<'a>>),
+    #[cfg(feature = "gpu")]
+    Gpu(Box<GpuRenderSession>),
+}
+
+impl StreamTarget<'_> {
+    pub(crate) fn render_pages(&mut self, pages: &[MeshPage]) -> Result<(), RenderError> {
+        match self {
+            Self::Cpu(renderer) => renderer.render_pages(pages),
+            #[cfg(feature = "gpu")]
+            Self::Gpu(renderer) => renderer.render_pages(pages),
+        }
+    }
+
+    pub(crate) fn finish(self) -> Result<RenderOutput, RenderError> {
+        match self {
+            Self::Cpu(renderer) => (*renderer).finish(),
+            #[cfg(feature = "gpu")]
+            Self::Gpu(renderer) => (*renderer).finish(),
+        }
+    }
+}
+
+pub(crate) fn stream_target<'a>(
+    backend: RenderBackend,
+    scene: &Scene,
+    options: &'a RenderOptions,
+    snapshot: Option<&'a MaterialSnapshot>,
+) -> Result<StreamTarget<'a>, CliError> {
+    let textures = snapshot.map(|snapshot| snapshot.textures());
+    match backend {
+        RenderBackend::Cpu => Ok(StreamTarget::Cpu(Box::new(StreamingRenderer::new(
+            scene, options, textures,
+        )?))),
+        #[cfg(feature = "gpu")]
+        RenderBackend::Gpu => Ok(StreamTarget::Gpu(Box::new(GpuRenderSession::new(
+            scene, options, textures,
+        )?))),
+        #[cfg(not(feature = "gpu"))]
+        RenderBackend::Gpu => Err(CliError::input(
+            "BACKEND_UNAVAILABLE: the GPU backend is not enabled in this build",
+        )),
+        RenderBackend::Auto => Err(CliError::input(
+            "INVALID_RENDER_OPTIONS: auto streaming is not supported",
+        )),
+    }
+}
+
+/// Deterministic page sample used by the `auto` policy before a streaming mesh
+/// exists. Thirty-two pages keep the estimate cheap even for huge scenes.
+pub(crate) const POLICY_SAMPLE_PAGES: usize = 32;
+
+pub(crate) fn estimate_scene_quads(
+    scene: &Scene,
+    snapshot: Option<&MaterialSnapshot>,
+    limits: &MeshLimits,
+    threads: u32,
+    options: MeshBuildOptions,
+) -> Result<u64, CliError> {
+    match snapshot {
+        Some(snapshot) => estimate_mesh_quads(
+            scene,
+            snapshot,
+            limits,
+            POLICY_SAMPLE_PAGES,
+            threads,
+            options,
+        )
+        .map_err(CliError::from),
+        None => {
+            let catalog = ColorBlockCatalog::new().map_err(CliError::internal)?;
+            let states = scene
+                .regions
+                .iter()
+                .flat_map(|region| region.palette.iter().cloned());
+            let snapshot = catalog.snapshot(states);
+            estimate_mesh_quads(
+                scene,
+                &snapshot,
+                limits,
+                POLICY_SAMPLE_PAGES,
+                threads,
+                options,
+            )
+            .map_err(CliError::from)
+        }
+    }
+}
+
+/// Resolve `Auto` for a complete mesh so every view uses the same backend and
+/// multi-view GPU batching sees an explicit `Gpu` value.
+pub(crate) fn resolve_view_backends(
+    scene: &Scene,
+    mesh: &Mesh,
+    snapshot: Option<&MaterialSnapshot>,
+    options: &[RenderOptions],
+) -> Vec<RenderOptions> {
+    // A single view keeps `Auto` so the library entry point can fall back to
+    // the CPU when session setup fails. Multi-view jobs must resolve before
+    // batching so the shared GPU session is selected.
+    if options.len() <= 1 {
+        return options.to_vec();
+    }
+    let textures = snapshot
+        .map(|snapshot| snapshot.textures().bytes())
+        .unwrap_or(0);
+    let mut resolved = options.to_vec();
+    let auto = options
+        .iter()
+        .find(|options| options.backend == RenderBackend::Auto);
+    if let Some(auto) = auto {
+        let decision = select_backend(
+            scene,
+            auto,
+            mesh.statistics.quads,
+            false,
+            textures,
+            options.len(),
+        );
+        for options in &mut resolved {
+            if options.backend == RenderBackend::Auto {
+                options.backend = decision.backend;
+            }
+        }
+    }
+    resolved
+}
+
+pub(crate) fn backend_decision(
+    scene: &Scene,
+    options: &RenderOptions,
+    quads: u64,
+    streaming: bool,
+    snapshot: Option<&MaterialSnapshot>,
+    views: usize,
+) -> BackendDecision {
+    let textures = snapshot
+        .map(|snapshot| snapshot.textures().bytes())
+        .unwrap_or(0);
+    select_backend(scene, options, quads, streaming, textures, views)
+}
+
 /// Render views in deterministic batches and hand each output to `sink`.
 ///
 /// Batches are limited by both the thread budget and a fixed output-byte
@@ -107,6 +254,11 @@ where
     if options.is_empty() {
         return Ok((Vec::new(), 0.0));
     }
+    let auto_requested = options
+        .iter()
+        .any(|options| options.backend == RenderBackend::Auto);
+    let resolved = resolve_view_backends(scene, mesh, snapshot, options);
+    let options = resolved.as_slice();
 
     let total_threads = effective_threads(total_threads);
     let max_output_bytes = options
@@ -118,7 +270,17 @@ where
         })
         .max()
         .unwrap_or(0);
-    let batch_budget = view_batch_budget(max_output_bytes, total_threads);
+    let all_gpu = options
+        .iter()
+        .all(|options| options.backend == RenderBackend::Gpu);
+    let batch_budget = if all_gpu {
+        gpu_view_batch_budget(
+            options,
+            snapshot.map(|snapshot| snapshot.textures().bytes()),
+        )
+    } else {
+        view_batch_budget(max_output_bytes, total_threads)
+    };
 
     let mut times = Vec::with_capacity(options.len());
     let wall_started = Instant::now();
@@ -126,13 +288,71 @@ where
     let mut start = 0;
 
     while start < options.len() {
-        let batch_size = total_threads.min(options.len() - start).min(batch_budget);
+        let batch_size = batch_budget
+            .min(options.len() - start)
+            .min(total_threads.max(1));
         let end = start + batch_size;
         let batch = &options[start..end];
         let per_view = (total_threads / batch.len()).max(1) as u32;
 
+        #[cfg(feature = "gpu")]
+        if all_gpu && batch.len() > 1 {
+            let render_started = Instant::now();
+            let session = GpuRenderSession::new_views(
+                scene,
+                batch,
+                snapshot.map(|snapshot| snapshot.textures()),
+            );
+            match session {
+                Ok(mut session) => {
+                    session.render_pages(&mesh.pages)?;
+                    let outputs = session.finish_views()?;
+                    let render_ms =
+                        render_started.elapsed().as_secs_f64() * 1000.0 / batch.len() as f64;
+                    for (index, output) in outputs.into_iter().enumerate() {
+                        let sink_started = Instant::now();
+                        sink(output, render_ms, &batch[index])?;
+                        sink_ms += sink_started.elapsed().as_secs_f64() * 1000.0;
+                        times.push(render_ms);
+                    }
+                    start = end;
+                    continue;
+                }
+                Err(error) if auto_requested => {
+                    crate::ui::errln!(
+                        "{}warning:{:#} GPU setup failed, falling back to CPU: {}",
+                        crate::ui::WARNING,
+                        crate::ui::WARNING,
+                        error
+                    );
+                    // Fall through to the CPU loop with a CPU copy of this
+                    // batch so a pre-draw failure never loses output.
+                    for (index, base) in batch.iter().enumerate() {
+                        let mut options = base.clone();
+                        options.backend = RenderBackend::Cpu;
+                        options.threads = per_view;
+                        let render_started = Instant::now();
+                        let output = render_one(scene, mesh, snapshot, &options, progress)?;
+                        let render_ms = render_started.elapsed().as_secs_f64() * 1000.0;
+                        let sink_started = Instant::now();
+                        sink(output, render_ms, &batch[index])?;
+                        sink_ms += sink_started.elapsed().as_secs_f64() * 1000.0;
+                        times.push(render_ms);
+                    }
+                    start = end;
+                    continue;
+                }
+                Err(error) => return Err(CliError::from(error)),
+            }
+        }
+
         if batch.len() == 1 {
             let mut options = batch[0].clone();
+            // Let the library re-run the policy for a single view so a
+            // pre-draw GPU failure can still fall back to the CPU.
+            if auto_requested {
+                options.backend = RenderBackend::Auto;
+            }
             options.threads = per_view;
             let render_started = Instant::now();
             let output = render_one(scene, mesh, snapshot, &options, progress)?;
@@ -183,6 +403,63 @@ fn view_batch_budget(max_output_bytes: u64, total_threads: usize) -> usize {
         .checked_div(max_output_bytes)
         .map(|value| (value as usize).max(1))
         .unwrap_or(total_threads)
+}
+
+/// GPU views need a color, depth, and WBOIT target at internal resolution in
+/// addition to the output buffer. Batch by the adapter working set so the
+/// session never asks for more than the 60 percent VRAM budget, and keep the
+/// old output-byte ceiling for callers that only have CPU memory pressure.
+fn gpu_view_batch_budget(options: &[RenderOptions], texture_bytes: Option<u64>) -> usize {
+    let per_view = options
+        .iter()
+        .map(|options| {
+            let internal =
+                u64::from(options.internal_width()) * u64::from(options.internal_height());
+            // Color + depth + two Rgba16Float WBOIT targets, one aligned
+            // readback buffer, the output RGBA buffer, and a small allowance.
+            let row_stride = (u64::from(options.internal_width()) * 4).div_ceil(256) * 256;
+            let readback = row_stride * u64::from(options.internal_height());
+            let output = u64::from(options.width)
+                .saturating_mul(u64::from(options.height))
+                .saturating_mul(4);
+            internal
+                .saturating_mul(24)
+                .saturating_add(readback)
+                .saturating_add(output)
+                .saturating_add(8 * 1024 * 1024)
+        })
+        .max()
+        .unwrap_or(1);
+    let output_bytes = options
+        .iter()
+        .map(|options| {
+            u64::from(options.width)
+                .saturating_mul(u64::from(options.height))
+                .saturating_mul(4)
+        })
+        .max()
+        .unwrap_or(1);
+
+    #[cfg(feature = "gpu")]
+    let budget = litematic_render::gpu_working_set_bytes()
+        .map(|budget| {
+            budget.saturating_sub(
+                texture_bytes
+                    .unwrap_or(0)
+                    .saturating_add(3 * 32 * 1024 * 1024),
+            )
+        })
+        .filter(|budget| *budget > 0)
+        .unwrap_or(MAX_VIEW_BATCH_BYTES);
+    #[cfg(not(feature = "gpu"))]
+    let budget = {
+        let _ = texture_bytes;
+        MAX_VIEW_BATCH_BYTES
+    };
+
+    let by_vram = budget.checked_div(per_view).unwrap_or(1).max(1) as usize;
+    let by_output = view_batch_budget(output_bytes, 1);
+    by_vram.min(by_output)
 }
 
 fn render_one(

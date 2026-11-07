@@ -9,10 +9,17 @@ mod bin;
 mod downsample;
 mod geometry;
 mod gpu;
+mod policy;
 mod project;
 mod spill;
 mod stream;
 mod tile;
+
+#[cfg(feature = "gpu")]
+pub use gpu::{GpuFrameSession, GpuRenderSession};
+pub use policy::{
+    BackendDecision, BackendPolicyInput, GpuAdapterKind, decide_backend, select_backend,
+};
 
 use bin::{bin_quads, bin_triangles, effective_tile_size, tile_jobs, worker_count};
 use downsample::downsample;
@@ -22,12 +29,34 @@ pub use stream::StreamingRenderer;
 use stream::chunk_ranges;
 use tile::{TileProgressSink, render_tile, render_tiles_parallel};
 
-/// Auto selects the GPU at or above this mesh quad count. Below it the device
-/// setup and readback cost more than the CPU tile loop.
-const GPU_AUTO_MIN_QUADS: u64 = 50_000;
-
 /// Receives `(completed_tiles, total_tiles)` from the rasterizer.
 pub type TileProgress<'a> = &'a (dyn Fn(u64, u64) + Sync);
+
+/// 60 percent of adapter VRAM, or `None` when no hardware adapter is present.
+/// The CLI uses it to batch multi-view GPU targets inside the same budget the
+/// render session enforces.
+#[cfg(feature = "gpu")]
+pub fn gpu_working_set_bytes() -> Option<u64> {
+    gpu::working_set_bytes()
+}
+
+/// GPU stage timings in microseconds. All fields are zero on the CPU backend.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct GpuStageTimings {
+    pub setup_us: u64,
+    pub atlas_us: u64,
+    pub atlas_cache_hit: bool,
+    pub wboit_used: bool,
+    pub project_us: u64,
+    pub encode_us: u64,
+    pub upload_us: u64,
+    pub draw_us: u64,
+    pub translucent_us: u64,
+    pub readback_us: u64,
+    pub resolve_us: u64,
+    pub total_us: u64,
+}
 
 /// Render counters and effective output settings.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -50,6 +79,9 @@ pub struct RenderStatistics {
     /// Backend that produced the image. `Auto` resolves to `Cpu` or `Gpu`.
     #[serde(default)]
     pub backend_used: RenderBackend,
+    /// GPU stage breakdown; all zero when the CPU backend produced the image.
+    #[serde(default)]
+    pub gpu: GpuStageTimings,
 }
 
 /// RGBA output plus render diagnostics.
@@ -123,10 +155,10 @@ fn render_mesh_internal(
     options.validate()?;
     let camera = Camera::new(&scene.bounds, options)?;
 
-    // Auto only pays GPU initialization when the mesh is large enough to
-    // amortize device setup and readback.
+    // `auto` runs the measured policy; explicit `gpu` stays an override. A
+    // streaming GPU request is handled by the CLI session because the library
+    // entry point always receives a complete mesh.
     let backend = options.backend;
-    let auto = backend == RenderBackend::Auto;
     if backend != RenderBackend::Cpu {
         if options.force_streaming {
             if backend == RenderBackend::Gpu {
@@ -134,11 +166,21 @@ fn render_mesh_internal(
                     "the GPU backend does not support mesh streaming",
                 ));
             }
-        } else if backend == RenderBackend::Gpu || mesh.statistics.quads >= GPU_AUTO_MIN_QUADS {
-            match try_gpu_render(scene, mesh, &camera, options, textures) {
-                Ok(output) => return Ok(output),
-                Err(GpuFailure::Unavailable(_)) if auto => {}
-                Err(failure) => return Err(failure.into_error()),
+        } else {
+            let decision = select_backend(
+                scene,
+                options,
+                mesh.statistics.quads,
+                false,
+                textures.map(TextureSet::bytes).unwrap_or(0),
+                1,
+            );
+            if decision.backend == RenderBackend::Gpu {
+                match try_gpu_render(scene, mesh, &camera, options, textures) {
+                    Ok(output) => return Ok(output),
+                    Err(GpuFailure::Unavailable(_)) if backend == RenderBackend::Auto => {}
+                    Err(failure) => return Err(failure.into_error()),
+                }
             }
         }
     }

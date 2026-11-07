@@ -144,6 +144,23 @@ fn snapshot_matches_live_resolution() {
 }
 
 #[test]
+fn snapshot_shares_texture_storage_with_the_live_set() {
+    let (_pack, materials) = fixture();
+    let snapshot = materials.snapshot([state("minecraft:test_cube")]);
+    let live = materials.textures();
+
+    assert!(!snapshot.textures().is_empty());
+    for id in 0..snapshot.textures().len() as u16 {
+        let snapshot_texture = snapshot.textures().get(id).unwrap() as *const _;
+        let live_texture = live.get(id).unwrap() as *const _;
+        assert_eq!(
+            snapshot_texture, live_texture,
+            "snapshot texture {id} must share storage with the live set"
+        );
+    }
+}
+
+#[test]
 fn snapshot_adds_a_water_style_for_waterlogged_blocks() {
     let (_pack, materials) = fixture();
     let mut slab = state("minecraft:oak_slab");

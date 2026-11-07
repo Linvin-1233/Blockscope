@@ -67,6 +67,10 @@ pub struct RenderOptions {
     pub elevation: f32,
     pub background: Background,
     pub lighting: LightingProfile,
+    /// Fit the camera to the scene's bounding sphere instead of its
+    /// yaw-dependent projected silhouette. Keeps orbiting cameras (turntables)
+    /// at a constant framing distance. Default `false`.
+    pub sphere_fit: bool,
     pub tile_size: u32,
     pub padding: f32,
     pub supersample: u32,
@@ -90,6 +94,7 @@ impl Default for RenderOptions {
             elevation: 30.0,
             background: Background::Transparent,
             lighting: LightingProfile::SimpleAoV1,
+            sphere_fit: false,
             tile_size: 64,
             padding: 16.0,
             supersample: 2,
@@ -98,7 +103,7 @@ impl Default for RenderOptions {
             max_pixels: 16_777_216,
             max_supersampled_pixels: 33_554_432,
             force_streaming: false,
-            backend: RenderBackend::Cpu,
+            backend: RenderBackend::Auto,
         }
     }
 }
@@ -203,5 +208,10 @@ mod tests {
             ..Default::default()
         };
         assert!(options.validate().is_err());
+    }
+
+    #[test]
+    fn default_backend_is_auto() {
+        assert_eq!(RenderOptions::default().backend, RenderBackend::Auto);
     }
 }

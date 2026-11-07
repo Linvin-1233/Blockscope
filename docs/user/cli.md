@@ -71,9 +71,11 @@ Terminal images are fitted to the visible grid: when the rendered pixel size wou
 | `--supersample <1-4>`                                          | Supersampling factor; default `2`                                                                                                 |
 | `--views <LIST>`                                               | Comma-separated yaw angles, e.g. `45,225`; at most 64                                                                             |
 | `--yaw` / `--elevation`                                        | Single-view horizontal/elevation angles                                                                                           |
+| `--sphere-fit`                                                 | Fit a rotation-invariant bounding sphere instead of the yaw-dependent silhouette; keeps turntable framing stable                 |
 | `--background transparent\|#RRGGBB[AA]`                        | Background; default transparent                                                                                                   |
 | `--lighting flat-v1\|simple-ao-v1`                             | Lighting profile; default `simple-ao-v1`                                                                                          |
 | `--threads <N>`                                                | Mesh/rasterizer threads; `0` uses available parallelism, capped at 256                                                            |
+| `--backend cpu\|gpu\|auto`                                     | Rasterization backend; default `auto`; `cpu` is the byte-exact reference, `gpu` forces hardware and fails if unavailable           |
 | `--stream-mesh [auto\|on\|off]`                                | Build and render mesh in page chunks without retaining the full mesh; default `auto`; `off` retains the full mesh                 |
 | `--greedy-mesh`                                                | Merge coplanar unit faces with identical material and lighting; useful for large flat or repetitive surfaces, disabled by default |
 | `--force-limits`                                               | Raises input, scene, mesh, and pixel caps; can exhaust memory                                                                     |
@@ -86,12 +88,15 @@ Terminal images are fitted to the visible grid: when the rendered pixel size wou
 
 `inspect`, `validate`, and `stats` keep `TileEntities` by default. Geometry commands skip them by default to reduce parse time and memory for large containers.
 
-The GPU backend needs the complete mesh and cannot be combined with
-`--stream-mesh on`. If the binary was not built with `--features gpu` or no
-hardware adapter is available, an explicit `gpu` request fails with
-`BACKEND_UNAVAILABLE`; `auto` falls back to the CPU instead. GPU output is
-visually close to the CPU reference but is not byte-exact across drivers, so
-golden PNGs and determinism guarantees remain on `cpu`.
+The default backend is `auto`. It uses the CPU for small scenes and the GPU
+when a hardware adapter, the f32 precision guard, the 60 percent VRAM budget,
+and the measured cost model predict a win. `gpu` streams pages for a single
+view; multi-view GPU jobs retain the full mesh so one upload feeds every view.
+If the binary was not built with `--features gpu`, no hardware adapter exists,
+or the adapter is software-only, `auto` uses the CPU. An explicit `gpu` request
+fails with `BACKEND_UNAVAILABLE` instead. GPU output is visually close to the
+CPU reference but is not byte-exact across drivers, so golden PNGs and
+determinism guarantees remain on `cpu`.
 
 ## Terminal Style and Progress
 
