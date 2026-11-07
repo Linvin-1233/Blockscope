@@ -1,6 +1,6 @@
 # Deployment
 
-The engine is a single static-ish binary with no runtime service dependencies. It runs the same way on Linux, macOS, in containers, and on Windows.
+The engine is a single static-ish binary with no mandatory runtime service dependencies; MP4/GIF export optionally invokes an external ffmpeg. It runs the same way on Linux, macOS, in containers, and on Windows.
 
 ## Release Binaries
 
@@ -41,9 +41,31 @@ not byte-exact; see [Rendering and PNG Output](./rendering.md#gpu-backend).
 
 The versioned download examples in `docs/user/getting-started.md` and its Chinese counterpart in `docs/zh/user/getting-started.md` name the last published release; update them after the new release is available.
 
+## Video Encoding
+
+MP4 and GIF export uses an external ffmpeg executable; release binaries do not
+bundle ffmpeg or link `libav*`. Install ffmpeg 4.4 or newer on the host and make
+it available on `PATH`, or pass `--ffmpeg /path/to/ffmpeg` to `animate`, `serve`,
+or `supervise`. A supervisor resolves the path once and passes it to every
+worker. Requests cannot override the executable path.
+
+`--encoder auto` is the default. It probes hardware encoders at the requested
+output size and falls back to libx264. Explicit hardware choices require the
+matching driver and device:
+
+- NVENC needs a supported NVIDIA driver and GPU.
+- Quick Sync needs the Intel media driver and a usable device.
+- AMF needs the AMD driver and runtime DLLs.
+- VideoToolbox is the native macOS path.
+- VAAPI uses `/dev/dri/renderD128`; pass the render node into containers and
+  install the vendor driver.
+
+Hardware encoding is optional. The CPU rasterizer plus libx264 is the
+reproducible configuration and the reference for quality comparisons.
+
 ## Container Deployment
 
-The container image contains only `blockscope` with no external runtime dependencies or assets. Client jars, resource packs, and job directories must be mounted at runtime.
+The container image contains only `blockscope` with no external runtime dependencies or assets. Client jars, resource packs, and job directories must be mounted at runtime. For video jobs, install ffmpeg in a derived image or mount it at runtime; the default image stays slim and does not include ffmpeg.
 
 For container build commands, volume mounting, worker execution, and supervisor setup, see the [Docker Guide](./user/docker.md) and [Service Mode](./user/service.md).
 

@@ -25,6 +25,14 @@
   相机 uniform 并重新投影半透明层，为视频导出复用 GPU 资源。
 - 新增 `animate` 命令和 `litematic-video` crate：关键帧相机时间线、MP4/GIF
   ffmpeg 编码、GPU 常驻帧会话与 CPU 逐帧回退。
+- `serve`/`supervise` 协议升级到 v4，支持 MP4/GIF 视频任务：`hello.video`
+  能力、`animation`/`encoder`/`quality` 请求字段、`kind: "video"` 结果、
+  `encodeMs` 以及 `--ffmpeg`。`supervise` 新增 `--video-timeout`（默认 600 秒），
+  视频任务不再受 60 秒图片超时限制。
+- `--encoder auto` 现在会在目标输出尺寸上探测 NVENC、Quick Sync、AMF、
+  VideoToolbox 和 VAAPI，并按平台优先级选择可用硬件编码器；探测失败回退
+  libx264。显式硬件编码器不可用时返回 `ENCODER_UNAVAILABLE`，不会静默回退。
+- ffmpeg 版本解析支持 `YYYY-MM-DD-git-...` 形式的 nightly 构建。
 
 ### 性能
 

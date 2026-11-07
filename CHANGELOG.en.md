@@ -34,6 +34,16 @@ User-facing changes are recorded here. The format follows
 - Add `animate` and the `litematic-video` crate: keyframed camera timelines,
   MP4/GIF ffmpeg encoding, a resident GPU frame session, and a per-frame CPU
   fallback.
+- Raise `serve`/`supervise` to protocol v4 with MP4/GIF video jobs:
+  `hello.video` capabilities, `animation`/`encoder`/`quality` request fields,
+  `kind: "video"` results, `encodeMs`, and `--ffmpeg`. `supervise` adds
+  `--video-timeout` (default 600 seconds) so video jobs are not limited by the
+  60 second image timeout.
+- `--encoder auto` now probes NVENC, Quick Sync, AMF, VideoToolbox, and VAAPI at
+  the target output size in platform order, then falls back to libx264. An
+  explicit hardware encoder that is unavailable returns `ENCODER_UNAVAILABLE`
+  instead of falling back silently.
+- Parse `YYYY-MM-DD-git-...` nightly ffmpeg version strings.
 
 ### Performance
 

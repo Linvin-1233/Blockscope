@@ -14,6 +14,7 @@ blockscope serve --client-jar client.jar --threads 4 --cache 2
 - `--cache`：缓存的 scene/mesh 条数上限
 - `--cache-bytes`：缓存预算（估算字节）；`0` 使用可用内存的一半。超出预算时按最旧优先淘汰，单个超大条目仍允许单独保留。由 `supervise` 启动时，若未显式指定，supervisor 会按每个 worker 的内存上限派生并传入该值
 - `--greedy-mesh`：合并同材质、同光照的共面单位面；默认关闭
+- `--ffmpeg`：MP4/GIF 任务使用的外部 ffmpeg 可执行文件；默认为 `PATH` 中的 `ffmpeg`
 - `--force-limits`：提高资源上限；只应对可信输入使用
 - `--ignore-block-entity-nbt`：跳过容器 NBT
 
@@ -50,7 +51,41 @@ worker 在资源包准备完成后输出一行 `hello`，之后才接受 job。`
 - `streamMesh` 为 `off`（默认）、`on` 或 `auto`，按页构建并渲染且不保留完整 mesh，每个请求只支持一个视角。`off` 保留可缓存的完整 mesh 路径；流式请求不会写入 scene/mesh 缓存
 - `auto` 下的 GPU 分配、驱动、精度或显存预算失败会在写出任何输出前回退到 CPU；第一次 GPU draw 之后的失败是致命错误，不会留下部分 PNG
 - 输出文件为 `{id}.png` 或 `{id}-{yaw}.png`；调用方必须保证 `id` 和 `outputDir` 在并发任务中唯一，重复 `id` 或重复视角会覆盖同一路径
-- 完整字段、结果和错误码见 [引擎协议 v3](/engine-protocol)
+- 完整字段、结果和错误码见 [引擎协议 v4](/engine-protocol)
+
+## 视频任务
+
+把 `format` 设为 `mp4` 或 `gif`，并提供 `animation`：
+
+```json
+{
+  "type": "render",
+  "id": "clip-1",
+  "input": { "path": "/data/model.litematic" },
+  "format": "mp4",
+  "background": "#000000",
+  "width": 1024,
+  "height": 1024,
+  "animation": {
+    "keyframes": [
+      { "time": 0, "yaw": 45, "elevation": 30 },
+      { "time": 6, "yaw": 405, "elevation": 30 }
+    ],
+    "fps": 30,
+    "loop": true,
+    "easing": "linear"
+  },
+  "encoder": "auto",
+  "quality": "medium",
+  "outputDir": "/data/out"
+}
+```
+
+- 视频默认使用不透明黑色背景。MP4 还要求宽高为偶数；GIF 支持 `transparent`
+- 视频任务会拒绝 `views`、`streamMesh` 和显式 `elevation`
+- `encoder` 可为 `auto`（默认）、`software` 或 `nvenc` 等硬件编码器。`auto` 会按目标尺寸探测硬件，失败时回退到 `libx264`；显式硬件编码器不可用时返回 `ENCODER_UNAVAILABLE`
+- 输出为 `{id}.mp4` 或 `{id}.gif`。结果中的输出项带 `kind: "video"`，并报告帧数、fps、时长、字节数、实际使用的编码器以及渲染/编码耗时
+- ffmpeg 缺失或版本过低时，`hello.video` 的 `available` 为 `false`；视频请求会在解析输入前失败
 
 ## Supervisor
 
@@ -71,7 +106,9 @@ blockscope supervise \
 | --------------- | -------------------------------------------------------------------- |
 | `--workers`     | worker 进程数，最多 256；`0` 使用 `capacity` 建议值                  |
 | `--threads`     | 每个 worker 的线程数；`0` 使用 `capacity` 建议值                     |
-| `--timeout`     | 每个 job 的超时秒数；`0` 关闭                                        |
+| `--timeout`     | 每个图片 job 的超时秒数；`0` 关闭                                    |
+| `--video-timeout` | 每个视频 job 的超时秒数；默认 600；`0` 关闭                        |
+| `--ffmpeg`      | 传给每个 worker 的外部 ffmpeg 可执行文件                             |
 | `--memory`      | 每个 worker 的内存上限（MiB）；`0` 根据可用内存推导                  |
 | `--queue`       | 等待队列长度；`0` 使用 `workers * 2`                                 |
 | `--cache`       | 每个 worker 缓存的 scene/mesh 条数上限                               |
@@ -84,7 +121,7 @@ blockscope supervise \
 
 ## 相关文档
 
-- [引擎协议 v3](/engine-protocol)
+- [引擎协议 v4](/engine-protocol)
 - [Docker](./docker.md)
 - [故障排查](./troubleshooting.md)
 - [English](/user/service)

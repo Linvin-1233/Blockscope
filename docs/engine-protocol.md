@@ -1,8 +1,8 @@
-# Engine Protocol (v3)
+# Engine Protocol (v4)
 
 Wire protocol between an upper-layer service/supervisor and a standalone renderer process. The goal is one transport that behaves the same on Linux and Windows, with a single job in flight per process.
 
-**Status:** Implemented for `blockscope serve` and `blockscope supervise` (protocol v3).
+**Status:** Implemented for `blockscope serve` and `blockscope supervise` (protocol v4).
 
 ## Transport
 
@@ -12,7 +12,7 @@ Wire protocol between an upper-layer service/supervisor and a standalone rendere
 - No BOM, no pretty printing, no multi-line objects.
 - `stdout` carries protocol messages only. Logs and diagnostics go to `stderr`.
 - Standard input is read as raw bytes and decoded as UTF-8; do not route it through a console code page.
-- v3 uses no sockets. stdio is identical across supported platforms and needs no port allocation, firewall rule, or named-pipe path.
+- v4 uses no sockets. stdio is identical across supported platforms and needs no port allocation, firewall rule, or named-pipe path.
 
 ## Lifecycle
 
@@ -35,12 +35,16 @@ supervisor                          worker
 ### Messages
 
 ```json
-{"type":"hello","protocolVersion":3,"engineVersion":"0.4.1","platform":"windows","cores":12,
+{"type":"hello","protocolVersion":4,"engineVersion":"0.4.1","platform":"windows","cores":12,
  "cpuQuota":null,"memoryLimitBytes":51401564160,"memoryAvailableBytes":21526179840,
  "suggestedWorkers":4,"suggestedThreads":3,"suggestedMaxQuads":54313181,
  "cacheBytes":10763089920,
  "backends":["cpu","auto"],
- "defaultTier":{"width":2048,"height":2048,"supersample":2}}
+ "defaultTier":{"width":2048,"height":2048,"supersample":2},
+ "video":{"available":true,"formats":["mp4","gif"],
+          "encoders":["auto","software","nvenc","qsv","amf"],
+          "ffmpegVersion":"7.0","maxFrames":1800,"maxDurationSeconds":60,
+          "hardwareProbe":"lazy"}}
 {"type":"render","id":"...","input":{...},...}
 {"type":"result","id":"...","ok":true,...}
 {"type":"result","id":"...","ok":false,...}
@@ -49,6 +53,8 @@ supervisor                          worker
 ```
 
 `hello` is printed only after the material set is ready, so the supervisor can size its pool from `suggestedWorkers` and `suggestedThreads` instead of guessing from the host. Values come from cgroup limits on Linux and `GlobalMemoryStatusEx` on Windows; see `blockscope capacity --json` for the same data from the command line. `cacheBytes` is the effective scene/mesh cache budget; `supervise` derives it from its per-worker memory ceiling and passes it to each child, while a standalone worker receiving `0` derives it from available memory.
+
+`video` is present in v4 even when ffmpeg is unavailable. `available` is false when ffmpeg is missing or older than 4.4; the object then carries a `reason` and empty `formats`/`encoders`. `encoders` lists the H.264 encoders compiled into the local ffmpeg plus `auto` and `software`; a listed hardware encoder may still fail its device probe, and the `encoder` returned in a result is authoritative. Hardware probes are lazy and cached for the process lifetime.
 
 ## Render request
 
@@ -65,7 +71,10 @@ supervisor                          worker
 | `lighting`      | string   | `simple-ao-v1` | `flat-v1` or `simple-ao-v1`                                                                                                                            |
 | `background`    | string   | `transparent`  | `transparent`, `#RRGGBB`, or `#RRGGBBAA`                                                                                                               |
 | `textureFilter` | string   | `nearest`      | `nearest` or `linear`                                                                                                                                  |
-| `format`        | string   | `png`          | `png` only in v3                                                                                                                                       |
+| `format`        | string   | `png`          | `png`, `mp4`, or `gif`                                                                                                                                 |
+| `animation`     | object   | absent         | Required for `mp4`/`gif`; rejected for `png`                                                                                                           |
+| `encoder`       | string   | `auto`         | `auto`, `software`, `nvenc`, `qsv`, `amf`, `videotoolbox`, or `vaapi`; video only                                                                     |
+| `quality`       | string   | `medium`       | `low`, `medium`, or `high`; video only                                                                                                                 |
 | `outputDir`     | string   | required       | Absolute directory; created if missing                                                                                                                 |
 | `threads`       | integer  | `0`            | Mesh and rasterizer threads; `0` uses all cores, capped at 256                                                                                         |
 | `backend`       | string   | `auto`         | `cpu`, `gpu`, or `auto`; `cpu` is byte-exact, `gpu` fails when no hardware adapter is usable                                                           |
@@ -73,6 +82,22 @@ supervisor                          worker
 | `elevation`     | number   | `30`           | Degrees, `-89.9..=89.9`                                                                                                                                |
 
 `width * height` must not exceed 16,777,216 output pixels. Supersampling multiplies both sides, so the internal image must not exceed 33,554,432 pixels. The worker validates all render options and creates `outputDir` before parsing the input or building a mesh.
+
+### Animation requests
+
+`animation` has the same shape as the CLI timeline:
+
+| Field              | Type     | Default             | Notes                                                               |
+| ------------------ | -------- | ------------------- | ------------------------------------------------------------------- |
+| `keyframes`        | object[] | required            | 1..=64 `{time, yaw, elevation}` entries; times strictly increase    |
+| `duration`         | number   | last keyframe time  | `0 < duration <= 60`; must cover the last keyframe                  |
+| `fps`              | integer  | 30 MP4 / 15 GIF     | `1..=60`                                                             |
+| `loop`             | boolean  | `true`              | A looping clip excludes the duplicate endpoint                     |
+| `easing`           | string   | `linear`            | `linear` or `smooth`                                                |
+
+Video jobs always use the complete mesh, so `streamMesh` must be omitted or `off`. `views` and `animation` are mutually exclusive, and `elevation` comes from the keyframes rather than the render options. MP4 requires an opaque background and even dimensions because it uses H.264 `yuv420p`; GIF accepts `transparent`. The default background for video is opaque black, unlike the transparent PNG default. `encoder` and `quality` are rejected for `png`.
+
+`auto` probes hardware encoders at the requested output size on first use, then falls back to `libx264`. An explicit hardware encoder must be compiled into ffmpeg and usable at that size; it returns `ENCODER_UNAVAILABLE` instead of falling back silently.
 
 `backend` defaults to `auto`. The worker uses a deterministic policy: it chooses
 the GPU only for a hardware adapter, a safe f32 scene span, an allocation inside
@@ -121,6 +146,30 @@ Paths must be absolute. The worker rejects relative paths with `INVALID_REQUEST`
 }
 ```
 
+### Example: video
+
+```json
+{
+  "type": "render",
+  "id": "v1",
+  "input": { "path": "/data/model.litematic" },
+  "format": "mp4",
+  "background": "#000000",
+  "width": 1024,
+  "height": 1024,
+  "animation": {
+    "keyframes": [
+      { "time": 0, "yaw": 45, "elevation": 30 },
+      { "time": 6, "yaw": 405, "elevation": 30 }
+    ],
+    "fps": 30
+  },
+  "encoder": "auto",
+  "quality": "medium",
+  "outputDir": "/tmp/jobs/v1"
+}
+```
+
 ## Render result
 
 ```json
@@ -133,6 +182,7 @@ Paths must be absolute. The worker rejects relative paths with `INVALID_REQUEST`
   "cacheHit": false,
   "outputs": [
     {
+      "kind": "image",
       "path": "/tmp/jobs/0f8f/a-45.png",
       "yaw": 45,
       "width": 1024,
@@ -164,6 +214,57 @@ Paths must be absolute. The worker rejects relative paths with `INVALID_REQUEST`
 - `sceneHash` describes the scene that was rendered.
 - `timings` are wall-clock aggregates for the whole job.
 - `statistics` is advisory; consumers must not depend on fields beyond `triangles`.
+
+### Video result
+
+A video job returns one output entry:
+
+```json
+{
+  "type": "result",
+  "id": "v1",
+  "ok": true,
+  "inputHash": "578cffa3...",
+  "sceneHash": "fc8e1419...",
+  "cacheHit": false,
+  "outputs": [
+    {
+      "kind": "video",
+      "path": "/tmp/jobs/v1/v1.mp4",
+      "format": "mp4",
+      "width": 1024,
+      "height": 1024,
+      "frames": 180,
+      "fps": 30,
+      "durationSeconds": 6,
+      "looped": true,
+      "easing": "linear",
+      "bytes": 148400,
+      "encoder": "h264_nvenc",
+      "renderMs": 2400.1,
+      "encodeMs": 180.4
+    }
+  ],
+  "timings": {
+    "parseMs": 24.1,
+    "meshMs": 148.2,
+    "renderMs": 2400.1,
+    "encodeMs": 180.4,
+    "totalMs": 2760.4
+  },
+  "statistics": {
+    "triangles": 359110,
+    "culledBackfaces": 146996,
+    "textures": 206,
+    "backendUsed": "gpu"
+  }
+}
+```
+
+- Output files are `{id}.mp4` or `{id}.gif` in `outputDir`.
+- `encoder` is the ffmpeg encoder name that actually ran, including when `auto` selected hardware.
+- `statistics` describes the first rendered frame.
+- Video output is visually deterministic for a pinned ffmpeg build and encoder, but it is not byte-exact and does not enter the PNG golden suite.
 
 ## Errors
 
@@ -200,6 +301,13 @@ Paths must be absolute. The worker rejects relative paths with `INVALID_REQUEST`
 | `TRANSLUCENT_BUDGET_EXCEEDED` | no        | Translucent geometry exceeded the in-memory budget on a target without spill storage            |
 | `BACKEND_UNAVAILABLE`         | no        | Explicit `gpu` has no usable hardware adapter, safe precision, or VRAM budget                   |
 | `GPU_RENDER_FAILED`           | no        | GPU device loss or a failure after a draw was submitted                                         |
+| `ANIMATION_INVALID`           | no        | Bad keyframes, duration, fps, easing, format combination, or video size/background              |
+| `FFMPEG_NOT_FOUND`            | no        | ffmpeg is missing or `--ffmpeg` does not point to an executable                                 |
+| `FFMPEG_VERSION_UNSUPPORTED`  | no        | ffmpeg is older than 4.4 or its version cannot be parsed                                        |
+| `ENCODER_UNAVAILABLE`         | no        | The requested hardware encoder is not compiled or not usable at the output size                 |
+| `VIDEO_TOO_LARGE`             | no        | GIF frame storage would exceed the 4 GiB temporary budget                                       |
+| `VIDEO_TEMP_FAILED`           | yes       | Video temporary storage or atomic output replacement failed                                     |
+| `FFMPEG_FAILED`               | yes       | ffmpeg exited non-zero or its input pipe closed                                                 |
 | `IO_ERROR`                    | maybe     | Input or output file access failed                                                              |
 | `INTERNAL_ERROR`              | maybe     | Bug; retry once, then report                                                                    |
 | `TIMEOUT`                     | yes       | Emitted by the supervisor, not the engine                                                       |
@@ -215,7 +323,7 @@ Parser errors also pass through their stable `LitematicErrorCode` names, such as
 ```json
 {
   "type": "hello",
-  "protocolVersion": 3,
+  "protocolVersion": 4,
   "engineVersion": "0.4.1",
   "platform": "linux",
   "cores": 4,
@@ -225,9 +333,19 @@ Parser errors also pass through their stable `LitematicErrorCode` names, such as
   "queueLimit": 4,
   "cacheEntries": 1,
   "timeoutSeconds": 60,
+  "videoTimeoutSeconds": 600,
   "memoryLimitPerWorkerBytes": 3650722201,
   "suggestedMaxQuads": 17000000,
-  "defaultTier": { "width": 2048, "height": 2048, "supersample": 2 }
+  "defaultTier": { "width": 2048, "height": 2048, "supersample": 2 },
+  "video": {
+    "available": true,
+    "formats": ["mp4", "gif"],
+    "encoders": ["auto", "software", "nvenc"],
+    "ffmpegVersion": "7.0",
+    "maxFrames": 1800,
+    "maxDurationSeconds": 60,
+    "hardwareProbe": "lazy"
+  }
 }
 ```
 
@@ -235,7 +353,8 @@ Parser errors also pass through their stable `LitematicErrorCode` names, such as
 - Jobs are queued and dispatched to idle workers. The queue is bounded; a full queue returns `BUSY`.
 - Repeated inputs are routed to the worker that already cached them, so a second render of the same file skips parsing and meshing.
 - A worker that exits mid-job produces `INTERNAL_ERROR` and is restarted.
-- A job that exceeds `--timeout` (default 60 seconds, `0` disables) is killed, retried once on a fresh worker, then answered with `TIMEOUT`.
+- A job that exceeds `--timeout` (default 60 seconds, `0` disables) is killed, retried once on a fresh worker, then answered with `TIMEOUT`. Requests with `format` `mp4` or `gif` use `--video-timeout` instead (default 600 seconds).
+- `--ffmpeg PATH` is resolved once by the supervisor, reported in `hello.video`, and passed to every worker. Requests cannot override the executable path.
 - A worker that exceeds its memory ceiling (85 percent of the available memory divided by the pool size, or `--memory` in MiB) is killed the same way with `MEMORY_LIMIT`.
 - Results may arrive out of order because workers run in parallel; match them by `id`.
 - Killed workers are reaped before replacement, so the pool does not accumulate zombies. A supervisor that dies closes the worker pipes, which makes the workers exit on stdin EOF.
@@ -274,11 +393,11 @@ The engine must never depend on a console: no colour codes, no interactive promp
 - Removing fields, renaming fields, or changing defaults is breaking.
 - Requests do not carry `protocolVersion`; clients compare the value in `hello` before sending jobs. An unknown request `type` returns `INVALID_REQUEST` and leaves the worker running.
 
-## Non-goals for v3
+## Non-goals
 
 - Cancellation of a running job.
 - Streaming or progressive output.
-- Non-PNG formats.
+- Audio, subtitles, overlays, or scene animation.
 - In-process job queues or multi-job batching.
 
 ## Overrides

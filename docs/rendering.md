@@ -62,6 +62,14 @@ uniform and re-projects the translucent layer, so a video loop does not rebuild
 or re-upload the solid mesh. Resident geometry is bounded by the 60 percent VRAM
 working set; large scenes still use the streaming `GpuRenderSession`.
 
+Video encoding runs in an external ffmpeg process. MP4 frames are streamed over
+a pipe; GIF frames are written to a bounded temporary raw file and encoded with
+two palette passes. `--encoder auto` probes NVENC, Quick Sync, AMF,
+VideoToolbox, or VAAPI at the requested output size on first use and falls back
+to libx264. An explicit hardware encoder never falls back silently. Hardware
+encoding is independent of the rasterization backend, so `--backend gpu` and a
+software encoder (or the reverse) are both valid.
+
 Implementation notes:
 
 - Opaque and cutout geometry uploads one 92-byte `GpuQuad` per quad and uses a

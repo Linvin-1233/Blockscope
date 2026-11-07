@@ -88,7 +88,12 @@ Spec: `tasks/video-export-spec.md`
 - [x] Add `GpuFrameSession::render_frames` and a GPU parity/loop test.
 - [x] Add the `litematic-video` timeline and ffmpeg encoder, plus
       `blockscope animate` with CPU fallback.
-- [ ] Service protocol v4 and hardware encoders (next slice).
+- [x] Service protocol v4: `hello.video`, video requests/results,
+      `--ffmpeg`, and the supervisor `--video-timeout`.
+- [x] Hardware encoder probing: lazy device probe at the target output size,
+      `auto` fallback to libx264, explicit `ENCODER_UNAVAILABLE`.
+- [ ] Manual smoke test on a machine with a real hardware encoder and ffmpeg
+      on `PATH`, including MP4/GIF through `serve` and `supervise`.
 
 ## Pending verification
 
