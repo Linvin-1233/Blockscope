@@ -23,6 +23,8 @@
   动画不会随 yaw 变化忽远忽近。
 - 新增库级 `GpuFrameSession` 帧循环：不透明/镂空几何只上传一次，后续帧仅更新
   相机 uniform 并重新投影半透明层，为视频导出复用 GPU 资源。
+- 新增 `animate` 命令和 `litematic-video` crate：关键帧相机时间线、MP4/GIF
+  ffmpeg 编码、GPU 常驻帧会话与 CPU 逐帧回退。
 
 ### 性能
 

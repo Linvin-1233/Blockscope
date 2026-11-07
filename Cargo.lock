@@ -177,6 +177,7 @@ dependencies = [
  "litematic-mesh",
  "litematic-render",
  "litematic-scene",
+ "litematic-video",
  "png",
  "serde",
  "serde_json",
@@ -917,6 +918,13 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+]
+
+[[package]]
+name = "litematic-video"
+version = "0.4.1"
+dependencies = [
+ "tempfile",
 ]
 
 [[package]]

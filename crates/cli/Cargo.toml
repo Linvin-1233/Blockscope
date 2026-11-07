@@ -24,6 +24,7 @@ litematic-material = { path = "../material" }
 litematic-mesh = { path = "../mesh" }
 litematic-render = { path = "../render" }
 litematic-scene = { path = "../scene" }
+litematic-video = { path = "../video" }
 serde_json.workspace = true
 serde.workspace = true
 

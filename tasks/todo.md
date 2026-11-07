@@ -77,6 +77,19 @@ Plan: `tasks/gpu-performance-plan.md`
       parity target and the two `000001` wall-time gates; GPU artifacts and
       human release approval remain pending.
 
+## Video session slice
+
+Spec: `tasks/video-export-spec.md`
+
+- [x] Add `--sphere-fit` to `render`/`bench` and `RenderOptions`.
+- [x] Add `GpuFrameSession`: upload opaque/cutout geometry once, then render
+      frames by rewriting only the camera uniform and re-projecting
+      translucent geometry.
+- [x] Add `GpuFrameSession::render_frames` and a GPU parity/loop test.
+- [x] Add the `litematic-video` timeline and ffmpeg encoder, plus
+      `blockscope animate` with CPU fallback.
+- [ ] Service protocol v4 and hardware encoders (next slice).
+
 ## Pending verification
 
 - [ ] Run the real-file smoke tests with

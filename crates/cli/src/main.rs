@@ -60,6 +60,8 @@ enum Command {
     Render(commands::render::RenderArgs),
     /// Measure parse, mesh, render, and PNG timings.
     Bench(commands::bench::BenchArgs),
+    /// Render a keyframed camera animation to MP4 or GIF.
+    Animate(commands::animate::AnimateArgs),
     /// Report model and texture coverage from a resource pack.
     Materials(commands::materials::MaterialsArgs),
     /// Print detected CPU and memory capacity with suggested pool settings.
@@ -196,6 +198,7 @@ fn run(cli: Cli) -> Result<(), CliError> {
         Command::Mesh(args) => commands::mesh::run(args),
         Command::Render(args) => commands::render::run(args),
         Command::Bench(args) => commands::bench::run(args),
+        Command::Animate(args) => commands::animate::run(args),
         Command::Materials(args) => commands::materials::run(args),
         Command::Capacity(args) => commands::capacity::run(args),
         Command::Serve(args) => serve::run(args),

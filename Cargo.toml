@@ -7,6 +7,7 @@ members = [
   "crates/mesh",
   "crates/material",
   "crates/render",
+  "crates/video",
   "crates/cli",
   "crates/worker",
   "xtask",

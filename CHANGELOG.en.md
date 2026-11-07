@@ -31,6 +31,9 @@ User-facing changes are recorded here. The format follows
 - Add the library-level `GpuFrameSession` frame loop: opaque/cutout geometry is
   uploaded once, then each frame only rewrites the camera uniform and
   re-projects the translucent layer, reusing GPU resources for video export.
+- Add `animate` and the `litematic-video` crate: keyframed camera timelines,
+  MP4/GIF ffmpeg encoding, a resident GPU frame session, and a per-frame CPU
+  fallback.
 
 ### Performance
 

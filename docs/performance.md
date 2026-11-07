@@ -263,3 +263,57 @@ Measured on 2026-10-28 with the release example:
 The probe peak is constant at about 142 KB. The sparse case is about 2x slower because it decodes every value from a second gzip pass; the dense fixture is faster because it avoids building the NBT tree.
 
 **Decision: go for the integration spike follow-up.** The peak reduction is far above the 50 percent bar and the sparse parse time is under 2x. This is not yet a production parser: the next step is a scoped implementation plan for `RegionStates`, canonical scene hashing, and parity tests. The probe's `occupied_nonzero` counter is not the same as `non_air` when the palette has a non-zero default entry; the production path must use the palette default and preserve diagnostics.
+
+## GPU frame session (2026-11-06)
+
+`GpuFrameSession` is the first resident-geometry slice for video export. It
+uploads every opaque/cutout quad once and keeps the vertex buffers for the life
+of the session; each frame rewrites only the camera uniform and re-projects the
+translucent layer. This is the session shape that avoids re-uploading the full
+mesh for every video frame.
+
+Measured with the release build, 12-thread host, GTX 1650 SUPER, D3D12,
+color-only materials, 256x256, supersample 1, 12 yaw frames, sphere fit on:
+
+| Input | Per-frame full renders | Resident session | Speedup | Resident bytes |
+|---|---:|---:|---:|---:|
+| `000002` | 2,567.9 ms | 413.5 ms | 6.21x | 201.9 MB |
+
+The resident geometry is a hard VRAM constraint: `000001` color-only needs
+about 7.27 GB for the instance table plus targets, above the 1.29 GB working-set
+budget on this host, so the session returns `BACKEND_UNAVAILABLE` instead of
+attempting an allocation. Large or textured scenes keep using the streaming
+`GpuRenderSession` (or a future bounded frame batch) rather than a resident
+session.
+
+Run the diagnostic with:
+
+```powershell
+cargo run --release -p blockscope-cli --features gpu --example frame_session_bench -- `
+  fixtures/private/000002.litematic
+```
+
+This is a diagnostic, not a CI gate. The existing GPU parity and frame-loop
+tests protect correctness.
+
+### Animate CLI (2026-11-06)
+
+`blockscope animate` drives the resident frame session end to end. Measured on
+the same host and release build, `000002` color-only, 128x128, supersample 1,
+12 threads, 60 frames at 4 fps, sphere fit on, ffmpeg 9.0.2:
+
+| Backend | Mesh | Render | Encode | Total |
+|---|---:|---:|---:|---:|
+| CPU | 328.3 ms | 5,553.0 ms | 37.6 ms | 6,248.9 ms |
+| GPU resident session | 460.2 ms | 2,989.1 ms | 68.0 ms | 4,856.4 ms |
+
+The GPU session renders the frame loop 1.86x faster and the complete command is
+1.29x faster. Short clips can still be faster on the CPU because the resident
+session pays its upload/setup cost up front: 12 frames at the same size measured
+1,861 ms on CPU versus 2,089 ms on GPU. `000001` color-only cannot hold the
+resident instance table and `--backend auto` falls back to the CPU; explicit
+`--backend gpu` reports `BACKEND_UNAVAILABLE`.
+
+The command uses an external ffmpeg. MP4 is H.264/yuv420p with an opaque
+background and even dimensions; GIF is a two-pass palette encode with optional
+1-bit transparency.

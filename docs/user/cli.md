@@ -14,6 +14,7 @@ See [Installation and Quick Start](./getting-started.md) for building `blockscop
 | `mesh`      | Build a mesh and optionally export OBJ or PLY                                                               |
 | `render`    | Render PNG output or display directly in the terminal                                                       |
 | `bench`     | Measure parse, mesh, render, and PNG timings                                                                |
+| `animate`   | Render a keyframed camera clip to MP4 or GIF                                                                |
 | `materials` | Report resource-pack coverage for the scene                                                                 |
 | `capacity`  | Print detected CPU/memory capacity and suggested worker/thread settings                                     |
 | `serve`     | Long-lived worker over the stdio JSON protocol                                                              |
@@ -46,6 +47,12 @@ blockscope render huge.litematic --output huge.png --stream-mesh --greedy-mesh
 # Material coverage
 blockscope materials model.litematic --client-jar client.jar --json
 
+# Animation (requires ffmpeg 4.4 or newer)
+blockscope animate model.litematic --output out.mp4 \
+  --keyframe 0:45:30 --keyframe 6:405:30 --fps 30
+blockscope animate model.litematic --output out.gif \
+  --keyframe 0:45:30 --keyframe 4:405:30 --background transparent
+
 # Capacity
 blockscope capacity --json
 # Terminal image rendering (Kitty, iTerm2, Sixel, Halfblocks/Truecolor)
@@ -56,6 +63,8 @@ blockscope preview model.litematic -t
 ```
 
 A single view writes `out.png`. Multiple views write `out-45.png`, `out-225.png`, and so on. In `serve` mode the names are `{id}.png` for one view or `{id}-{yaw}.png` for multiple views. When a complete mesh is available, multiple views render concurrently within the `--threads` budget; output order is preserved, and each view is written and released before the next batch.
+
+`animate` samples the keyframed camera into a video. A keyframe is `TIME:YAW:ELEVATION` in seconds and degrees; repeat `--keyframe` for each one. MP4 uses H.264 and requires an opaque background and even dimensions. GIF supports 1-bit transparency. `--ffmpeg` selects an external executable; the minimum supported version is 4.4. `--encoder auto` and `software` currently resolve to libx264; explicit hardware encoder names fail with `ENCODER_UNAVAILABLE` until the hardware probe lands.
 
 Terminal images are fitted to the visible grid: when the rendered pixel size would exceed the window, the next cell dimension is requested so the terminal scales the image down while keeping its aspect ratio. The summary is printed first and the image last, so text cannot scroll it out of view. Inside `tmux` or `screen`, which drop graphics sequences unless passthrough is enabled, auto-detection falls back to half blocks; pass `--terminal-protocol` to override that. When stdout is not a terminal (a pipe, a log, a captured shell), a warning is printed because the escape sequences cannot be displayed.
 
