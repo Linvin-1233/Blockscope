@@ -158,5 +158,5 @@ Plan: `tasks/render-memory-plan.md`
 - [x] Raise the `serve`/`supervise` protocol to v2 because `lod` no longer
       accepts `"auto"`.
 - [x] Update CLI tests, docs, and changelog.
-- [ ] Push `v0.4.1` and let the release workflow publish the artifacts
+- [x] Push `v0.4.1` and let the release workflow publish the artifacts
       (maintainer).
