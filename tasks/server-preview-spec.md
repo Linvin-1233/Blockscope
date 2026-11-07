@@ -325,10 +325,14 @@ The **color-only blockout** variant changes the result:
 | color `000002`, 384x384 | 208-213 ms | 234-265 ms | 334 MB | meets the 300 ms gate |
 | color `000001`, 384x384 | 4,820-4,986 ms | 4.8-5.0 s | not recorded | not interactive |
 
-Color-only `000002` uses 2.30M triangles instead of 39.82M; `000001` still uses
-91.57M. A color-only resident session at 256x256 measured about 27 ms/frame
-with 201.9 MB resident, so it is an optional lower-latency mode, not a
-requirement for `000002`-class.
+The `000002` color mesh has 2.30M quads (182 MiB heap) versus 39.84M textured
+quads; `000001` still has 87.88M color quads (6.48 GiB). The 256 MiB cold-mesh
+budget separates the two classes. The built-in catalog still renders unknown
+states with the magenta fallback; `000002` has 8.96M unknown blocks, so the
+blockout preview is a geometry/framing aid, not a final-color preview. A
+color-only resident session at 256x256 measured about 27 ms/frame with 201.9 MB
+resident, so it is an optional lower-latency mode, not a requirement for
+`000002`-class.
 
 Do not implement the textured stateless contract in
 `tasks/server-preview-contract.md`. The recommended direction is a **color-only

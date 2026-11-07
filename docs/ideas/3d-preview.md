@@ -64,8 +64,12 @@ GPU is required; `000001` needs more still.
 
 The **color-only blockout** variant is viable: `000002` at 384x384, warm cache,
 p95 is 234-265 ms with 334 MB peak on the CPU, meeting the 300 ms gate.
-`000001` color-only is still 4.8-5.0 s. A color-only resident session at
-256x256 is about 27 ms/frame with 201.9 MB resident.
+Its color mesh heap is 182 MiB, within the 256 MiB cold-mesh budget; `000001`
+is 6.48 GiB, far above it. The built-in catalog still uses the magenta fallback
+for unknown states (8.96M blocks on `000002`), so this is a geometry/framing
+preview, not a color-accurate one. `000001` color-only is still 4.8-5.0 s. A
+color-only resident session at 256x256 is about 27 ms/frame with 201.9 MB
+resident.
 
 Recommended direction: a **color-only blockout preview** with a hard color-mesh
 geometry budget (`000002`-class works, `000001`-class rejects), optionally a
@@ -88,9 +92,10 @@ scope; the measurements are in `docs/performance-preview.md`.
       `000002` measured 234-265 ms and meets the gate; color-only `000001` is
       4.8-5.0 s.
 - [ ] **Cache hits or bounded streaming are acceptable.** Small structures
-      should hit the cache after the first preview. Large cold structures stream
-      and do not become cache hits unless a final render warms the cache; the
-      UI must accept the slower path or run a warmed dedicated process. Test a
+      should hit the cache after the first preview. Large cold structures either
+      stream (textured) or are rejected by the color-only geometry budget; they
+      do not become cache hits unless a final render warms the cache. The UI
+      must accept the slower path or run a warmed dedicated process. Test a
       sequence of 20 yaw changes and report hit rate, stream count, and stage
       times.
 - [ ] **Sampled stills are enough for rotation speed.** Integrators can judge a

@@ -83,8 +83,11 @@ for both columns; 413.5 ms is not a per-frame value.
 
 ### Color-only blockout preview
 
-The color-block catalog removes the client-jar model detail. `000002` drops
-from 39.82M triangles to 2.30M; `000001` drops from 128.63M to 91.57M.
+The color-block catalog removes the client-jar model detail. The `000002`
+color mesh has 2.30M quads (182 MiB heap) versus 39.84M quads for the textured
+mesh; `000001` still has 87.88M color quads (6.48 GiB). Mesh budget decisions
+use quads and heap bytes; render statistics report visible triangles, which is
+why those counts look similar after backface culling.
 
 | Case | Cold total | Warm p50 | Warm p95 | Render p50 | Peak WS |
 |---|---:|---:|---:|---:|---:|
@@ -92,9 +95,15 @@ from 39.82M triangles to 2.30M; `000001` drops from 128.63M to 91.57M.
 | `000001` color, 384x384 | 9,554 ms | 4,820-4,986 ms | 4.99 s (3 reps; p95 = max) | 4,756-4,921 ms | not recorded |
 
 `000002` color-only meets the 300 ms gate at 384x384 on the CPU, with no client
-jar and no GPU. `000001` does not. The color-only session is an optional
-latency optimization for `000002`-class structures; it is not required to meet
-the gate.
+jar and no GPU. Its color mesh heap is 191,246,592 bytes (182 MiB), within the
+256 MiB cold-mesh budget; the measured peak process working set is 334 MB.
+`000001` does not meet the gate, and its color mesh heap is 6,955,659,792 bytes
+(6.48 GiB), far above the budget. `000002` also has 8,959,516 unknown block
+states (17.7% of visited blocks), which the color catalog renders with its
+magenta fallback; the blockout preview is a geometry/framing aid, not a
+color-accurate preview. The color-only session is an optional latency
+optimization for `000002`-class structures; it is not required to meet the
+gate.
 
 ### Verdict
 
