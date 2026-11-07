@@ -280,6 +280,11 @@ critical path, and parallel spill writers were not pursued.
 | Flat CSR bins with a counting pass plus fill | `000001` jar render 10.5-10.8 s versus 9.4-9.6 s with reused `Vec<Vec<u32>>` bins; peak 589 MB versus 676 MB | not used | The memory win was real, but the extra pass and scatter cost about 1 s. The bounded bin-capacity reuse keeps the peak near 637 MB without that regression. |
 | 64-page mesh chunks | `000001` jar mesh 4.6 s versus 5.9 s at 32 pages; total 16.1 s; peak 929 MB | not kept | The larger page chunk raises the peak by about 250 MB. Persisting the page capacity hint gives the mesh speedup at 32 pages. |
 | Render splitting inside a mesh chunk at 100k/150k quads | `000001` jar render 12.0-15.9 s versus 9.4-9.6 s with whole-chunk renders | reverted | Smaller render batches revisit the resident tile buffers more often; extra tile passes cost more than the smaller working set saves. |
+| Part-outer opaque/cutout tile scheduling | `000001` jar tile 7.2-7.5 s versus 3.4-3.8 s; render 12.5-14.3 s versus 9.1-9.4 s | reverted | One thread scope and one tile-buffer setup per projection slice cost more than the improved quad-table locality saves. |
+| Pairing two translucent buckets per render batch | `000001` jar render 9.2-10.0 s versus 9.1-9.4 s; bucket render improved but bucket read wait rose from 0.77-0.78 s to 1.02-1.64 s | reverted | Two buckets per batch improved tile load balance but the larger read-ahead could not finish before the render, so the gains cancelled. |
+| `BUCKET_TILES=8` translucent spill buckets | resolve 2.64-2.84 s versus 2.82-2.99 s; peak 829 MB versus 641 MB | reverted | Larger buckets improved bucket-render balance but raised the peak by about 190 MB for no stable wall-time win. |
+| 128px tiles at 2048 internal | tile 4.25 s versus 3.58 s; resolve 2.98 s versus 2.81 s; render 9.49 s versus 8.88 s | reverted | The larger tile buffers lose more cache locality than the lower per-tile overhead saves. |
+| 1 MB bucket buffer plus block record decode | resolve unchanged at about 2.8 s | reverted | The reader is already overlapped and is not the critical path; the extra buffer and decoding code did not pay for itself. |
 
 A small-bbox triangle fast path was also proposed, but a prior measurement
 showed no gain and a slowdown, so it was not retried.

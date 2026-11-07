@@ -162,9 +162,20 @@ Plan: `tasks/render-memory-plan.md`
       translucent-budget override (`BLOCKSCOPE_TRANSLUCENT_BUDGET`).
 - [x] Measure the spill writer wait at about 0.04 s on `000001` jar; the writer
       is not the critical path, so parallel spill writers are not a priority.
+- [x] Measure and reject part-outer tile scheduling: repeated thread scopes and
+      tile-buffer setup made the tile stage roughly twice as slow.
+- [x] Measure and reject two-bucket translucent grouping: bucket render
+      improved but the larger read-ahead could not finish in time.
+- [x] Measure and reject `BUCKET_TILES=8`: better bucket-render balance but
+      about 190 MB more peak and no stable wall-time win.
+- [x] Measure and reject 128px tiles: cache locality outweighed the lower
+      per-tile overhead.
+- [x] Measure and reject the 1 MB block bucket reader: the reader is not the
+      critical path.
 - [ ] Follow-ups: the `000001` jar stage split is project about 2.0 s, tile
-      about 3.4 s, and translucent resolve about 2.8 s; tile and translucent
-      rasterization are the remaining targets.
+      about 3.4 s, and translucent resolve about 2.8 s. The simple scheduling
+      variants are exhausted; a persistent worker pool or a structural
+      rasterizer change would be needed for the next step.
 
 ## Fallback color coverage
 
