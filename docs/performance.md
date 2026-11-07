@@ -798,6 +798,13 @@ Rejected video-path experiments:
 | Reused translucent vertex buffer | `translucentUs` 1.10 -> 0.72 s, total within noise | reverted; no user-visible win |
 | Specialized 1x/2x resolve loops | `resolveUs` unchanged within noise | reverted |
 
+Large fixture limit: `000001` (211x211x211, 9.39M blocks) builds about 128.6M
+triangles and exceeds the default mesh limit. A 10-frame probe at 1024x1024,
+supersample 2, with the 26.2 client jar and `--sphere-fit` measured 12.0 s per
+frame on the CPU, 5.6 s mesh time, 10.55 GiB peak RSS, and 11.98 GiB peak
+private bytes. Extrapolated 600 frames would take about two hours; the resident
+GPU session cannot hold the instance table. The full run was not executed.
+
 NVENC CQ is not equivalent to x264 CRF. Calibrating low/medium/high to
 CQ 32/28/23 gives:
 
