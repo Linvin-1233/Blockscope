@@ -353,8 +353,12 @@ fn process(
             "INVALID_REQUEST: outputDir must be absolute",
         ));
     }
-    let format = request.format.as_deref().unwrap_or("png");
-    match format {
+    let format = request
+        .format
+        .as_deref()
+        .unwrap_or("png")
+        .to_ascii_lowercase();
+    match format.as_str() {
         "png" => {
             if request.animation.is_some() {
                 return Err(CliError::input(
@@ -368,7 +372,7 @@ fn process(
             }
         }
         "mp4" | "gif" => {
-            let format = VideoFormat::parse(format).expect("matched video formats");
+            let format = VideoFormat::parse(&format).expect("matched video formats");
             return video::process_video(request, cache, context, format, started);
         }
         other => {
