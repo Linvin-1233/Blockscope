@@ -2,10 +2,12 @@ use crate::capacity::Capacity;
 use crate::serve::PROTOCOL_VERSION;
 use crate::{AssetArgs, CliError, MeshOptionArgs};
 use clap::Args;
+use litematic_video::Ffmpeg;
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
 use std::ffi::OsString;
 use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::thread;
@@ -45,9 +47,15 @@ pub struct SuperviseArgs {
     /// Per-job timeout in seconds; 0 disables it.
     #[arg(long, default_value_t = 60)]
     timeout: u64,
+    /// Per-video-job timeout in seconds; 0 disables it.
+    #[arg(long, default_value_t = 600)]
+    video_timeout: u64,
     /// Per-worker memory ceiling in MiB; 0 derives it from capacity.
     #[arg(long, default_value_t = 0)]
     memory: u64,
+    /// External ffmpeg executable passed to every worker.
+    #[arg(long, value_name = "PATH")]
+    ffmpeg: Option<PathBuf>,
     #[command(flatten)]
     mesh: MeshOptionArgs,
     #[command(flatten)]
@@ -59,6 +67,7 @@ struct Job {
     hash: String,
     line: String,
     attempts: u8,
+    video: bool,
 }
 
 struct Worker {
@@ -78,9 +87,11 @@ struct Spec {
     quantize_mesh: bool,
     assets: Vec<OsString>,
     timeout: Option<Duration>,
+    video_timeout: Option<Duration>,
     memory_limit: Option<u64>,
     force_limits: bool,
     ignore_block_entity_nbt: bool,
+    ffmpeg: Option<PathBuf>,
 }
 
 enum Event {
@@ -140,6 +151,15 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
     } else {
         Some(Duration::from_secs(args.timeout))
     };
+    let video_timeout = if args.video_timeout == 0 {
+        None
+    } else {
+        Some(Duration::from_secs(args.video_timeout))
+    };
+    let (ffmpeg, ffmpeg_error) = match Ffmpeg::discover(args.ffmpeg.as_deref()) {
+        Ok(ffmpeg) => (Some(ffmpeg), None),
+        Err(error) => (None, Some(error.to_string())),
+    };
     let memory_limit = memory_limit(&capacity, workers, args.memory);
     let cache_bytes = cache_budget(args.cache_bytes, memory_limit);
 
@@ -151,9 +171,11 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
         quantize_mesh: args.mesh.options().quantize_positions,
         assets: args.assets.cli_args(),
         timeout,
+        video_timeout,
         memory_limit,
         force_limits: args.limits.force_limits,
         ignore_block_entity_nbt: args.limits.ignore_block_entity_nbt,
+        ffmpeg: args.ffmpeg.clone(),
     };
 
     if workers.saturating_mul(threads) > capacity.cores {
@@ -206,12 +228,14 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
             "defaultLod": 1,
             "suggestedMaxQuads": capacity.suggested_max_quads,
             "timeoutSeconds": timeout.map(|value| value.as_secs()),
+            "videoTimeoutSeconds": video_timeout.map(|value| value.as_secs()),
             "memoryLimitPerWorkerBytes": memory_limit,
             "defaultTier": {
                 "width": capacity.default_width,
                 "height": capacity.default_height,
                 "supersample": capacity.default_supersample,
             },
+            "video": crate::video::hello_object(ffmpeg.as_ref(), ffmpeg_error.as_deref()),
         }),
     )?;
 
@@ -503,9 +527,18 @@ fn dispatch(
             write_error(out, &job.id, "INTERNAL_ERROR", "worker stdin is closed")?;
             continue;
         }
-        worker.deadline = spec.timeout.map(|timeout| Instant::now() + timeout);
+        worker.deadline = job_timeout(job.video, spec.video_timeout, spec.timeout)
+            .map(|timeout| Instant::now() + timeout);
         worker.busy = Some(job);
     }
+}
+
+fn job_timeout(
+    video: bool,
+    video_timeout: Option<Duration>,
+    image_timeout: Option<Duration>,
+) -> Option<Duration> {
+    if video { video_timeout } else { image_timeout }
 }
 
 /// Remember a routing hint while keeping the map bounded.
@@ -593,6 +626,9 @@ fn spawn_worker(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit());
+    if let Some(ffmpeg) = &spec.ffmpeg {
+        command.arg("--ffmpeg").arg(ffmpeg);
+    }
     if spec.force_limits {
         command.arg("--force-limits");
     }
@@ -734,12 +770,17 @@ fn read_stdin(tx: SyncSender<Event>) {
                     .filter(|hash| !hash.is_empty())
                     .map(|hash| hash.to_ascii_lowercase())
                     .unwrap_or_default();
+                let video = matches!(
+                    value.get("format").and_then(Value::as_str),
+                    Some("mp4" | "gif")
+                );
                 if tx
                     .send(Event::Request(Job {
                         id,
                         hash,
                         line: line.to_string(),
                         attempts: 0,
+                        video,
                     }))
                     .is_err()
                 {

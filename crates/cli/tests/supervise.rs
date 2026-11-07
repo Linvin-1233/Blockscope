@@ -285,6 +285,94 @@ fn supervisor_handles_unreadable_inputs_through_the_hash_worker() {
 }
 
 #[test]
+fn supervisor_reports_video_capabilities_and_timeout() {
+    let (mut child, mut stdin, mut lines) = start_with(&[
+        "--workers",
+        "1",
+        "--threads",
+        "1",
+        "--video-timeout",
+        "0",
+        "--ffmpeg",
+        "definitely-not-ffmpeg",
+    ]);
+    let hello = read_json(&mut lines);
+    assert_eq!(hello["protocolVersion"], 4);
+    assert_eq!(hello["videoTimeoutSeconds"], Value::Null);
+    assert_eq!(hello["video"]["available"], false);
+    assert_eq!(hello["video"]["formats"], json!([]));
+    assert!(
+        hello["video"]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("FFMPEG")
+    );
+
+    send(&mut stdin, &json!({ "type": "shutdown" }));
+    assert_eq!(read_json(&mut lines)["type"], "bye");
+    assert!(child.wait().unwrap().success());
+}
+
+#[test]
+fn supervisor_runs_a_video_job_with_the_worker_ffmpeg() {
+    let Some(ffmpeg) = std::env::var("BLOCKSCOPE_FFMPEG").ok() else {
+        eprintln!("skipping ffmpeg supervisor test: set BLOCKSCOPE_FFMPEG");
+        return;
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let input = fixture(dir.path());
+    let out_dir = dir.path().join("out");
+
+    let (mut child, mut stdin, mut lines) = start_with(&[
+        "--workers",
+        "1",
+        "--threads",
+        "1",
+        "--cache",
+        "1",
+        "--ffmpeg",
+        &ffmpeg,
+    ]);
+    let hello = read_json(&mut lines);
+    assert_eq!(hello["video"]["available"], true, "{hello}");
+    assert_eq!(hello["videoTimeoutSeconds"], 600);
+
+    send(
+        &mut stdin,
+        &json!({
+            "type": "render",
+            "id": "supervised-video",
+            "input": { "path": input.display().to_string() },
+            "format": "mp4",
+            "background": "#000000",
+            "width": 128,
+            "height": 128,
+            "supersample": 1,
+            "encoder": "software",
+            "animation": {
+                "keyframes": [
+                    { "time": 0.0, "yaw": 45.0, "elevation": 30.0 },
+                    { "time": 0.2, "yaw": 50.0, "elevation": 30.0 }
+                ],
+                "duration": 0.2,
+                "fps": 10
+            },
+            "outputDir": out_dir.display().to_string(),
+        }),
+    );
+    let result = read_json(&mut lines);
+    assert_eq!(result["ok"], true, "{result}");
+    assert_eq!(result["outputs"][0]["kind"], "video");
+    let path = result["outputs"][0]["path"].as_str().unwrap();
+    let bytes = std::fs::read(path).unwrap();
+    assert_eq!(&bytes[4..8], b"ftyp");
+
+    send(&mut stdin, &json!({ "type": "shutdown" }));
+    assert_eq!(read_json(&mut lines)["type"], "bye");
+    assert!(child.wait().unwrap().success());
+}
+
+#[test]
 fn supervisor_rejects_too_many_workers() {
     let output = Command::new(env!("CARGO_BIN_EXE_blockscope"))
         .args(["supervise", "--workers", "257"])
