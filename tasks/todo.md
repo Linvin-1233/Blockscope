@@ -94,6 +94,8 @@ Spec: `tasks/video-export-spec.md`
       `auto` fallback to libx264, explicit `ENCODER_UNAVAILABLE`.
 - [ ] Manual smoke test on a machine with a real hardware encoder and ffmpeg
       on `PATH`, including MP4/GIF through `serve` and `supervise`.
+- [ ] Record the 1024x1024, 180-frame CPU/GPU and software/hardware encoder
+      benchmark in `docs/performance.md` once a real fixture is available.
 
 ## Pending verification
 
