@@ -8,6 +8,8 @@ User-facing changes are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-07
+
 ### Added
 
 - GPU performance path: compact `GpuQuad` instances with shader-side camera

@@ -12,7 +12,7 @@ Blockscope 是一个把 Minecraft `.litematic` 投影文件渲染成 PNG、MP4 �
 `wgpu` 离屏后端；Windows、macOS 和 Linux GNU 发布包已启用该特性，适合 CPU
 较弱但具备硬件适配器的主机。CPU 仍是默认和逐字节 golden 参考。
 
-- 当前版本：`0.4.1`
+- 当前版本：`0.5.0`
 - 支持平台：Windows x86_64、Linux x86_64 / aarch64、macOS aarch64 / x86_64
 - 下载：预编译二进制见 [GitHub Releases](https://github.com/Linvin-1233/Blockscope/releases)
 - English: [README.en.md](README.en.md)
