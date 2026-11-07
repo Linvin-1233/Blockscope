@@ -607,3 +607,70 @@ resident instance table and `--backend auto` falls back to the CPU; explicit
 The command uses an external ffmpeg. MP4 is H.264/yuv420p with an opaque
 background and even dimensions; GIF is a two-pass palette encode with optional
 1-bit transparency.
+
+## SIMD investigation (2026-11-07)
+
+The `perf/simd-rasterizer` branch measured whether explicit AVX2 kernels help
+the CPU render path. The answer for the current workload is no: the hot loops
+are dominated by per-triangle and per-quad setup, not by wide arithmetic over
+long contiguous runs. The experimental kernels were reverted rather than kept
+as neutral complexity.
+
+### Where the time goes
+
+`000002` with the client jar, CPU backend, `--stream-mesh=on`, 1024x1024,
+supersample 2, 12 threads, and `--force-limits`. Stage timings came from a
+temporary instrumentation build; the render column is the CLI total.
+
+| Stage | Wall |
+|---|---:|
+| Project + bin | 804-844 ms |
+| Tile rasterization | 1,336-1,343 ms |
+| Assembly (encode + copy) | 43-47 ms |
+| Translucent resolve | 3 ms |
+| Render total | 2,331-2,384 ms |
+
+Mesh building in the same run is about 1.4 s wall. The sampled page breakdown
+shows the inner block loop is dominated by model iteration and culling (41%),
+quad push and allocation (19%), ambient occlusion (17%), and vertex creation
+(12.5%). Each of those is branch-heavy, and the largest SIMD-able share is
+well under half of the mesh stage.
+
+### Why per-pixel SIMD does not fill
+
+The rasterizer was instrumented to count triangle invocations, rows, and
+non-empty rows on `000001` with the client jar:
+
+| Counter | Value |
+|---|---:|
+| Triangle rasterize calls | 142,936,956 |
+| Rows visited | 735,406,071 |
+| Non-empty rows | 334,038,619 |
+| Pixels tested | 597,506,052 |
+
+That is 1.79 tested pixels per non-empty row. A four-lane row kernel almost
+always falls through to its scalar tail, so it cannot repay its setup cost.
+The same distribution holds on `000002` (133.0M tested pixels over 33.7M
+triangles). SIMD across triangles would need a batched setup that preserves
+draw order; that is a rasterizer redesign, not a local kernel change.
+
+### Rejected attempts
+
+| Attempt | Result | Verdict | Why |
+|---|---|---|---|
+| AVX2 four-pixel row rasterizer | `000002` render 2,110-2,201 ms vs baseline 2,057-2,273 ms | reverted | No stable win; rows average under two pixels. |
+| AVX2 four-vertex quad projection | Kernel 2.897 ms -> 2.773 ms per 200k quads (4.5%); project CPU 3,612 ms -> 3,672 ms end to end | reverted | The kernel is a small part of projection, and the target-feature call boundary erased the gain. |
+| SIMD ambient occlusion / vertex creation | Not implemented | rejected by measurement | Sampled shares are 17% and 12.5% of the block loop; gather-based AO is not faster than L1 scalar loads on the reference Zen 2 host. |
+
+### Follow-up options
+
+The measurements point at algorithmic work rather than wider vectors:
+
+- Batch two or four small triangles per tile so edge setup and span estimation
+  are shared; keep rasterization order unchanged.
+- Precompute a six-face cull mask per page cell during `PageGrid::fill`; this
+  replaces the per-model-quad neighbor lookup with one byte test.
+- Cache quantized model UVs and scaled corner offsets per model instead of
+  re-encoding them for every emitted quad.
+- Keep explicit SIMD for bulk image paths only if they grow beyond the current
+  assembly and downsample costs, which are under 50 ms per render.
