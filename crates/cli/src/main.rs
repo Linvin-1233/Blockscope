@@ -78,12 +78,17 @@ pub(crate) struct MeshOptionArgs {
     /// quads. Most useful for large flat or repetitive surfaces.
     #[arg(long)]
     greedy_mesh: bool,
+    /// Round fractional fluid and plant vertices to a 1/1440 block grid. Lower
+    /// mesh memory, but a small number of edge pixels can move.
+    #[arg(long)]
+    quantize_mesh: bool,
 }
 
 impl MeshOptionArgs {
     pub(crate) const fn options(self) -> MeshBuildOptions {
         MeshBuildOptions {
             greedy: self.greedy_mesh,
+            quantize_positions: self.quantize_mesh,
         }
     }
 }

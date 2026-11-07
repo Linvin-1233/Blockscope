@@ -88,6 +88,7 @@ blockscope preview model.litematic -t
 | `--precision exact\|fast`                                      | CPU 投影精度，默认 `exact`；`fast` 用 f32 存储屏幕点，以少量像素差异换取速度和内存 |
 | `--stream-mesh [auto\|on\|off]`                                | 按页构建并渲染网格，不保留完整 Mesh；默认 `auto`，`off` 保留完整 Mesh |
 | `--greedy-mesh`                                                | 合并同材质、同光照的共面单位面；适合大平面和重复结构，默认关闭        |
+| `--quantize-mesh`                                             | 将流体和植物顶点量化到 1/1440 方块网格；降低 mesh 内存，代价是少量像素差异，默认关闭 |
 | `--force-limits`                                               | 提高输入、场景、网格和像素上限；可能耗尽内存                          |
 | `--ignore-block-entity-nbt`                                    | 跳过容器 NBT；`mesh`/`render`/`bench` 默认开启                        |
 | `-t, --terminal`                                               | 在终端中直接渲染并显示图像                                            |

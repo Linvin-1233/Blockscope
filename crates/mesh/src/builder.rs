@@ -4,8 +4,8 @@ use crate::model::{ModelQuad, NO_TEXTURE};
 use crate::page::{PageGrid, PaletteBlock, PaletteTables};
 use crate::view::SceneBlockView;
 use crate::{
-    Mesh, MeshBuildOptions, MeshError, MeshLimits, MeshPage, MeshStatistics, Quad, Vertex,
-    encode_uv,
+    Mesh, MeshBuildOptions, MeshError, MeshLimits, MeshPage, MeshStatistics, PositionPacking, Quad,
+    Vertex, encode_uv,
 };
 use litematic_scene::{Scene, worker_count};
 use std::collections::BTreeMap;
@@ -343,6 +343,7 @@ struct PageBuild {
     quads: Vec<Quad>,
     float_positions: Vec<[[f32; 3]; 4]>,
     float_normals: Vec<[f32; 3]>,
+    position_packing: PositionPacking,
     statistics: MeshStatistics,
 }
 
@@ -379,11 +380,17 @@ fn build_page(
         origin[1].div_euclid(16),
         origin[2].div_euclid(16),
     ];
+    let position_packing = if options.quantize_positions {
+        PositionPacking::Quantize
+    } else {
+        PositionPacking::Exact
+    };
     let mut page = PageBuild {
         origin,
         quads: Vec::with_capacity(capacity),
         float_positions: Vec::new(),
         float_normals: Vec::new(),
+        position_packing,
         statistics: MeshStatistics::default(),
     };
     let mut pending: Option<Vec<PendingQuad>> = options.greedy.then(Vec::new);
@@ -521,7 +528,7 @@ fn build_page(
                         } else {
                             push_quad(
                                 &mut page.quads,
-                                Quad::new(
+                                Quad::new_with_packing(
                                     vertices,
                                     model_quad.normal,
                                     color.to_array(),
@@ -531,6 +538,7 @@ fn build_page(
                                     model_quad.shade,
                                     &mut page.float_positions,
                                     &mut page.float_normals,
+                                    position_packing,
                                 ),
                             );
                         }
@@ -545,7 +553,7 @@ fn build_page(
             merge_page_quads(&mut pending, &mut page.statistics);
             page.quads.reserve(pending.len());
             for quad in pending {
-                page.quads.push(Quad::new(
+                page.quads.push(Quad::new_with_packing(
                     quad.vertices,
                     quad.normal,
                     quad.color,
@@ -555,6 +563,7 @@ fn build_page(
                     quad.shade,
                     &mut page.float_positions,
                     &mut page.float_normals,
+                    position_packing,
                 ));
             }
         }

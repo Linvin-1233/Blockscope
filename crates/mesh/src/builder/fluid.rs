@@ -285,9 +285,10 @@ fn push_face(
         tint
     };
 
+    let packing = page.position_packing;
     push_quad(
         &mut page.quads,
-        Quad::new(
+        Quad::new_with_packing(
             vertices,
             face.normal(),
             color.to_array(),
@@ -297,6 +298,7 @@ fn push_face(
             shade,
             &mut page.float_positions,
             &mut page.float_normals,
+            packing,
         ),
     );
 }

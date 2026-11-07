@@ -50,6 +50,12 @@ User-facing changes are recorded here. The format follows
   rotated geometry use per-page f32 side tables. Measured mesh memory fell by
   about 10-25% on the jar fixtures with byte-identical output, while mesh build
   CPU rose by roughly 20-25%.
+- `--quantize-mesh` packs fluid and plant positions at 1/1440 block units
+  instead of keeping float side tables. On the fluid-heavy `000001` fixture the
+  compact mesh fell from 11.3 GB to 9.6 GB and the streamed render peak from
+  566.6 MB to 543.8 MB, at the cost of 2.14% changed pixels; `000002` kept the
+  same PNG hash and gained little. It is opt-in; exact mode remains the
+  reference.
 
 ### Changed
 

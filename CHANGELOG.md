@@ -39,6 +39,10 @@
   真实 jar 的 mesh 内存下降约 10-25%，输出逐字节一致，mesh 构建多约 20-25%
   的 CPU。`Quad.vertices`/`Quad.normal` 已移除，改用 `MeshPage::quad_positions`、
   `MeshPage::quad_normal` 和 `Quad::uvs`。
+- `--quantize-mesh` 把流体/植物位置量化到 1/1440 方块单位，不再保留 float
+  侧表。流体密集的 `000001` mesh 从 11.3 GB 降到 9.6 GB，流式渲染峰值从
+  566.6 MB 降到 543.8 MB，代价是 2.14% 像素变化；`000002` PNG 哈希不变且收益
+  很小。该选项默认关闭，精确模式仍是参考。
 
 ### 变更
 

@@ -56,11 +56,22 @@ impl Vertex {
     }
 }
 
+/// How non-grid vertex positions are handled during mesh packing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PositionPacking {
+    /// Keep fractional positions in the page float table.
+    #[default]
+    Exact,
+    /// Round positions to a 1/1440 block grid, which covers common model
+    /// denominators such as 1/9, 1/5, and 1/16.
+    Quantize,
+}
+
 /// Position storage for a mesh quad.
 ///
 /// Model and cube geometry is always a multiple of 1/16 block, so it fits the
 /// grid form exactly. Fluid surfaces and rotated model elements keep f32
-/// positions in `MeshPage::float_positions`.
+/// positions in `MeshPage::float_positions` unless quantization is enabled.
 #[derive(Debug, Clone, PartialEq)]
 pub enum QuadPositions {
     /// Four page-local positions in `1 / scale` block units.
@@ -108,7 +119,35 @@ impl Quad {
         float_positions: &mut Vec<[[f32; 3]; 4]>,
         float_normals: &mut Vec<[f32; 3]>,
     ) -> Self {
-        let positions = match grid_positions(&vertices) {
+        Self::new_with_packing(
+            vertices,
+            normal,
+            color,
+            ao,
+            texture,
+            layer,
+            shade,
+            float_positions,
+            float_normals,
+            PositionPacking::Exact,
+        )
+    }
+
+    /// Pack one quad using the requested position precision.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_packing(
+        vertices: [Vertex; 4],
+        normal: [f32; 3],
+        color: [u8; 4],
+        ao: [u8; 4],
+        texture: u16,
+        layer: RenderLayer,
+        shade: bool,
+        float_positions: &mut Vec<[[f32; 3]; 4]>,
+        float_normals: &mut Vec<[f32; 3]>,
+        packing: PositionPacking,
+    ) -> Self {
+        let positions = match grid_positions(&vertices, packing) {
             Some((scale, positions)) => QuadPositions::Grid { scale, positions },
             None => {
                 let index =
@@ -193,31 +232,57 @@ fn axis_normal(normal: [f32; 3]) -> Option<[i8; 3]> {
     Some(axis)
 }
 
-fn grid_positions(vertices: &[Vertex; 4]) -> Option<(u16, [[i16; 3]; 4])> {
-    // Grid positions use 1/16 block units. Plant, torch, and fluid vertices
-    // have fractional coordinates and stay in the per-page float table.
-    const SCALE: u16 = 16;
+fn grid_positions(
+    vertices: &[Vertex; 4],
+    packing: PositionPacking,
+) -> Option<(u16, [[i16; 3]; 4])> {
+    match packing {
+        PositionPacking::Exact => pack_positions(vertices, 16, false),
+        // 1440 is the least common multiple of the common model denominators
+        // (2, 3, 4, 5, 8, 9, 16), so vanilla fluid and plant fractions stay
+        // exact. Arbitrary rotations land within 1/2880 block.
+        PositionPacking::Quantize => pack_positions(vertices, 1440, true),
+    }
+}
+
+/// Pack page-local positions at `scale`, either exactly or by rounding.
+fn pack_positions(
+    vertices: &[Vertex; 4],
+    scale: u16,
+    quantize: bool,
+) -> Option<(u16, [[i16; 3]; 4])> {
     let mut positions = [[0i16; 3]; 4];
     for (vertex, position) in vertices.iter().zip(&mut positions) {
         for (axis, slot) in position.iter_mut().enumerate() {
-            let scaled = vertex.position[axis] * f32::from(SCALE);
-            if !scaled.is_finite()
-                || scaled.fract() != 0.0
-                || scaled < f32::from(i16::MIN)
-                || scaled > f32::from(i16::MAX)
-            {
+            let scaled = vertex.position[axis] * f32::from(scale);
+            if !scaled.is_finite() {
                 return None;
             }
-            let packed = scaled as i16;
-            // Division must reproduce the original f32 value. Signed zero
-            // canonicalizes to +0.0, which does not change rendering.
-            if f32::from(packed) / f32::from(SCALE) != vertex.position[axis] {
-                return None;
-            }
+            let packed = if quantize {
+                let rounded = scaled.round();
+                if rounded < f32::from(i16::MIN) || rounded > f32::from(i16::MAX) {
+                    return None;
+                }
+                rounded as i16
+            } else {
+                if scaled.fract() != 0.0
+                    || scaled < f32::from(i16::MIN)
+                    || scaled > f32::from(i16::MAX)
+                {
+                    return None;
+                }
+                let packed = scaled as i16;
+                // Division must reproduce the original f32 value. Signed zero
+                // canonicalizes to +0.0, which does not change rendering.
+                if f32::from(packed) / f32::from(scale) != vertex.position[axis] {
+                    return None;
+                }
+                packed
+            };
             *slot = packed;
         }
     }
-    Some((SCALE, positions))
+    Some((scale, positions))
 }
 
 /// A 16x16x16 mesh page. Vertex positions are local to `origin`.
@@ -286,11 +351,18 @@ pub struct MeshBuildOptions {
     /// mapping into larger quads. Disabled by default because it only pays off
     /// on builds with contiguous surfaces.
     pub greedy: bool,
+    /// Round positions to a 1/1440 block grid instead of storing fractional
+    /// fluid and plant vertices in the page float table. This lowers mesh
+    /// memory but can move a small number of edge pixels.
+    pub quantize_positions: bool,
 }
 
 impl MeshBuildOptions {
     /// Enable conservative greedy merging.
-    pub const GREEDY: Self = Self { greedy: true };
+    pub const GREEDY: Self = Self {
+        greedy: true,
+        quantize_positions: false,
+    };
 }
 
 /// Hard limits for a single mesh build.
@@ -335,7 +407,7 @@ impl MeshStatistics {
 
 #[cfg(test)]
 mod tests {
-    use super::{Quad, QuadNormal, QuadPositions};
+    use super::{PositionPacking, Quad, QuadNormal, QuadPositions, Vertex, grid_positions};
 
     #[test]
     fn quad_stays_compact() {
@@ -344,5 +416,33 @@ mod tests {
         assert_eq!(std::mem::size_of::<QuadPositions>(), 28);
         assert_eq!(std::mem::size_of::<QuadNormal>(), 8);
         assert_eq!(std::mem::size_of::<Quad>(), 64);
+    }
+
+    #[test]
+    fn quantized_positions_use_the_common_denominator_scale() {
+        let vertices = [
+            Vertex {
+                position: [0.2, 0.8, 0.0],
+                uv: [0, 0],
+            },
+            Vertex {
+                position: [1.0, 0.8, 0.0],
+                uv: [0, 0],
+            },
+            Vertex {
+                position: [1.0, 1.0, 0.0],
+                uv: [0, 0],
+            },
+            Vertex {
+                position: [0.2, 1.0, 0.0],
+                uv: [0, 0],
+            },
+        ];
+
+        assert!(grid_positions(&vertices, PositionPacking::Exact).is_none());
+        let (scale, positions) = grid_positions(&vertices, PositionPacking::Quantize).unwrap();
+        assert_eq!(scale, 1440);
+        assert_eq!(positions[0], [288, 1152, 0]);
+        assert_eq!(positions[1], [1440, 1152, 0]);
     }
 }

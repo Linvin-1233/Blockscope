@@ -57,6 +57,8 @@ Mesh {
 
 Grid positions reconstruct as `i16 / scale` and are used only when that division reproduces the original f32 value for every vertex (signed zero canonicalizes to `+0.0`). Fluid surfaces and rotated or irrational model vertices use the per-page float tables instead. Normals use the same split: the six axis directions are exact in `Axis`, everything else goes to `float_normals`. Consumers must resolve both through `MeshPage::quad_positions` and `MeshPage::quad_normal`; `Quad::uvs()` returns the per-vertex Q12 coordinates. This keeps `Quad` at 64 bytes for grid geometry while preserving byte-identical output; float quads pay for their side-table entries.
 
+With `--quantize-mesh`, every position is packed at 1/1440 block units instead, so `float_positions` normally stays empty. 1440 is the least common multiple of common model denominators (2, 3, 4, 5, 8, 9, 16), so vanilla fluid and plant vertices stay exact; arbitrary rotations move by at most 1/2880 block. The mode is opt-in because those rotations can change a small number of edge pixels.
+
 Vertices are ordered counter-clockwise when viewed from outside the block. The quad normal must agree with the winding; tests assert this with a cross product.
 
 ## Face Culling

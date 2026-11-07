@@ -213,6 +213,29 @@ Public API note: `Quad.vertices` and `Quad.normal` are gone. Read positions
 through `MeshPage::quad_positions`, normals through `MeshPage::quad_normal`, and
 UVs through `Quad::uvs`; `Quad::new` is the builder entry point.
 
+### Quantized mesh positions (2026-11-07)
+
+`--quantize-mesh` keeps the compact 64-byte `Quad` layout but rounds every
+position to a 1/1440 block grid, so `MeshPage::float_positions` normally stays
+empty. 1440 is the least common multiple of common model denominators (2, 3, 4,
+5, 8, 9, 16), so vanilla fluid and plant vertices remain exact; arbitrary
+rotations move by at most 1/2880 block. It is opt-in because those rotations can
+change edge pixels.
+
+Measured against the compact exact build with the client jar:
+
+| Case | Exact mesh | Quantized mesh | Change | Exact build | Quantized build |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `000002` jar | 2,909 MB | 2,868 MB | -1.4% | 1,373 ms | 1,408 ms |
+| `000001` jar | 11,321.8 MB | 9,594.9 MB | -15.3% | 4,759 ms | 4,865 ms |
+
+`000002` renders the same PNG hash and gains little because most of its quads
+were already grid-packed. `000001` is fluid/plant-heavy: total mesh memory is
+23.9% below the pre-compact build, and the streamed exact-render peak fell from
+566.6 MB to 543.8 MB. The cost is 22,443 changed pixels (2.14%, max channel
+delta 180, 31 alpha pixels). Mesh build CPU stays within about 3% of the exact
+compact path. Use exact mode for golden or hash comparisons.
+
 ## Review-fix performance check (2026-10-28)
 
 The review fixes do not change the single-view render hot path. The pre-review `HEAD` binary (`6b5a680`) and the current build were compared on the same host with the same commands:

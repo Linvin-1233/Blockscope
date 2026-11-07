@@ -88,6 +88,7 @@ Terminal images are fitted to the visible grid: when the rendered pixel size wou
 | `--precision exact\|fast`                                      | CPU projection precision; default `exact`; `fast` stores screen points as f32 and trades a small pixel difference for speed and memory |
 | `--stream-mesh [auto\|on\|off]`                                | Build and render mesh in page chunks without retaining the full mesh; default `auto`; `off` retains the full mesh                 |
 | `--greedy-mesh`                                                | Merge coplanar unit faces with identical material and lighting; useful for large flat or repetitive surfaces, disabled by default |
+| `--quantize-mesh`                                             | Round fluid and plant vertices to a 1/1440 block grid; lowers mesh memory at the cost of a small pixel difference, disabled by default |
 | `--force-limits`                                               | Raises input, scene, mesh, and pixel caps; can exhaust memory                                                                     |
 | `--ignore-block-entity-nbt`                                    | Skip container NBT; always on for `mesh`/`render`/`bench`                                                                         |
 | `-t, --terminal`                                               | Render and display the image directly in the terminal                                                                             |

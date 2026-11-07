@@ -75,6 +75,7 @@ struct Spec {
     cache: u32,
     cache_bytes: u64,
     greedy_mesh: bool,
+    quantize_mesh: bool,
     assets: Vec<OsString>,
     timeout: Option<Duration>,
     memory_limit: Option<u64>,
@@ -147,6 +148,7 @@ pub fn run(args: SuperviseArgs) -> Result<(), CliError> {
         cache: args.cache,
         cache_bytes,
         greedy_mesh: args.mesh.options().greedy,
+        quantize_mesh: args.mesh.options().quantize_positions,
         assets: args.assets.cli_args(),
         timeout,
         memory_limit,
@@ -599,6 +601,9 @@ fn spawn_worker(
     }
     if spec.greedy_mesh {
         command.arg("--greedy-mesh");
+    }
+    if spec.quantize_mesh {
+        command.arg("--quantize-mesh");
     }
 
     let mut child = command

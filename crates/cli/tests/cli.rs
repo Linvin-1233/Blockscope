@@ -128,6 +128,18 @@ fn greedy_mesh_flag_merges_flat_faces() {
 }
 
 #[test]
+fn quantize_mesh_flag_is_accepted() {
+    let file = write_fixture(&basic_fixture());
+    let path = file.path().to_str().unwrap();
+
+    let output = run(&["mesh", path, "--json", "--quantize-mesh"]);
+
+    assert!(output.status.success());
+    let stats: MeshStatistics = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(stats.quads, 6);
+}
+
+#[test]
 fn mesh_exports_obj_and_ply() {
     let file = write_fixture(&basic_fixture());
     let path = file.path().to_str().unwrap();

@@ -1,8 +1,9 @@
 mod support;
 
 use litematic_mesh::{
-    BlockCatalog, ColorBlockCatalog, Mesh, RenderLayer, Rgba, build_mesh, build_mesh_parallel,
-    build_mesh_streaming, count_mesh_quads, redstone_color,
+    BlockCatalog, ColorBlockCatalog, Mesh, MeshBuildOptions, MeshLimits, RenderLayer, Rgba,
+    build_mesh, build_mesh_parallel, build_mesh_streaming, build_mesh_with_options,
+    count_mesh_quads, redstone_color,
 };
 use litematic_scene::{BlockStateKey, Scene};
 use std::collections::BTreeMap;
@@ -129,6 +130,47 @@ fn water_surface_slopes_toward_a_lower_neighbor() {
         west - east > 0.02,
         "surface should fall toward the lower neighbour: west={west} east={east}"
     );
+}
+
+#[test]
+fn quantized_water_positions_stay_within_the_common_denominator_step() {
+    let scene = water_row(&[0, 0, 2, 5, 7]);
+    let catalog = ColorBlockCatalog::default();
+    let limits = MeshLimits::default();
+    let exact = build_mesh(&scene, &catalog, &limits).unwrap();
+    let quantized = build_mesh_with_options(
+        &scene,
+        &catalog,
+        &limits,
+        MeshBuildOptions {
+            quantize_positions: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(exact.pages.len(), quantized.pages.len());
+    let mut compared = 0usize;
+    for (exact_page, quantized_page) in exact.pages.iter().zip(&quantized.pages) {
+        assert_eq!(exact_page.quads.len(), quantized_page.quads.len());
+        assert!(
+            quantized_page.float_positions.is_empty(),
+            "quantized water must not retain float positions"
+        );
+        for (exact_quad, quantized_quad) in exact_page.quads.iter().zip(&quantized_page.quads) {
+            let exact_positions = exact_page.quad_positions(exact_quad);
+            let quantized_positions = quantized_page.quad_positions(quantized_quad);
+            for vertex in 0..4 {
+                for axis in 0..3 {
+                    let delta =
+                        (exact_positions[vertex][axis] - quantized_positions[vertex][axis]).abs();
+                    assert!(delta <= 1.0 / 1440.0 + 1e-6, "delta {delta}");
+                }
+            }
+            compared += 1;
+        }
+    }
+    assert!(compared > 0);
 }
 
 #[test]
