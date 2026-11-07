@@ -4,7 +4,7 @@ The engine is a single static-ish binary with no mandatory runtime service depen
 
 ## Release Binaries
 
-Tagged releases publish standalone, statically linked binaries for Linux, macOS, and Windows (using musl on Linux and static CRT on Windows). For binary downloads, checksum verification, and desktop installer guides, see [Installation and Quick Start](./user/getting-started.md).
+Tagged releases publish standalone binaries for Linux, macOS, and Windows: static musl archives for Linux x86_64/aarch64, a glibc GNU archive for Linux x86_64, macOS archives, and a Windows archive linked with the static CRT. For binary downloads, checksum verification, and desktop installer guides, see [Installation and Quick Start](./user/getting-started.md).
 
 Release artifacts follow the platform capability matrix:
 

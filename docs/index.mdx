@@ -1,11 +1,11 @@
 ---
 title: "Blockscope Documentation"
-description: "High-performance Minecraft .litematic schematic parser, mesh generator, and CPU software rasterizer"
+description: "High-performance Minecraft .litematic parser, mesh generator, CPU/GPU renderer, and MP4/GIF video exporter"
 ---
 
 ## Welcome to Blockscope
 
-**Blockscope** is an offline, standalone Minecraft schematic inspection and rendering engine written in Rust. It turns `.litematic` files into Scene IR, generates color-block or textured meshes (OBJ/PLY), and produces orthographic preview PNGs on the CPU without requiring a GPU or a running Minecraft client.
+**Blockscope** is an offline, standalone Minecraft schematic inspection and rendering engine written in Rust. It turns `.litematic` files into Scene IR, generates color-block or textured meshes (OBJ/PLY), and produces orthographic PNG renders on the CPU or an optional offscreen GPU backend, plus keyframed MP4/GIF clips through an external ffmpeg. It does not require a running Minecraft client.
 
 <CardGroup cols={2}>
   <Card title="Quick Start" icon="rocket" href="/user/getting-started">
@@ -18,7 +18,7 @@ description: "High-performance Minecraft .litematic schematic parser, mesh gener
     面向部署者与开发者的完整中文指南与操作参考。
   </Card>
   <Card title="Technical Specs" icon="microchip" href="/rendering">
-    Deep-dive into CPU rasterization, mesh geometry, and the stdio protocol.
+    Deep-dive into CPU/GPU rendering, mesh geometry, performance, and the stdio protocol.
   </Card>
 </CardGroup>
 
@@ -31,16 +31,19 @@ description: "High-performance Minecraft .litematic schematic parser, mesh gener
   <Step title="2. Mesh Geometry (Phase 2)">
     Paginates scene geometry into 16³ voxel chunks with automatic face culling, smooth ambient occlusion (AO), and quad deduplication. Exports to standard Wavefront OBJ and Stanford PLY.
   </Step>
-  <Step title="3. CPU Rasterization (Phase 3)">
-    Custom software rasterizer rendering anti-aliased orthographic previews to RGBA PNG. Supports both built-in color-block palettes and official Java resource-pack textures without GPU dependencies.
+  <Step title="3. Rasterization (Phase 3)">
+    Tiled software rasterizer producing anti-aliased orthographic PNGs from built-in color-block palettes or official Java resource-pack textures. An optional offscreen `wgpu` backend shares the same scene and mesh pipeline; the CPU remains the byte-exact reference.
   </Step>
   <Step title="4. Service Protocol (Phase 4)">
-    Single-job worker isolation with stdio JSONL wire protocol (`serve` / `supervise`), supervisor process management, and predictable error handling.
+    Single-job worker isolation with stdio JSONL protocol v4 (`serve` / `supervise`), supervisor process management, image and video jobs, and predictable error handling.
+  </Step>
+  <Step title="5. Video Export">
+    A keyframed camera timeline renders MP4 or GIF through an external ffmpeg 4.4+ executable, with CPU or GPU frame sessions and optional hardware encoding.
   </Step>
 </Steps>
 
 ## Navigation
 
-- **User Guide (EN)**: Comprehensive guides for installation, CLI flags, resource packs, Docker, and service mode.
+- **User Guide (EN)**: Comprehensive guides for installation, CLI flags, resource packs, video export, Docker, Cloudflare Workers, and service mode.
 - **用户指南**: 完整的中文使用指南与排查手册。
-- **Technical Specs**: Deep dive documentation covering rendering mathematics, mesh formats, engine protocols, and deployment assets.
+- **Technical Specs**: Deep dive documentation covering rendering mathematics, mesh formats, performance baselines, engine protocols, and deployment assets.

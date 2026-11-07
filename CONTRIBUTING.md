@@ -77,8 +77,11 @@ CI 的 test matrix 会在 Ubuntu、Windows 和 macOS 上运行同样的检查；
 | `crates/scene`     | Scene IR、统计、诊断、manifest、hash                  |
 | `crates/material`  | blockstate/model、资源包、纹理、tint、chest           |
 | `crates/mesh`      | 色块/资源包网格、面剔除、AO、OBJ/PLY 导出             |
-| `crates/render`    | CPU 光栅化、tile、超采样、PNG                         |
-| `crates/cli`       | `blockscope` 命令、serve、supervise、容量检测         |
+| `crates/render`    | CPU/GPU 光栅化、tile、超采样、PNG                     |
+| `crates/video`     | 关键帧相机时间线、ffmpeg MP4/GIF 编码                 |
+| `crates/cli`       | `blockscope` 命令、serve/supervise、animate、容量检测 |
+| `crates/worker`    | Cloudflare Workers HTTP 适配器                        |
+| `xtask`            | 仓库自动化（检查、构建、发布）                        |
 | `crates/*/tests`   | 集成测试、黄金测试和真实文件测试                      |
 
 依赖方向应保持单向：底层数据 crate 不依赖 CLI，渲染 crate 不依赖 CLI。

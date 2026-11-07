@@ -22,6 +22,10 @@ device nodes (for example `--device /dev/dri`); the container does not bundle
 drivers. GPU output is approximate and `auto` still falls back to the CPU when
 no adapter is visible.
 
+MP4/GIF jobs need an ffmpeg 4.4+ executable inside the container. The default
+image does not bundle ffmpeg; install it in a derived image or mount a static
+binary and pass `--ffmpeg` when it is not on `PATH`.
+
 ## Capacity
 
 ```bash

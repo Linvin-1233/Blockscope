@@ -8,6 +8,7 @@ title: "Installation and Quick Start"
 - No Rust toolchain is needed when using prebuilt binaries
 - Rust stable (edition 2024; Rust 1.85 or newer recommended) when building from source
 - Optional: a Minecraft client jar, an extracted `assets/` directory, or a resource pack
+- Optional: ffmpeg 4.4 or newer on `PATH` for MP4/GIF export
 - Optional: Docker
 - At least 1 GiB of memory is recommended for a regular 1024x1024 preview. Supersampling, larger images, or huge structures need more.
 
@@ -15,15 +16,16 @@ title: "Installation and Quick Start"
 
 Download the installer or archive for your platform from [Releases](https://github.com/Linvin-1233/Blockscope/releases):
 
-| Platform       | Target triple                | Format          |
-| -------------- | ---------------------------- | --------------- |
-| Linux x86_64   | `x86_64-unknown-linux-musl`  | `.tar.gz`       |
-| Linux aarch64  | `aarch64-unknown-linux-musl` | `.tar.gz`       |
-| Windows x86_64 | `x86_64-pc-windows-msvc`     | `.msi` / `.zip` |
-| macOS aarch64  | `aarch64-apple-darwin`       | `.tar.gz`       |
-| macOS x86_64   | `x86_64-apple-darwin`        | `.tar.gz`       |
+| Platform              | Target triple                | Format          |
+| --------------------- | ---------------------------- | --------------- |
+| Linux x86_64 (musl)   | `x86_64-unknown-linux-musl`  | `.tar.gz`       |
+| Linux aarch64 (musl)  | `aarch64-unknown-linux-musl` | `.tar.gz`       |
+| Linux x86_64 (glibc)  | `x86_64-unknown-linux-gnu`   | `.tar.gz`       |
+| Windows x86_64        | `x86_64-pc-windows-msvc`     | `.msi` / `.zip` |
+| macOS aarch64         | `aarch64-apple-darwin`       | `.tar.gz`       |
+| macOS x86_64          | `x86_64-apple-darwin`        | `.tar.gz`       |
 
-Names look like `blockscope-v0.4.1-x86_64-unknown-linux-musl.tar.gz`, and each file has a `.sha256` next to it with the extension removed (`blockscope-v0.4.1-x86_64-unknown-linux-musl.sha256`). Linux artifacts are linked statically against musl and the Windows artifact uses the static CRT, so the target machine needs no extra runtime libraries.
+Names look like `blockscope-v0.4.1-x86_64-unknown-linux-musl.tar.gz`, and each file has a `.sha256` next to it with the extension removed (`blockscope-v0.4.1-x86_64-unknown-linux-musl.sha256`). Linux musl artifacts are linked statically against musl, the Linux GNU artifact requires glibc and the platform Vulkan loader, and the Windows artifact uses the static CRT. Windows, macOS, and Linux GNU archives enable the optional GPU feature; Linux musl archives are CPU-only.
 
 ### Linux
 
@@ -34,6 +36,8 @@ sha256sum -c blockscope-v0.4.1-x86_64-unknown-linux-musl.sha256
 tar -xzf blockscope-v0.4.1-x86_64-unknown-linux-musl.tar.gz
 ./blockscope-v0.4.1-x86_64-unknown-linux-musl/blockscope --version
 ```
+
+For the GPU-enabled glibc archive, use the same commands with `x86_64-unknown-linux-gnu` in place of `x86_64-unknown-linux-musl`.
 
 ### macOS
 

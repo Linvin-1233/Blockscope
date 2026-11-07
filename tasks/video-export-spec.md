@@ -409,8 +409,8 @@ Document:
 - `docs/engine-protocol.md`: v4 fields, result shape, error codes, supervisor
   timeout;
 - `docs/deployment.md`: ffmpeg installation, container images, hardware device
-  passthrough, and the fact that release binaries remain CPU-only and do not
-  bundle ffmpeg;
+  passthrough, and the fact that release binaries do not bundle ffmpeg (Linux
+  musl archives remain CPU-only);
 - `README.md`/`README.en.md`, `CHANGELOG.md`/`CHANGELOG.en.md`, and
   `tasks/todo.md`.
 

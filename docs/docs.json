@@ -67,6 +67,10 @@
               {
                 "group": "System & Protocol",
                 "pages": ["engine-protocol", "deployment"]
+              },
+              {
+                "group": "Performance",
+                "pages": ["performance", "performance-preview"]
               }
             ]
           }
@@ -99,7 +103,7 @@
           },
           {
             "group": "进阶与部署",
-            "pages": ["zh/user/materials", "zh/user/service", "zh/user/docker"]
+            "pages": ["zh/user/materials", "zh/user/service", "zh/user/docker", "zh/user/cloudflare-workers"]
           },
           {
             "group": "参考与排查",

@@ -14,6 +14,9 @@ title: "Troubleshooting"
 | `INVALID_RENDER_OPTIONS: threads`             | `--threads` or the request exceeds 256                                                              |
 | `INVALID_NBT` / `INVALID_LITEMATIC`           | Corrupt, unsupported, or malformed file; run `validate` first                                       |
 | `serve` never prints `hello`                  | Check worker stderr and resource-pack paths                                                         |
+| `FFMPEG_NOT_FOUND` / `FFMPEG_VERSION_UNSUPPORTED` | Install ffmpeg 4.4+ on `PATH`, or pass `--ffmpeg` to `animate`/`serve`/`supervise`              |
+| `ENCODER_UNAVAILABLE`                         | The requested hardware encoder is not compiled or not usable at this size; use `--encoder auto` or `software` |
+| `ANIMATION_INVALID`                           | Check keyframe order and times, duration, fps, MP4 even dimensions, and the opaque background       |
 | Cannot write output                           | Ensure the container/service user can write to `outputDir`                                          |
 | Slow render or out of memory                  | Use `capacity`, reduce resolution/supersampling, lower concurrency, or keep `--stream-mesh` enabled |
 
@@ -27,7 +30,7 @@ blockscope materials model.litematic --client-jar client.jar --json
 blockscope capacity --json
 ```
 
-The manifest diagnostics from `inspect` report metadata mismatches, overlapping regions, ignored entities/ticks, and similar issues. `validate` is the quickest first check.
+The manifest diagnostics from `inspect` report metadata mismatches, overlapping regions, ignored entities/ticks, and similar issues. `validate` is the quickest first check. For video jobs, confirm the external encoder with `ffmpeg -version`; the minimum supported version is 4.4.
 
 ## Reporting
 

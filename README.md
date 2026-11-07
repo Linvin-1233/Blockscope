@@ -9,10 +9,10 @@ Blockscope 是一个把 Minecraft `.litematic` 投影文件渲染成 PNG、MP4 �
 
 它不是 Minecraft 客户端截图工具：引擎直接解析 `.litematic`，默认在 CPU 上生成
 确定性 PNG，并可在服务端无图形环境中运行。以 `--features gpu` 构建后可选用
-`wgpu` 离屏后端，适合 CPU 较弱但具备硬件适配器的主机；CPU 仍是默认和逐字节
-golden 参考。
+`wgpu` 离屏后端；Windows、macOS 和 Linux GNU 发布包已启用该特性，适合 CPU
+较弱但具备硬件适配器的主机。CPU 仍是默认和逐字节 golden 参考。
 
-- 当前版本：`0.4.0`
+- 当前版本：`0.4.1`
 - 支持平台：Windows x86_64、Linux x86_64 / aarch64、macOS aarch64 / x86_64
 - 下载：预编译二进制见 [GitHub Releases](https://github.com/Linvin-1233/Blockscope/releases)
 - English: [README.en.md](README.en.md)
@@ -31,6 +31,7 @@ golden 参考。
 - [服务模式](https://blockscope.linvin.net/zh/user/service)
 - [限制与安全](https://blockscope.linvin.net/zh/user/limits)
 - [Docker](https://blockscope.linvin.net/zh/user/docker)
+- [Cloudflare Workers](https://blockscope.linvin.net/zh/user/cloudflare-workers)
 - [故障排查](https://blockscope.linvin.net/zh/user/troubleshooting)
 
 ### 技术文档
@@ -41,6 +42,7 @@ golden 参考。
 - [资源包材质说明](https://blockscope.linvin.net/textures)
 - [引擎协议 v4](https://blockscope.linvin.net/engine-protocol)
 - [部署说明](https://blockscope.linvin.net/deployment)
+- [性能基线](https://blockscope.linvin.net/performance)
 
 ### 项目文档
 

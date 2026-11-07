@@ -66,6 +66,22 @@ A single view writes `out.png`. Multiple views write `out-45.png`, `out-225.png`
 
 `animate` samples the keyframed camera into a video. A keyframe is `TIME:YAW:ELEVATION` in seconds and degrees; repeat `--keyframe` for each one. MP4 uses H.264 and requires an opaque background and even dimensions. GIF supports 1-bit transparency. `--ffmpeg` selects an external executable; the minimum supported version is 4.4. `--encoder auto` probes hardware encoders at the output size on first use and falls back to libx264; `software` forces libx264, and an explicit hardware encoder that is not compiled or usable fails with `ENCODER_UNAVAILABLE` instead of falling back silently. `--json` reports aggregate GPU stage timings under `gpuStages` when the GPU backend is used.
 
+Without `--force-limits`, a clip is limited to 60 seconds and 1,800 frames.
+
+| Option | Description |
+| --- | --- |
+| `--output <PATH>` | Output path; default `animate.mp4`. The extension selects MP4 or GIF when `--format` is absent |
+| `--format mp4\|gif` | Force the container format |
+| `--keyframe TIME:YAW:ELEV` | Repeat for each keyframe; times must increase |
+| `--duration <SECONDS>` | Clip length; defaults to the last keyframe time |
+| `--fps <N>` | Frames per second, 1-60; default 30 for MP4 and 15 for GIF |
+| `--no-loop` | Exclude the duplicate endpoint from a looping clip |
+| `--easing linear\|smooth` | Camera interpolation; default `linear` |
+| `--encoder auto\|software\|nvenc\|qsv\|amf\|videotoolbox\|vaapi` | Encoder; default `auto` |
+| `--quality low\|medium\|high` | Encoder quality; default `medium` |
+| `--ffmpeg <PATH>` | External ffmpeg executable (4.4 or newer) |
+| `--json` | Print the video report as JSON |
+
 Terminal images are fitted to the visible grid: when the rendered pixel size would exceed the window, the next cell dimension is requested so the terminal scales the image down while keeping its aspect ratio. The summary is printed first and the image last, so text cannot scroll it out of view. Inside `tmux` or `screen`, which drop graphics sequences unless passthrough is enabled, auto-detection falls back to half blocks; pass `--terminal-protocol` to override that. When stdout is not a terminal (a pipe, a log, a captured shell), a warning is printed because the escape sequences cannot be displayed.
 
 ## Common Options

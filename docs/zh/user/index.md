@@ -2,7 +2,7 @@
 title: "用户文档"
 ---
 
-欢迎阅读 Blockscope 用户指南。Blockscope 是一个用 Rust 编写的高性能离线 Minecraft `.litematic` 投影文件解析、网格生成与 CPU 光栅化渲染引擎。
+欢迎阅读 Blockscope 用户指南。Blockscope 是一个用 Rust 编写的高性能离线 Minecraft `.litematic` 投影文件解析、网格生成与渲染引擎，可在 CPU 或可选 GPU 后端上生成 PNG，并导出 MP4/GIF 视频。
 
 本指南提供在桌面和服务器环境中安装、配置、运行及排查 Blockscope 所需的全部说明。
 
@@ -10,7 +10,7 @@ title: "用户文档"
 
 - **入门与概览**：了解引擎能力与边界 [功能与限制](./features.md)，按照 [安装与快速开始](./getting-started.md) 安装预编译程序，查阅 [CLI 命令](./cli.md) 了解所有子命令与参数。
 - **材质**：在 [材质与资源包](./materials.md) 中配置客户端 jar 与材质包。
-- **服务与容器部署**：通过 [服务模式](./service.md) 使用 stdio JSONL 协议启动长驻 worker 与 supervisor，使用 [Docker](./docker.md) 进行轻量容器化部署。
+- **服务与容器部署**：通过 [服务模式](./service.md) 使用 stdio JSONL 协议 v4 启动长驻 worker 与 supervisor，处理图片和视频任务；使用 [Docker](./docker.md) 进行轻量容器化部署，需要 HTTP 适配器时参阅 [Cloudflare Workers](./cloudflare-workers.md)。
 - **参考与排查**：在 [限制与安全](./limits.md) 中了解各项安全上限与 `--force-limits`，遇到异常时查阅 [故障排查](./troubleshooting.md)。
 
 ## 项目链接

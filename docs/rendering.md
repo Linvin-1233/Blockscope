@@ -1,6 +1,6 @@
 # Rendering and PNG Output
 
-Phase 3 renders the Phase 2 mesh to an RGBA PNG on the CPU. It uses an orthographic camera and a tile rasterizer. No GPU or Minecraft client is required.
+Phase 3 renders the Phase 2 mesh to an RGBA PNG. The default path uses an orthographic camera and a tile rasterizer on the CPU; an optional offscreen GPU backend shares the same scene and mesh pipeline. No Minecraft client is required.
 
 Textures are optional: without a resource pack the renderer uses flat block colors; with one it samples the pack textures. See `docs/textures.md`.
 
@@ -212,13 +212,15 @@ The mesh stores fixed-point attributes instead of full floats. Texture coordinat
 | Structure                  | Before | After |
 | -------------------------- | ------ | ----- |
 | `Vertex`                   | 36 B   | 16 B  |
-| `Quad`                     | 148 B  | 88 B  |
-| projected quad table entry | 200 B  | 128 B |
-| translucent triangle       | 160 B  | 112 B |
+| `Quad`                     | 148 B  | 64 B  |
+| projected quad table entry | 200 B  | 128 B exact / 80 B fast |
+| translucent triangle       | 160 B  | 72 B  |
+
+Grid quads use the 64-byte packed form; fluid and rotated quads add per-page float position/normal side-table entries. The projected table is 128 bytes per quad on the exact path and 80 bytes with `--precision fast`.
 
 ### Geometry table
 
-Opaque and cutout geometry is projected once per quad and stored in a compact quad table (about 128 bytes per quad: four screen points, one color and shade pair, four AO levels, four Q12 UVs, texture id, layer). Triangles are formed only while a tile rasterizes a quad, so the render table is roughly half the size of storing two full triangles per quad. Translucent triangles are kept separately because they need a per-tile depth sort. Output stays byte-identical.
+Opaque and cutout geometry is projected once per quad and stored in a compact quad table (about 128 bytes per quad on the exact path, 80 bytes with `--precision fast`: four screen points, one color and shade pair, four AO levels, four Q12 UVs, texture id, layer). Triangles are formed only while a tile rasterizes a quad, so the render table is roughly half the size of storing two full triangles per quad. Translucent triangles are kept separately because they need a per-tile depth sort. Output stays byte-identical.
 
 Measured on the 370x370 fixture at 1024x1024 and supersample 2: peak memory dropped from 19.6 GB to 6.3 GB and render time from 13.5 s to 4.0 s; the PNG hash did not change.
 
@@ -400,7 +402,7 @@ Golden PNGs for cube, partial shapes, water, negative coordinates, AO, textured 
 - Fluid surfaces use the still texture; flow animation and the water overlay are not reproduced.
 - The built-in redstone dust model does not fold connection directions into its flat plane; textured renders use the pack model for that.
 - Translucent sorting is per tile and approximate.
-- CPU-only; tiles are parallel and mesh pages are built in parallel, but PNG encoding runs on the calling thread.
+- The CPU path keeps PNG encoding on the calling thread; tile rasterization and mesh page builds are parallel. The optional GPU path is not byte-exact.
 - Texture coordinates are Q12 fixed point; UVs outside [-8, 8) are clamped.
 - Color management is approximate; output is treated as sRGB.
 - Golden PNGs cover small synthetic scenes, not large real structures.

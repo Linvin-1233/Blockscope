@@ -117,9 +117,10 @@ User-facing changes are recorded here. The format follows
   output is required. The 96x96 parity scenes keep a maximum channel delta of
   1, but the differing-pixel ratio remains above the spec's 0.1 percent target
   and is recorded as not met in `docs/performance.md`.
-- The `serve`/`supervise` protocol version is now 3: `lod` and `lodMs` are gone
-  from requests and results, `defaultLod` is gone from the supervisor hello, and
-  cache entries are keyed by `inputHash` only.
+- The `serve`/`supervise` protocol no longer carries LOD fields: `lod` and
+  `lodMs` are gone from requests and results, `defaultLod` is gone from the
+  supervisor hello, and cache entries are keyed by `inputHash` only. The
+  protocol version is 4 (see the video job entry above).
 
 ## [0.4.1] - 2026-10-29
 

@@ -14,6 +14,9 @@ title: "故障排查"
 | `INVALID_RENDER_OPTIONS: threads`             | `--threads` 或请求中的线程数超过 256                                      |
 | `INVALID_NBT` / `INVALID_LITEMATIC`           | 文件损坏、版本不支持或结构不符合预期；先运行 `validate`                   |
 | `serve` 没有输出 `hello`                      | 查看 worker stderr；检查资源包路径和启动参数                              |
+| `FFMPEG_NOT_FOUND` / `FFMPEG_VERSION_UNSUPPORTED` | 安装 ffmpeg 4.4+ 并加入 `PATH`，或给 `animate`/`serve`/`supervise` 传入 `--ffmpeg` |
+| `ENCODER_UNAVAILABLE`                         | 请求的硬件编码器未编译，或在该输出尺寸下不可用；改用 `--encoder auto` 或 `software` |
+| `ANIMATION_INVALID`                           | 检查关键帧顺序和时间、时长、fps、MP4 偶数尺寸和不透明背景                 |
 | 输出目录无法写入                              | 确认容器/服务用户对 `outputDir` 有写权限                                  |
 | 渲染很慢或内存不足                            | 使用 `capacity`、降低分辨率/超采样、减少并发，并保持 `--stream-mesh` 开启 |
 
@@ -27,7 +30,7 @@ blockscope materials model.litematic --client-jar client.jar --json
 blockscope capacity --json
 ```
 
-`inspect` 的 `diagnostics` 会报告 metadata 不一致、region 重叠、被忽略的实体/ tick 等问题。`validate` 适合先确认文件能否解析。
+`inspect` 的 `diagnostics` 会报告 metadata 不一致、region 重叠、被忽略的实体/ tick 等问题。`validate` 适合先确认文件能否解析。视频任务可用 `ffmpeg -version` 确认外部编码器，最低支持 4.4。
 
 ## 获取帮助
 

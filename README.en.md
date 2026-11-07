@@ -12,8 +12,9 @@ encoder, a CLI, and a stdio service.
 It is not a Minecraft client screenshot tool: the engine parses `.litematic`
 directly and renders deterministic PNGs on the CPU without a graphical
 environment. Build with `--features gpu` to add the `wgpu` offscreen backend for
-hosts with a weak CPU and a hardware adapter; the CPU remains the default and
-the byte-exact golden reference.
+hosts with a weak CPU and a hardware adapter; Windows, macOS, and Linux GNU
+release archives enable it. The CPU remains the default and the byte-exact
+golden reference.
 
 - Version: `0.4.1`
 - Platforms: Windows x86_64, Linux x86_64 / aarch64, macOS aarch64 / x86_64
@@ -34,6 +35,7 @@ Read the documentation at [blockscope.linvin.net](https://blockscope.linvin.net)
 - [Service mode](https://blockscope.linvin.net/user/service)
 - [Limits and security](https://blockscope.linvin.net/user/limits)
 - [Docker](https://blockscope.linvin.net/user/docker)
+- [Cloudflare Workers](https://blockscope.linvin.net/user/cloudflare-workers)
 - [Troubleshooting](https://blockscope.linvin.net/user/troubleshooting)
 
 ### Technical Documentation
@@ -44,6 +46,7 @@ Read the documentation at [blockscope.linvin.net](https://blockscope.linvin.net)
 - [Resource-pack materials](https://blockscope.linvin.net/textures)
 - [Engine protocol v4](https://blockscope.linvin.net/engine-protocol)
 - [Deployment](https://blockscope.linvin.net/deployment)
+- [Performance baselines](https://blockscope.linvin.net/performance)
 
 ### Project
 

@@ -142,7 +142,8 @@ Plan: `tasks/render-memory-plan.md`
 - [x] C1: exact translucent spill to temporary bucket files; 618 MB measured.
 - [x] Measure streamed/full textured memory and update `docs/performance.md`.
 - [x] Update CLI/render tests and changelog.
-- [ ] Optional: `serve` stream-mesh protocol support; separate spec.
+- [x] `serve`/`supervise` protocol `streamMesh` support (v4), single-view
+      streaming.
 
 ## CPU streaming optimization
 

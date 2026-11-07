@@ -4,7 +4,7 @@ title: "功能与限制"
 
 Blockscope 是一个把 Minecraft `.litematic` 投影文件渲染成 PNG、MP4 和 GIF 的无头 Rust 图像渲染引擎，面向通用后端服务、批处理工具和自动化管线。
 
-当前 workspace 版本为 `0.4.1`，支持 Windows、Linux 和 macOS。仓库包含解析、材质、网格、CPU 光栅化、CLI 和 stdio 服务；不包含特定聊天平台或机器人适配层。
+当前 workspace 版本为 `0.4.1`，支持 Windows、Linux 和 macOS。仓库包含解析、材质、网格、CPU 光栅化（可选 GPU 后端）、外部 ffmpeg 视频编码、CLI 和 stdio 服务；不包含特定聊天平台或机器人适配层。
 
 ## 功能
 
@@ -17,24 +17,25 @@ Blockscope 是一个把 Minecraft `.litematic` 投影文件渲染成 PNG、MP4 �
 - 可选 `--greedy-mesh` 共面合并，降低大平面和重复结构的 quad 数
 - CPU 正交相机、tile 光栅化、`flat-v1` / `simple-ao-v1` 光照、PNG 输出
 - 关键帧相机动画输出 MP4/GIF，使用外部 ffmpeg 4.4+，可选硬件编码
-- 可选离屏 `wgpu` 光栅化（`--features gpu`，`--backend gpu` 或 `auto`）；CPU
-  仍是默认后端和逐字节参考
+- 可选离屏 `wgpu` 光栅化（`--features gpu`，`--backend gpu` 或 `auto`）；
+  Windows、macOS 和 Linux GNU 发布包已启用，Linux musl 和 wasm 保持 CPU-only；
+  CPU 仍是默认后端和逐字节参考
 - 超采样 1-4、多视角、并行 tile、分页流式渲染
 - `serve` 长驻 worker 和 `supervise` 多进程调度，使用 newline-delimited JSON；
   协议 v4 支持视频任务
+- 无状态 [Cloudflare Workers](./cloudflare-workers.md) HTTP 适配器，用于 PNG 渲染（CPU-only）
 - 容量检测、内存预算、mesh/render 上限和稳定错误码
 - 黄金 manifest/PNG、并发和协议测试
 
 ## 当前限制
 
-- 不包含特定聊天平台/机器人适配层；本仓库只提供渲染引擎和 stdio 协议
+- 不包含特定聊天平台/机器人适配层；本仓库提供渲染引擎、stdio 协议和 Cloudflare Workers 适配器
 - 不渲染通用实体模型、实体动画、block entity 文本/图标、banner pattern 或 skull skin
 - 材质 tint 使用固定 plains 色，不读取 biome colormap
 - 没有阴影、完整光照传播、emissive bloom 或 mipmap
-- GPU 输出随厂商和驱动变化，不保证逐字节一致，也不包含在官方发布二进制中
-- LOD 会丢弃 block entities、entities 和 pending ticks
+- GPU 输出随厂商和驱动变化，不保证逐字节一致；Windows、macOS 和 Linux GNU 发布包已启用，Linux musl 和 wasm 保持 CPU-only
 - 资源包、客户端 jar 和私有 `.litematic` 不随仓库提交
-- 没有网络端口；`serve`/`supervise` 只通过 stdio 与上层服务通信
+- `serve`/`supervise` 不监听网络端口，只通过 stdio 与上层服务通信；Cloudflare Workers 适配器是独立的 HTTP 端点
 
 ## 下一步
 

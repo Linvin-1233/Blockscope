@@ -66,6 +66,22 @@ blockscope preview model.litematic -t
 
 `animate` 将关键帧相机采样为视频。关键帧格式为 `TIME:YAW:ELEVATION`，单位为秒和角度；每个关键帧重复一次 `--keyframe`。MP4 使用 H.264，需要不透明背景和偶数尺寸；GIF 支持 1 位透明。`--ffmpeg` 可指定外部可执行文件，最低支持 4.4。`--encoder auto` 会在首次使用时按输出尺寸探测硬件编码器，失败时回退到 libx264；`software` 强制使用 libx264，显式硬件编码器未编译或不可用时返回 `ENCODER_UNAVAILABLE`，不会静默回退。使用 GPU 后端时，`--json` 会在 `gpuStages` 中报告聚合的 GPU 阶段耗时。
 
+未使用 `--force-limits` 时，单个视频限制为 60 秒和 1,800 帧。
+
+| 选项 | 说明 |
+| --- | --- |
+| `--output <PATH>` | 输出路径，默认 `animate.mp4`；未指定 `--format` 时由扩展名选择 MP4 或 GIF |
+| `--format mp4\|gif` | 强制指定容器格式 |
+| `--keyframe TIME:YAW:ELEV` | 每个关键帧重复一次；时间必须递增 |
+| `--duration <SECONDS>` | 视频时长，默认使用最后一个关键帧的时间 |
+| `--fps <N>` | 帧率，1-60；MP4 默认 30，GIF 默认 15 |
+| `--no-loop` | 循环视频不重复末尾端点 |
+| `--easing linear\|smooth` | 相机插值方式，默认 `linear` |
+| `--encoder auto\|software\|nvenc\|qsv\|amf\|videotoolbox\|vaapi` | 编码器，默认 `auto` |
+| `--quality low\|medium\|high` | 编码质量，默认 `medium` |
+| `--ffmpeg <PATH>` | 外部 ffmpeg 可执行文件（4.4 或更新） |
+| `--json` | 以 JSON 输出视频报告 |
+
 终端图像会先适配可见网格：渲染尺寸超过窗口时只向终端指定一个字符维度，由终端按原始宽高比缩小图像。摘要先输出、图像最后输出，后续文字不会把它顶出屏幕。在 `tmux` 或 `screen` 内（默认会丢弃图形序列，除非开启 passthrough），自动检测会退化为半块字符；需要时用 `--terminal-protocol` 覆盖。当 stdout 不是终端（管道、日志、被捕获的 shell）时会给出警告，因为转义序列无法显示。
 
 ## 常用选项

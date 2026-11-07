@@ -77,8 +77,11 @@ a rule really needs to change, explain why in the pull request.
 | `crates/scene`     | Scene IR, statistics, diagnostics, manifest, hash             |
 | `crates/material`  | Blockstates/models, resource packs, textures, tint, chest     |
 | `crates/mesh`      | Color-block/pack meshes, culling, AO, OBJ/PLY export          |
-| `crates/render`    | CPU rasterization, tiles, supersampling, PNG                  |
-| `crates/cli`       | `blockscope` commands, serve, supervise, capacity detection   |
+| `crates/render`    | CPU/GPU rasterization, tiles, supersampling, PNG              |
+| `crates/video`     | Keyframed camera timeline, ffmpeg MP4/GIF encoding            |
+| `crates/cli`       | `blockscope` commands, serve/supervise, animate, capacity     |
+| `crates/worker`    | Cloudflare Workers HTTP adapter                               |
+| `xtask`            | Repository automation (checks, builds, releases)              |
 | `crates/*/tests`   | Integration, golden, and real-file tests                      |
 
 Dependencies should flow in one direction: data crates do not depend on the CLI,

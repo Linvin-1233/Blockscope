@@ -1,11 +1,11 @@
 ---
 title: "Blockscope 文档"
-description: "高性能 Minecraft .litematic 投影文件解析器、网格生成器与 CPU 软件光栅化渲染器"
+description: "高性能 Minecraft .litematic 投影文件解析器、网格生成器、CPU/GPU 渲染器与 MP4/GIF 视频导出工具"
 ---
 
 ## 欢迎使用 Blockscope
 
-**Blockscope** 是一个用 Rust 编写的离线、独立 Minecraft 投影文件检查与渲染引擎。它将 `.litematic` 文件转换为 Scene IR，生成纯色方块或带材质网格（OBJ/PLY），并在 CPU 上生成正交预览 PNG，无需 GPU，也无需运行中的 Minecraft 客户端。
+**Blockscope** 是一个用 Rust 编写的离线、独立 Minecraft 投影文件检查与渲染引擎。它将 `.litematic` 文件转换为 Scene IR，生成纯色方块或带材质网格（OBJ/PLY），并在 CPU 或可选离屏 GPU 后端上生成正交 PNG，还可通过外部 ffmpeg 导出关键帧 MP4/GIF。无需运行中的 Minecraft 客户端。
 
 <CardGroup cols={2}>
   <Card title="快速开始" icon="rocket" href="/zh/user/getting-started">
@@ -18,7 +18,7 @@ description: "高性能 Minecraft .litematic 投影文件解析器、网格生�
     Comprehensive English guide for installation, CLI flags, and operations.
   </Card>
   <Card title="技术规格（英文）" icon="microchip" href="/rendering">
-    深入了解 CPU 光栅化、网格几何与 stdio 协议。
+    深入了解 CPU/GPU 渲染、网格几何、性能与 stdio 协议。
   </Card>
 </CardGroup>
 
@@ -31,16 +31,19 @@ description: "高性能 Minecraft .litematic 投影文件解析器、网格生�
   <Step title="2. 网格几何（阶段 2）">
     将场景几何分页为 16³ 体素区块，自动执行面剔除、平滑环境光遮蔽（AO）与四边形去重，并导出为标准 Wavefront OBJ 与 Stanford PLY。
   </Step>
-  <Step title="3. CPU 光栅化（阶段 3）">
-    自研软件光栅化器将抗锯齿正交预览渲染为 RGBA PNG。支持内置纯色方块调色板与官方 Java 资源包材质，不依赖 GPU。
+  <Step title="3. 光栅化（阶段 3）">
+    分块软件光栅化器将内置纯色方块调色板或官方 Java 资源包材质渲染为抗锯齿正交 PNG。可选离屏 `wgpu` 后端复用同一套场景与网格管线；CPU 仍是逐字节参考。
   </Step>
   <Step title="4. 服务协议（阶段 4）">
-    基于 stdio JSONL 线协议的隔离式单任务 worker（`serve` / `supervise`）、supervisor 进程管理与可预期的错误处理。
+    基于 stdio JSONL 协议 v4 的隔离式单任务 worker（`serve` / `supervise`）、supervisor 进程管理、图片与视频任务，以及可预期的错误处理。
+  </Step>
+  <Step title="5. 视频导出">
+    关键帧相机时间线通过外部 ffmpeg 4.4+ 导出 MP4 或 GIF，可使用 CPU 或 GPU 帧会话，并可选硬件编码。
   </Step>
 </Steps>
 
 ## 文档导航
 
-- **用户指南**：安装、CLI 参数、资源包、Docker 与服务模式的完整中文指南。
-- **User Guide (EN)**: Comprehensive English guide for installation, CLI flags, resource packs, Docker, and service mode.
-- **技术规格（英文）**: Deep dive into rendering mathematics, mesh formats, engine protocols, and deployment assets.
+- **用户指南**：安装、CLI 参数、资源包、视频导出、Docker、Cloudflare Workers 与服务模式的完整中文指南。
+- **User Guide (EN)**: Comprehensive English guide for installation, CLI flags, resource packs, video export, Docker, Cloudflare Workers, and service mode.
+- **技术规格（英文）**: Deep dive into rendering mathematics, mesh formats, performance baselines, engine protocols, and deployment assets.

@@ -8,6 +8,7 @@ title: "安装与快速开始"
 - 使用预编译二进制时不需要 Rust 工具链
 - 从源码构建时需要 Rust stable（支持 edition 2024；建议 Rust 1.85 或更新）
 - 可选：Minecraft 客户端 jar、已解压的 `assets/` 目录或资源包
+- 可选：`PATH` 中的 ffmpeg 4.4 或更新版本（用于 MP4/GIF 导出）
 - 可选：Docker（用于容器部署）
 - 常规 1024x1024 预览建议至少 1 GiB 内存；开启超采样、提高尺寸或渲染超大结构时需要更多内存
 
@@ -15,15 +16,16 @@ title: "安装与快速开始"
 
 在 [Releases](https://github.com/Linvin-1233/Blockscope/releases) 下载对应平台的安装包或压缩包：
 
-| 平台           | 目标三元组                   | 格式            |
-| -------------- | ---------------------------- | --------------- |
-| Linux x86_64   | `x86_64-unknown-linux-musl`  | `.tar.gz`       |
-| Linux aarch64  | `aarch64-unknown-linux-musl` | `.tar.gz`       |
-| Windows x86_64 | `x86_64-pc-windows-msvc`     | `.msi` / `.zip` |
-| macOS aarch64  | `aarch64-apple-darwin`       | `.tar.gz`       |
-| macOS x86_64   | `x86_64-apple-darwin`        | `.tar.gz`       |
+| 平台                  | 目标三元组                   | 格式            |
+| --------------------- | ---------------------------- | --------------- |
+| Linux x86_64（musl）  | `x86_64-unknown-linux-musl`  | `.tar.gz`       |
+| Linux aarch64（musl） | `aarch64-unknown-linux-musl` | `.tar.gz`       |
+| Linux x86_64（glibc） | `x86_64-unknown-linux-gnu`   | `.tar.gz`       |
+| Windows x86_64        | `x86_64-pc-windows-msvc`     | `.msi` / `.zip` |
+| macOS aarch64         | `aarch64-apple-darwin`       | `.tar.gz`       |
+| macOS x86_64          | `x86_64-apple-darwin`        | `.tar.gz`       |
 
-文件名形如 `blockscope-v0.4.1-x86_64-unknown-linux-musl.tar.gz`，旁边有去掉扩展名的 `.sha256` 校验文件（如 `blockscope-v0.4.1-x86_64-unknown-linux-musl.sha256`）。 Linux 产物静态链接 musl，Windows 产物静态链接 CRT，目标机器不需要额外安装运行时库。
+文件名形如 `blockscope-v0.4.1-x86_64-unknown-linux-musl.tar.gz`，旁边有去掉扩展名的 `.sha256` 校验文件（如 `blockscope-v0.4.1-x86_64-unknown-linux-musl.sha256`）。 Linux musl 产物静态链接 musl，Linux GNU 产物需要 glibc 和平台 Vulkan loader，Windows 产物静态链接 CRT。Windows、macOS 和 Linux GNU 发布包已启用可选 GPU 特性；Linux musl 发布包为 CPU-only。
 
 ### Linux
 
@@ -34,6 +36,8 @@ sha256sum -c blockscope-v0.4.1-x86_64-unknown-linux-musl.sha256
 tar -xzf blockscope-v0.4.1-x86_64-unknown-linux-musl.tar.gz
 ./blockscope-v0.4.1-x86_64-unknown-linux-musl/blockscope --version
 ```
+
+GPU 版 glibc 压缩包使用相同命令，把 `x86_64-unknown-linux-musl` 换成 `x86_64-unknown-linux-gnu` 即可。
 
 ### macOS
 

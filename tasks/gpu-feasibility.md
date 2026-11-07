@@ -1,8 +1,8 @@
 # GPU rendering (issue #16)
 
-**Status:** implemented on branch `feat/gpu` as an opt-in backend. The CPU path
-remains the default, the golden reference, and the only backend used by the
-official static musl releases.
+**Status:** implemented as an opt-in backend. The CPU path remains the default,
+the golden reference, and the fallback. Windows, macOS, and Linux GNU release
+artifacts enable the GPU feature; Linux musl and wasm builds stay CPU-only.
 
 **Question:** can Blockscope render through `wgpu` (Vulkan / Metal / D3D12),
 and should it?
@@ -24,8 +24,9 @@ opt-in for three reasons:
    construction and projection, which stay on the CPU.
 3. **Deployment is not universal.** Static musl binaries cannot load a Vulkan
    driver at runtime, headless containers need a GPU and driver packages, and
-   hosted CI runners have no hardware adapter. Release artifacts therefore stay
-   CPU-only.
+   hosted CI runners have no hardware adapter. The release matrix therefore
+   ships a GPU-enabled glibc GNU archive for Linux x86_64 and enables the feature
+   on Windows and macOS; musl and wasm stay CPU-only.
 
 ## Implemented scope
 
@@ -106,16 +107,14 @@ byte equality.
 - Multi-threaded GPU renders share one device; wgpu serializes internally. No
   performance guarantee is made for concurrent views.
 - Linux GPU builds need a dynamically loadable Vulkan loader and drivers. The
-  official musl artifacts do not enable the feature.
+  official Linux musl artifacts do not enable the feature; the Linux GNU
+  artifact does.
 - CI has no hardware adapter, so GPU tests skip when `BACKEND_UNAVAILABLE` is
   returned. Run them on a developer machine or self-hosted GPU runner.
 
-## Open deployment question
+## Deployment decision (resolved)
 
-The implementation is ready to ship as an opt-in build, but enabling it in
-release artifacts needs a decision from the issue author:
-
-- Which deployment has a GPU, and what OS/architecture is it?
-- Ship glibc GPU artifacts separately, or document a source build?
-- Is vendor-dependent GPU output acceptable when the CPU backend remains
-  available for exact output?
+GPU support ships as an opt-in feature on Windows, macOS, and Linux GNU. Linux
+musl and wasm remain CPU-only. Vendor-dependent GPU output is acceptable because
+the CPU backend remains available for exact output and `auto` falls back to it
+when no usable adapter is present.

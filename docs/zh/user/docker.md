@@ -20,6 +20,9 @@ Linux 上需要支持 Vulkan 或 D3D12 的宿主和对应设备节点（例如
 `--device /dev/dri`）；镜像不包含驱动。GPU 输出为近似结果，`auto` 在看不到
 适配器时仍会回退到 CPU。
 
+MP4/GIF 任务需要容器内有 ffmpeg 4.4 或更新版本。默认镜像不包含 ffmpeg；请在
+派生镜像中安装，或挂载静态二进制，并在不在 `PATH` 中时传入 `--ffmpeg`。
+
 ## 容量检测
 
 ```bash

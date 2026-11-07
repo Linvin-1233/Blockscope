@@ -91,8 +91,9 @@
 - `auto` 可能返回近似 GPU 输出；需要逐字节一致结果时显式使用 `cpu`。
   GPU 与 CPU 在 96x96 参考场景上的最大通道差为 1，但差异像素比例仍高于
   spec 的 0.1% 目标，已在 `docs/performance.md` 记录为未达成。
-- `serve`/`supervise` 协议版本提升到 3：请求和结果中不再有 `lod` 与 `lodMs`，
-  supervisor 的 hello 不再有 `defaultLod`，缓存仅按 `inputHash` 命中。
+- `serve`/`supervise` 协议不再包含 LOD 字段：请求和结果中移除 `lod` 与
+  `lodMs`，supervisor 的 hello 移除 `defaultLod`，缓存仅按 `inputHash` 命中。
+  协议版本为 4（见上文视频任务）。
 
 ## [0.4.1] - 2026-10-29
 
