@@ -93,6 +93,16 @@ impl Quality {
         }
     }
 
+    /// NVENC constant-quality values are not on the same scale as x264 CRF.
+    /// These were calibrated against libx264 at the same quality label.
+    pub const fn nvenc_cq(self) -> &'static str {
+        match self {
+            Self::Low => "32",
+            Self::Medium => "28",
+            Self::High => "23",
+        }
+    }
+
     /// VideoToolbox exposes a 0-100 quality scale where higher is better.
     pub const fn videotoolbox_quality(self) -> &'static str {
         match self {
@@ -582,6 +592,9 @@ mod tests {
         assert_eq!(Quality::parse("high"), Some(Quality::High));
         assert_eq!(Quality::parse("medium"), Some(Quality::Medium));
         assert_eq!(Quality::parse("low"), Some(Quality::Low));
+        assert_eq!(Quality::Low.nvenc_cq(), "32");
+        assert_eq!(Quality::Medium.nvenc_cq(), "28");
+        assert_eq!(Quality::High.nvenc_cq(), "23");
         assert_eq!(Encoder::parse("NVENC"), Some(Encoder::Nvenc));
         assert_eq!(Encoder::parse("videotoolbox"), Some(Encoder::VideoToolbox));
         assert_eq!(Encoder::parse("vaapi"), Some(Encoder::Vaapi));

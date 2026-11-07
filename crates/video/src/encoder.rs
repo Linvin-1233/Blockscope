@@ -357,7 +357,7 @@ fn mp4_args(settings: &VideoSettings, resolved: ResolvedEncoder, output: &Path) 
             "-rc".into(),
             "vbr".into(),
             "-cq".into(),
-            settings.quality.crf().into(),
+            settings.quality.nvenc_cq().into(),
             "-b:v".into(),
             "0".into(),
         ]),
@@ -638,7 +638,7 @@ mod tests {
             Path::new("out.mp4"),
         ));
         assert!(nvenc.windows(2).any(|pair| pair == ["-c:v", "h264_nvenc"]));
-        assert!(nvenc.windows(2).any(|pair| pair == ["-cq", "23"]));
+        assert!(nvenc.windows(2).any(|pair| pair == ["-cq", "28"]));
         assert!(!nvenc.windows(2).any(|pair| pair == ["-crf", "23"]));
         assert!(!nvenc.iter().any(|arg| arg == "-threads"));
 
