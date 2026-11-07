@@ -660,17 +660,19 @@ draw order; that is a rasterizer redesign, not a local kernel change.
 |---|---|---|---|
 | AVX2 four-pixel row rasterizer | `000002` render 2,110-2,201 ms vs baseline 2,057-2,273 ms | reverted | No stable win; rows average under two pixels. |
 | AVX2 four-vertex quad projection | Kernel 2.897 ms -> 2.773 ms per 200k quads (4.5%); project CPU 3,612 ms -> 3,672 ms end to end | reverted | The kernel is a small part of projection, and the target-feature call boundary erased the gain. |
+| Batched two-quad / four-triangle setup | `000002` tile 1,800-2,033 ms vs baseline 1,356-1,622 ms; render 2,807-3,148 ms vs 2,374-2,745 ms | reverted | Copying triangle inputs and prepared setups between passes cost more than the shared bounds/edge work; the single-triangle path was already inlined and kept inputs in registers. |
+| AVX2 four-triangle setup kernel | 400k batches: scalar 27.6 ms, AVX2 40.2 ms | reverted | Lane assembly, stores, and scalar clipping outweighed the four-wide arithmetic on the reference Zen 2 host. |
 | SIMD ambient occlusion / vertex creation | Not implemented | rejected by measurement | Sampled shares are 17% and 12.5% of the block loop; gather-based AO is not faster than L1 scalar loads on the reference Zen 2 host. |
 
 ### Follow-up options
 
 The measurements point at algorithmic work rather than wider vectors:
 
-- Batch two or four small triangles per tile so edge setup and span estimation
-  are shared; keep rasterization order unchanged.
 - Precompute a six-face cull mask per page cell during `PageGrid::fill`; this
   replaces the per-model-quad neighbor lookup with one byte test.
 - Cache quantized model UVs and scaled corner offsets per model instead of
   re-encoding them for every emitted quad.
 - Keep explicit SIMD for bulk image paths only if they grow beyond the current
   assembly and downsample costs, which are under 50 ms per render.
+- Do not retry four-triangle batching without a copy-free design that keeps the
+  scalar setup inlined; the measured version regressed tile time by 33-47%.
