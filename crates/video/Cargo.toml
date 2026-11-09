@@ -2,6 +2,14 @@
 name = "litematic-video"
 version.workspace = true
 edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+description = "Animation timeline and ffmpeg encoding for Blockscope video export."
+keywords = ["minecraft", "litematic", "video", "ffmpeg"]
+categories = ["games", "multimedia"]
 
 [dependencies]
 tempfile.workspace = true

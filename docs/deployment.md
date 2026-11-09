@@ -37,7 +37,7 @@ not byte-exact; see [Rendering and PNG Output](./rendering.md#gpu-backend).
 
 1. Write the user-facing notes under `## [Unreleased]` in `CHANGELOG.md` and `CHANGELOG.en.md`. `just bump` refuses to run when either section is empty, because the release body comes from the version section the recipe creates.
 2. Run `just bump patch` (`minor` or `major` also work) on `main` in a clean tree. The recipe raises `[workspace.package] version` in `Cargo.toml`, refreshes `Cargo.lock`, updates the documents that state the current version, moves the unreleased notes under the new version heading, then commits `chore: bump to vX.Y.Z` and creates the annotated tag.
-3. Push both: `git push origin main vX.Y.Z`. The tag starts `.github/workflows/release.yml`.
+3. Push both: `git push origin main vX.Y.Z`. The tag starts `.github/workflows/release.yml` for the GitHub Release binaries and `.github/workflows/publish-crates.yml` for crates.io.
 
 The versioned download examples in `docs/user/getting-started.md` and its Chinese counterpart in `docs/zh/user/getting-started.md` name the last published release; update them after the new release is available.
 
@@ -113,6 +113,24 @@ gate because those runners have no GPU. Run `cargo test -p litematic-render
 for release validation.
 
 `.github/workflows/release.yml` runs on a `v*` tag: it checks that the tag matches `[workspace.package] version`, creates the GitHub Release from `CHANGELOG.md`, and uploads six platform archives with sha256 files plus the Windows MSI and its checksum. Windows, macOS, and Linux GNU archives enable the GPU feature; musl archives stay CPU-only. Running the workflow manually builds and packages the same targets with `dry-run`; the MSI publish step runs only for tag pushes, so the pipeline can be verified before the first tag exists.
+
+## crates.io
+
+`.github/workflows/publish-crates.yml` publishes the workspace crates from an immutable release tag, never from a local working tree. Before uploading anything it checks out the exact tag and requires all of the following:
+
+- the working tree is clean;
+- the tag exists on `origin` and points at the checked-out commit;
+- the tag commit is an ancestor of `origin/main`;
+- `cargo xtask verify-tag` confirms that the tag matches `[workspace.package] version`;
+- `just check` passes on that commit.
+
+The publish script, `.github/scripts/publish-crates.sh`, then publishes the crates in dependency order with `cargo publish --locked`. It skips versions that are already on crates.io, so a partial or failed run can be re-run safely. It also checks that every publishable workspace member is in its explicit allowlist, which prevents a newly added crate from being published accidentally. A workspace member that is not ready for crates.io must set `publish = false` or stay out of the release tag; otherwise the allowlist check stops the workflow.
+
+For the first publish of each crate name, create a crates.io API token with the `publish-new` and `publish-update` scopes and store it as the `CARGO_REGISTRY_TOKEN` secret on the `crates-io` GitHub environment. The environment can require reviewers so the token is only used after approval. crates.io allows a burst of five brand-new crate names and then one every ten minutes; the script sleeps through a rate-limit response and the job has a 180-minute budget. The existing `v0.5.0` tag predates this workflow's publish metadata, so cut a new patch tag before the first crates.io release.
+
+After every crate has its first version, the long-lived token can be replaced with [Trusted Publishing](https://crates.io/docs/trusted-publishing/): configure the repository, the `publish-crates.yml` workflow, and the `crates-io` environment on crates.io, then exchange an OIDC token with `rust-lang/crates-io-auth-action`. Trusted publishing cannot create a brand-new crate, which is why the token is still needed for the bootstrap.
+
+For a local packaging check from a clean checkout of the tag, run `TAG=vX.Y.Z DRY_RUN=true bash .github/scripts/publish-crates.sh`; it performs the same preflight and lists the package contents for every crate without uploading.
 
 ## Capacity reference
 

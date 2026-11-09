@@ -2,6 +2,14 @@
 name = "litematic-render"
 version.workspace = true
 edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+description = "Deterministic rasterizer and PNG output for Blockscope scenes."
+keywords = ["minecraft", "litematic", "renderer", "png"]
+categories = ["games", "graphics", "rendering"]
 
 [features]
 default = []
@@ -11,9 +19,9 @@ gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck"]
 
 [dependencies]
 bytemuck = { workspace = true, optional = true }
-litematic-material = { path = "../material" }
-litematic-mesh = { path = "../mesh" }
-litematic-scene = { path = "../scene" }
+litematic-material = { path = "../material", version = "0.5.0" }
+litematic-mesh = { path = "../mesh", version = "0.5.0" }
+litematic-scene = { path = "../scene", version = "0.5.0" }
 png.workspace = true
 pollster = { workspace = true, optional = true }
 serde.workspace = true

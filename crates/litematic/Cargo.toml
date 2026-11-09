@@ -2,10 +2,18 @@
 name = "litematic-core"
 version.workspace = true
 edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+description = "Parsing and canonical scene construction for Minecraft .litematic files."
+keywords = ["minecraft", "litematic", "parser", "renderer"]
+categories = ["parser-implementations", "games"]
 
 [dependencies]
-litematic-nbt = { path = "../nbt" }
-litematic-scene = { path = "../scene" }
+litematic-nbt = { path = "../nbt", version = "0.5.0" }
+litematic-scene = { path = "../scene", version = "0.5.0" }
 
 [dev-dependencies]
 flate2.workspace = true

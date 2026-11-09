@@ -16,6 +16,11 @@ members = [
 [workspace.package]
 version = "0.5.0"
 edition = "2024"
+authors = ["Linvin_"]
+license = "MIT"
+repository = "https://github.com/Linvin-1233/Blockscope"
+homepage = "https://blockscope.linvin.net"
+readme = "README.md"
 
 [workspace.dependencies]
 anstream = "1"

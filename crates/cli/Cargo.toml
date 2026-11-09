@@ -2,6 +2,14 @@
 name = "blockscope-cli"
 version.workspace = true
 edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+description = "Command-line interface for rendering Minecraft .litematic files to PNG, MP4, and GIF."
+keywords = ["minecraft", "litematic", "renderer", "cli"]
+categories = ["command-line-utilities", "games"]
 
 [[bin]]
 name = "blockscope"
@@ -19,12 +27,12 @@ anstyle.workspace = true
 clap.workspace = true
 console.workspace = true
 indicatif.workspace = true
-litematic-core = { path = "../litematic" }
-litematic-material = { path = "../material" }
-litematic-mesh = { path = "../mesh" }
-litematic-render = { path = "../render" }
-litematic-scene = { path = "../scene" }
-litematic-video = { path = "../video" }
+litematic-core = { path = "../litematic", version = "0.5.0" }
+litematic-material = { path = "../material", version = "0.5.0" }
+litematic-mesh = { path = "../mesh", version = "0.5.0" }
+litematic-render = { path = "../render", version = "0.5.0" }
+litematic-scene = { path = "../scene", version = "0.5.0" }
+litematic-video = { path = "../video", version = "0.5.0" }
 serde_json.workspace = true
 serde.workspace = true
 
