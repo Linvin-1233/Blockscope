@@ -25,6 +25,7 @@ the first tag, and the crates.io token.
 - [x] Add `.github/scripts/publish-crates.sh`.
 - [x] Update `just bump` to keep path dependency versions in lockstep.
 - [x] Document the bootstrap, rate limit, and trusted publishing migration.
+- [x] Add the crates.io note under `[Unreleased]` in both changelogs.
 - [ ] Add `CARGO_REGISTRY_TOKEN` to the `crates-io` GitHub environment.
 - [ ] Merge this branch to `main`.
 - [ ] Cut a new patch tag; `v0.5.0` predates the publish metadata.

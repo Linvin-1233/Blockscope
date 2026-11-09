@@ -8,6 +8,10 @@ User-facing changes are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Add the project to crates.io.
+
 ## [0.5.0] - 2026-11-07
 
 ### Added
