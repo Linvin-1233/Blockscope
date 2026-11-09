@@ -12,8 +12,8 @@ keywords = ["minecraft", "litematic", "parser", "renderer"]
 categories = ["parser-implementations", "games"]
 
 [dependencies]
-litematic-nbt = { path = "../nbt", version = "0.5.0" }
-litematic-scene = { path = "../scene", version = "0.5.0" }
+litematic-nbt = { path = "../nbt", version = "0.5.1" }
+litematic-scene = { path = "../scene", version = "0.5.1" }
 
 [dev-dependencies]
 flate2.workspace = true

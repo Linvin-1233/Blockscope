@@ -165,7 +165,7 @@ dependencies = [
 
 [[package]]
 name = "blockscope-cli"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anstream",
  "anstyle",
@@ -187,7 +187,7 @@ dependencies = [
 
 [[package]]
 name = "blockscope-worker"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "futures-util",
  "litematic-core",
@@ -865,7 +865,7 @@ checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 
 [[package]]
 name = "litematic-core"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "flate2",
  "litematic-nbt",
@@ -874,7 +874,7 @@ dependencies = [
 
 [[package]]
 name = "litematic-material"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "litematic-mesh",
  "litematic-scene",
@@ -887,7 +887,7 @@ dependencies = [
 
 [[package]]
 name = "litematic-mesh"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "litematic-scene",
  "serde",
@@ -896,7 +896,7 @@ dependencies = [
 
 [[package]]
 name = "litematic-nbt"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "flate2",
  "proptest",
@@ -904,7 +904,7 @@ dependencies = [
 
 [[package]]
 name = "litematic-render"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "bytemuck",
  "litematic-material",
@@ -920,7 +920,7 @@ dependencies = [
 
 [[package]]
 name = "litematic-scene"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "litematic-nbt",
  "proptest",
@@ -931,7 +931,7 @@ dependencies = [
 
 [[package]]
 name = "litematic-video"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "tempfile",
 ]
@@ -2217,7 +2217,7 @@ checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
 
 [[package]]
 name = "xtask"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "serde_json",
  "sha2",

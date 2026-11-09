@@ -9,11 +9,11 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 futures-util = { workspace = true }
-litematic-core = { path = "../litematic", version = "0.5.0" }
-litematic-material = { path = "../material", version = "0.5.0" }
-litematic-mesh = { path = "../mesh", version = "0.5.0" }
-litematic-render = { path = "../render", version = "0.5.0" }
-litematic-scene = { path = "../scene", version = "0.5.0" }
+litematic-core = { path = "../litematic", version = "0.5.1" }
+litematic-material = { path = "../material", version = "0.5.1" }
+litematic-mesh = { path = "../mesh", version = "0.5.1" }
+litematic-render = { path = "../render", version = "0.5.1" }
+litematic-scene = { path = "../scene", version = "0.5.1" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 worker = { workspace = true }

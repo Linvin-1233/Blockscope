@@ -16,7 +16,7 @@ hosts with a weak CPU and a hardware adapter; Windows, macOS, and Linux GNU
 release archives enable it. The CPU remains the default and the byte-exact
 golden reference.
 
-- Version: `0.5.0`
+- Version: `0.5.1`
 - Platforms: Windows x86_64, Linux x86_64 / aarch64, macOS aarch64 / x86_64
 - Download: prebuilt binaries on [GitHub Releases](https://github.com/Linvin-1233/Blockscope/releases)
 - 中文: [README.md](README.md)
