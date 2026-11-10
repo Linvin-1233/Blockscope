@@ -30,7 +30,7 @@ opt-in for three reasons:
 
 ## Implemented scope
 
-- `litematic-render` feature `gpu` (`wgpu` 30, `pollster`, `bytemuck`),
+- `blockscope-render` feature `gpu` (`wgpu` 30, `pollster`, `bytemuck`),
   disabled by default.
 - `RenderBackend::{Cpu, Gpu, Auto}` and `RenderOptions.backend`; statistics
   report `backendUsed`. The later `gpu-performance` path replaced the fixed

@@ -1,5 +1,5 @@
 [package]
-name = "litematic-video"
+name = "blockscope-video"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

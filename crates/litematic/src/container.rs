@@ -1,6 +1,6 @@
 use crate::error::{LitematicError, LitematicErrorCode};
 use crate::limits::LitematicLimits;
-use litematic_nbt::{DecodeLimits, NbtCompound, NbtList, NbtRoot, NbtTagType, NbtValue, decode};
+use blockscope_nbt::{DecodeLimits, NbtCompound, NbtList, NbtRoot, NbtTagType, NbtValue, decode};
 
 /// Metadata declared by the litematic file. Values are untrusted hints.
 #[derive(Debug, Clone, Default, PartialEq)]

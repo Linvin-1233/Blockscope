@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "parser": {
-    "version": "0.5.1",
+    "version": "0.6.0",
     "litematicVersion": 7,
     "minecraftDataVersion": 3700
   },
   "inputHash": "098838ea7d135c516ba1ca126da693d696ddb23b5709028ba886b4361dbfeffe",
-  "sceneHash": "3fffc025ee68622b9f308cef3679b69954a2a4a18febb367b0adca1bbe18e0ef",
+  "sceneHash": "ddda5ef3f137d7689ee981fa93fd7c260e6c01f3f3c0ef35bd0ee2f6956bb266",
   "metadata": {
     "name": "cli-fixture",
     "author": null,

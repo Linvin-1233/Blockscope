@@ -4,8 +4,8 @@ use crate::{
     CliError, GEOMETRY_IGNORES_BLOCK_ENTITY_NBT, LimitArgs, MeshOptionArgs, PreparedScene,
     load_scene, mesh_limits, warn_forced,
 };
+use blockscope_mesh::{MeshStatistics, write_obj, write_ply};
 use clap::Args;
-use litematic_mesh::{MeshStatistics, write_obj, write_ply};
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};

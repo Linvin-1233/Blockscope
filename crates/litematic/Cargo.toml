@@ -1,5 +1,5 @@
 [package]
-name = "litematic-core"
+name = "blockscope-core"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -12,8 +12,8 @@ keywords = ["minecraft", "litematic", "parser", "renderer"]
 categories = ["parser-implementations", "games"]
 
 [dependencies]
-litematic-nbt = { path = "../nbt", version = "0.5.1" }
-litematic-scene = { path = "../scene", version = "0.5.1" }
+blockscope-nbt = { path = "../nbt", version = "0.6.0" }
+blockscope-scene = { path = "../scene", version = "0.6.0" }
 
 [dev-dependencies]
 flate2.workspace = true

@@ -34,17 +34,17 @@ parser is not the first problem to solve.
 
 ## Tech Stack
 
-- Rust 2024 workspace, `litematic-core` integration tests.
+- Rust 2024 workspace, `blockscope-core` integration tests.
 - A `GlobalAlloc` wrapper in the test binary with atomic live/peak counters.
 - `flate2` for gzip fixture generation. It is already a workspace dependency;
-  add it only as a dev-dependency of `litematic-core` if needed.
+  add it only as a dev-dependency of `blockscope-core` if needed.
 - No production dependency changes.
 
 ## Commands
 
 ```bash
 # Focused memory oracle
-cargo test -p litematic-core --test memory -- --nocapture
+cargo test -p blockscope-core --test memory -- --nocapture
 
 # Full gate
 cargo fmt --all --check
@@ -135,7 +135,7 @@ review; loosening it to make a failing optimization pass is not.
 
 ## Success Criteria
 
-- `cargo test -p litematic-core --test memory -- --nocapture` passes and prints
+- `cargo test -p blockscope-core --test memory -- --nocapture` passes and prints
   peak bytes for every scenario.
 - The recorded peak ratio is visible in the output, and the strict scaling
   assertion is wired for `sparse-litematic` S5. This module itself stays green

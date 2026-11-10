@@ -2,21 +2,21 @@
 
 use crate::capacity::Capacity;
 use crate::{AssetArgs, CliError, read_file_limited};
-use litematic_core::{DecodeLimits, LitematicFile, LitematicLimits};
-use litematic_material::{AssetSource, MaterialSet, MaterialSnapshot, TextureFilter};
-use litematic_mesh::{
+use blockscope_core::{DecodeLimits, LitematicFile, LitematicLimits};
+use blockscope_material::{AssetSource, MaterialSet, MaterialSnapshot, TextureFilter};
+use blockscope_mesh::{
     ColorBlockCatalog, Mesh, MeshBuildOptions, MeshLimits, MeshPage, MeshStatistics, PageProgress,
     Rgba, build_mesh_parallel_with_options_and_progress,
     build_mesh_streaming_owned_with_options_and_progress, estimate_mesh_quads,
 };
 #[cfg(feature = "gpu")]
-use litematic_render::GpuRenderSession;
-use litematic_render::{
+use blockscope_render::GpuRenderSession;
+use blockscope_render::{
     BackendDecision, Background, RenderBackend, RenderError, RenderOptions, RenderOutput,
     StreamingRenderer, TileProgress, render_mesh, render_mesh_with_progress,
     render_mesh_with_textures, render_mesh_with_textures_and_progress, select_backend,
 };
-use litematic_scene::Scene;
+use blockscope_scene::Scene;
 use std::path::Path;
 use std::time::Instant;
 
@@ -450,7 +450,7 @@ fn gpu_view_batch_budget(options: &[RenderOptions], texture_bytes: Option<u64>) 
         .unwrap_or(1);
 
     #[cfg(feature = "gpu")]
-    let budget = litematic_render::gpu_working_set_bytes()
+    let budget = blockscope_render::gpu_working_set_bytes()
         .map(|budget| {
             budget.saturating_sub(
                 texture_bytes
@@ -478,7 +478,7 @@ fn render_one(
     options: &RenderOptions,
     progress: Option<TileProgress<'_>>,
 ) -> Result<RenderOutput, CliError> {
-    let progress = progress.filter(|_| !litematic_render::will_stream(mesh, options));
+    let progress = progress.filter(|_| !blockscope_render::will_stream(mesh, options));
     match snapshot {
         Some(snapshot) => match progress {
             Some(progress) => render_mesh_with_textures_and_progress(

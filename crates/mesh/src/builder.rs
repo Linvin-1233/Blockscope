@@ -7,7 +7,7 @@ use crate::{
     Mesh, MeshBuildOptions, MeshError, MeshLimits, MeshPage, MeshStatistics, PositionPacking, Quad,
     Vertex,
 };
-use litematic_scene::{Scene, worker_count};
+use blockscope_scene::{Scene, worker_count};
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::thread;

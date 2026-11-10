@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use litematic_scene::{BlockStateKey, PackedIndices, Region, Scene, SceneMetadata};
+use blockscope_scene::{BlockStateKey, PackedIndices, Region, Scene, SceneMetadata};
 
 pub fn metadata() -> SceneMetadata {
     SceneMetadata {

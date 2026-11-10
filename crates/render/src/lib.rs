@@ -9,9 +9,9 @@ mod rasterizer;
 pub mod terminal;
 
 pub use backend::RenderBackend;
+pub use blockscope_material::TextureFilter;
 pub use camera::Camera;
 pub use error::{RenderError, RenderErrorCode};
-pub use litematic_material::TextureFilter;
 pub use options::{Background, LightingProfile, RenderOptions, RenderPrecision};
 pub use png::write_png;
 #[cfg(feature = "gpu")]
@@ -33,4 +33,4 @@ pub use terminal::{
     fit_terminal_cells, render_to_terminal,
 };
 
-pub const CRATE_NAME: &str = "litematic-render";
+pub const CRATE_NAME: &str = "blockscope-render";

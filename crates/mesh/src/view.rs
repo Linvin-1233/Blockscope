@@ -1,5 +1,5 @@
 use crate::{MeshError, MeshLimits};
-use litematic_scene::{BlockStateKey, Region, Scene};
+use blockscope_scene::{BlockStateKey, Region, Scene};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// A resolved world position.

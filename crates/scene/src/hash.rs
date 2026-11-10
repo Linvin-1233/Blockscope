@@ -1,5 +1,5 @@
 use crate::{BlockStateKey, Scene};
-use litematic_nbt::{NbtCompound, NbtTagType, NbtValue};
+use blockscope_nbt::{NbtCompound, NbtTagType, NbtValue};
 use sha2::{Digest, Sha256};
 
 /// A SHA-256 digest with stable hexadecimal formatting.
@@ -28,7 +28,7 @@ impl Scene {
     /// Hash the render-relevant scene contents. Metadata text is excluded.
     pub fn scene_hash(&self) -> Sha256Digest {
         let mut hasher = Sha256::new();
-        hasher.update(b"litematic-scene-v1");
+        hasher.update(b"blockscope-scene-v1");
         hash_i32(&mut hasher, self.metadata.litematic_version);
         hash_i32(&mut hasher, self.metadata.minecraft_data_version);
 

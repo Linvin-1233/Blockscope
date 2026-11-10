@@ -2,9 +2,9 @@ use super::GpuFailure;
 use super::budget;
 use super::vertex::{self, GpuVertex};
 use crate::{Camera, RenderError, RenderOptions, RenderOutput};
-use litematic_material::TextureSet;
-use litematic_mesh::Mesh;
-use litematic_scene::Scene;
+use blockscope_material::TextureSet;
+use blockscope_mesh::Mesh;
+use blockscope_scene::Scene;
 use std::sync::{Arc, Mutex, OnceLock, mpsc};
 use wgpu::util::DeviceExt;
 

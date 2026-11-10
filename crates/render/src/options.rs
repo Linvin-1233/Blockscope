@@ -1,6 +1,6 @@
 use crate::{RenderBackend, RenderError};
-use litematic_material::TextureFilter;
-use litematic_mesh::Rgba;
+use blockscope_material::TextureFilter;
+use blockscope_mesh::Rgba;
 use serde::{Deserialize, Serialize};
 
 /// Lighting profile used by the CPU rasterizer.

@@ -1,4 +1,4 @@
-use litematic_scene::{BlockStateKey, PackedIndices};
+use blockscope_scene::{BlockStateKey, PackedIndices};
 use std::collections::BTreeMap;
 
 #[test]

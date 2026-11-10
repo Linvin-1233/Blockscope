@@ -86,7 +86,7 @@ Spec: `tasks/video-export-spec.md`
       frames by rewriting only the camera uniform and re-projecting
       translucent geometry.
 - [x] Add `GpuFrameSession::render_frames` and a GPU parity/loop test.
-- [x] Add the `litematic-video` timeline and ffmpeg encoder, plus
+- [x] Add the `blockscope-video` timeline and ffmpeg encoder, plus
       `blockscope animate` with CPU fallback.
 - [x] Service protocol v4: `hello.video`, video requests/results,
       `--ffmpeg`, and the supervisor `--video-timeout`.

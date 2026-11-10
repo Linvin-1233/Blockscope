@@ -9,13 +9,13 @@
 set -euo pipefail
 
 readonly CRATES=(
-  litematic-nbt
-  litematic-scene
-  litematic-core
-  litematic-mesh
-  litematic-material
-  litematic-render
-  litematic-video
+  blockscope-nbt
+  blockscope-scene
+  blockscope-core
+  blockscope-mesh
+  blockscope-material
+  blockscope-render
+  blockscope-video
   blockscope-cli
 )
 
@@ -62,7 +62,7 @@ package_version() {
 
 # --- Preflight ---------------------------------------------------------------
 
-[ -n "$TAG" ] || die "TAG is required (for example v0.5.1)"
+[ -n "$TAG" ] || die "TAG is required (for example v0.6.0)"
 [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]] || die "TAG must look like v1.2.3, got '$TAG'"
 [[ "$MAX_RATE_LIMIT_SLEEP" =~ ^[0-9]+$ ]] || die "MAX_RATE_LIMIT_SLEEP must be a number"
 case "$DRY_RUN" in
@@ -261,7 +261,7 @@ publish_one() {
 
 # --- Publish -----------------------------------------------------------------
 
-workspace_version="$(package_version litematic-nbt)"
+workspace_version="$(package_version blockscope-nbt)"
 log "publishing ${#CRATES[@]} crates at version ${workspace_version}"
 
 for crate in "${CRATES[@]}"; do

@@ -4,7 +4,7 @@
 //! binary and run in a single test. Fixtures are built before the measured
 //! window; the assertions cover allocations made by `decode` itself.
 
-use litematic_nbt::{DecodeLimits, NbtErrorCode, decode};
+use blockscope_nbt::{DecodeLimits, NbtErrorCode, decode};
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
 

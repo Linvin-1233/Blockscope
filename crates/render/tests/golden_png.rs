@@ -1,8 +1,8 @@
 mod support;
 
-use litematic_mesh::{ColorBlockCatalog, MeshLimits, build_mesh};
-use litematic_render::{RenderOptions, render_mesh, write_png};
-use litematic_scene::Scene;
+use blockscope_mesh::{ColorBlockCatalog, MeshLimits, build_mesh};
+use blockscope_render::{RenderOptions, render_mesh, write_png};
+use blockscope_scene::Scene;
 use std::fs;
 use std::path::PathBuf;
 use support::{region as make_region, scene as make_scene};

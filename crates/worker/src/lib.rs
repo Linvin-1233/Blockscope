@@ -6,19 +6,19 @@
 //! origin, and pack path are text bindings (`ENDPOINT`, `ALLOWED_ORIGIN`,
 //! `RESOURCE_PACK_PATH`) so deployments can change them without a rebuild.
 
-use futures_util::StreamExt;
-use litematic_core::{
+use blockscope_core::{
     DecodeLimits, LitematicError, LitematicErrorCode, LitematicFile, LitematicLimits,
 };
-use litematic_material::{AssetSource, MaterialError, MaterialErrorCode, MaterialSet};
-use litematic_mesh::{
+use blockscope_material::{AssetSource, MaterialError, MaterialErrorCode, MaterialSet};
+use blockscope_mesh::{
     ColorBlockCatalog, MeshBuildOptions, MeshError, MeshLimits, Rgba, build_mesh_with_options,
 };
-use litematic_render::{
+use blockscope_render::{
     Background, LightingProfile, RenderError, RenderOptions, render_mesh,
     render_mesh_with_textures, write_png,
 };
-use litematic_scene::Scene;
+use blockscope_scene::Scene;
+use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -137,12 +137,14 @@ impl ApiError {
 
     fn from_render(error: RenderError) -> Self {
         let status = match error.code {
-            litematic_render::RenderErrorCode::InvalidOptions => 400,
-            litematic_render::RenderErrorCode::PngEncodeFailed => 500,
+            blockscope_render::RenderErrorCode::InvalidOptions => 400,
+            blockscope_render::RenderErrorCode::PngEncodeFailed => 500,
             _ => 422,
         };
         let hint = match error.code {
-            litematic_render::RenderErrorCode::TempStorageFailed => Some("check temporary storage"),
+            blockscope_render::RenderErrorCode::TempStorageFailed => {
+                Some("check temporary storage")
+            }
             _ => None,
         };
         Self {

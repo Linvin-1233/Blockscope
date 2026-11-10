@@ -1,5 +1,5 @@
 [package]
-name = "litematic-material"
+name = "blockscope-material"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -12,8 +12,8 @@ keywords = ["minecraft", "resource-pack", "texture", "graphics"]
 categories = ["games", "graphics"]
 
 [dependencies]
-litematic-mesh = { path = "../mesh", version = "0.5.1" }
-litematic-scene = { path = "../scene", version = "0.5.1" }
+blockscope-mesh = { path = "../mesh", version = "0.6.0" }
+blockscope-scene = { path = "../scene", version = "0.6.0" }
 png.workspace = true
 serde.workspace = true
 serde_json.workspace = true

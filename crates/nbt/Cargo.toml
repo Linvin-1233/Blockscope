@@ -1,5 +1,5 @@
 [package]
-name = "litematic-nbt"
+name = "blockscope-nbt"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

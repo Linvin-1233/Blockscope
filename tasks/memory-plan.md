@@ -23,7 +23,7 @@ stop if the win is not clear.
 ## Architecture Decisions
 
 - **Allocation meter, not OS RSS, for parse/scene.** A `GlobalAlloc` wrapper in
-  a dedicated `litematic-core` integration test gives deterministic byte
+  a dedicated `blockscope-core` integration test gives deterministic byte
   counts on both Windows and Linux. RSS polling stays a diagnostic because
   working-set accounting differs by platform.
 - **Separate test binaries.** The meter is process-global. Keep measured
@@ -55,7 +55,7 @@ stop if the win is not clear.
     `parse_bytes + into_scene` for tiny dense, sparse, dense, and multi-region
     fixtures; prints peak bytes with `--nocapture`; passes with generous
     initial budgets.
-  - Verify: `cargo test -p litematic-core --test memory -- --nocapture`.
+  - Verify: `cargo test -p blockscope-core --test memory -- --nocapture`.
   - Files: `crates/litematic/tests/memory.rs`,
     `crates/litematic/tests/support/` (fixture helper),
     `crates/litematic/Cargo.toml` (dev-dependency only if needed).

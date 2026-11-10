@@ -34,7 +34,7 @@ in Phase 3.
 
 ### ADR-201: Separate mesh crate
 
-Add `crates/mesh` (`litematic-mesh`) depending on `litematic-scene`. The scene
+Add `crates/mesh` (`blockscope-mesh`) depending on `blockscope-scene`. The scene
 crate stays data-only; geometry, catalog, and export logic live in the mesh
 crate.
 
@@ -74,7 +74,7 @@ changing the mesh container.
 
 ## Phase 2A Scope
 
-- New `litematic-mesh` crate.
+- New `blockscope-mesh` crate.
 - `Rgba`, `RenderLayer`, `BlockModel`, `ModelQuad`, `FaceDirection`.
 - Embedded original color palette for common vanilla blocks + family heuristics.
 - Full-cube model, opaque/cutout/translucent classification.

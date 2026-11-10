@@ -136,9 +136,9 @@ added later in G5.
 
 **Verification:**
 
-- [x] `cargo test -p litematic-render --features gpu --test gpu
+- [x] `cargo test -p blockscope-render --features gpu --test gpu
       gpu_reports_stage_timings`
-- [x] `cargo test -p litematic-render --lib`
+- [x] `cargo test -p blockscope-render --lib`
 - [x] `cargo test -p blockscope-cli --test cli json`
 - [x] `cargo run --release -p blockscope-cli --features gpu -- bench
       fixtures/private/000002.litematic --backend gpu --iterations 1
@@ -202,8 +202,8 @@ API and `bytes()` accounting unchanged.
 
 **Verification:**
 
-- [x] `cargo test -p litematic-material`
-- [x] `cargo test -p litematic-render --test golden_textures`
+- [x] `cargo test -p blockscope-material`
+- [x] `cargo test -p blockscope-render --test golden_textures`
 - [x] Peak RSS A/B on `000001 --client-jar`: 581.4 MB vs the 591 MB baseline,
       within noise. The steady peak does not include a second copy because the
       live set is dropped before rendering; the change removes the transient
@@ -233,7 +233,7 @@ byte-bounded LRU and device-loss invalidation.
 
 **Verification:**
 
-- [x] `cargo test -p litematic-render --features gpu`
+- [x] `cargo test -p blockscope-render --features gpu`
 - [x] `000002 --client-jar --backend gpu`: first render `atlasUs=1037 ms`,
       second render `atlasCacheHit=true`, `atlasUs=4 µs`.
 - [x] Textured parity test records at least one cache hit across two filters.
@@ -264,8 +264,8 @@ it.
 
 **Verification:**
 
-- [x] `cargo test -p litematic-render --features gpu --lib rasterizer::gpu::instance`
-- [x] `cargo clippy -p litematic-render --features gpu --all-targets -- -D warnings`
+- [x] `cargo test -p blockscope-render --features gpu --lib rasterizer::gpu::instance`
+- [x] `cargo clippy -p blockscope-render --features gpu --all-targets -- -D warnings`
 - [x] A standalone record test covers cull, page offset, Q12 UVs, AO, color,
       texture, layer, and shade.
 
@@ -291,9 +291,9 @@ precision guard. Task 7 binds the uniform and makes the shader compute
 
 **Verification:**
 
-- [x] `cargo test -p litematic-render --features gpu --lib camera::tests`
-- [x] `cargo test -p litematic-render --features gpu --test gpu explicit_gpu_rejects_an_unsafe_camera_span`
-- [x] `cargo clippy -p litematic-render --features gpu --all-targets -- -D warnings`
+- [x] `cargo test -p blockscope-render --features gpu --lib camera::tests`
+- [x] `cargo test -p blockscope-render --features gpu --test gpu explicit_gpu_rejects_an_unsafe_camera_span`
+- [x] `cargo clippy -p blockscope-render --features gpu --all-targets -- -D warnings`
 
 **Dependencies:** Task 5
 **Files likely touched:** `crates/render/src/camera.rs`,
@@ -320,8 +320,8 @@ delivered here because the same instance pipeline handles both.
 
 **Verification:**
 
-- [x] `cargo test -p litematic-render --features gpu --test gpu gpu_textured_matches_cpu`
-- [x] `cargo test -p litematic-render --features gpu --test gpu gpu_matches_cpu_for_opaque_cutout_and_translucent_geometry`
+- [x] `cargo test -p blockscope-render --features gpu --test gpu gpu_textured_matches_cpu`
+- [x] `cargo test -p blockscope-render --features gpu --test gpu gpu_matches_cpu_for_opaque_cutout_and_translucent_geometry`
       (image parity max delta 1; the pre-existing 3% threshold still fails on
       blended pixels, recorded for G5)
 - [x] `tile_bench --backend gpu` at 1024/2048 square.
@@ -350,8 +350,8 @@ run in `instance.wgsl`; the old textured vertex expansion is removed.
 
 **Verification:**
 
-- [x] `cargo test -p litematic-render --features gpu --test gpu gpu_textured_matches_cpu`
-- [x] `cargo test -p litematic-render --test golden_textures` on the CPU.
+- [x] `cargo test -p blockscope-render --features gpu --test gpu gpu_textured_matches_cpu`
+- [x] `cargo test -p blockscope-render --test golden_textures` on the CPU.
 - [x] The GPU textured fixture covers both nearest and linear filters.
 
 **Dependencies:** Task 7
@@ -378,7 +378,7 @@ performance gate. The remaining projected path is translucent-only until G5.
 
 **Verification:**
 
-- [x] `cargo test -p litematic-render --features gpu --test gpu`
+- [x] `cargo test -p blockscope-render --features gpu --test gpu`
 - [x] `tile_bench`: GPU 12.3 ms vs CPU 12t 19.5 ms at 1024; 35.0 ms vs 50.7 ms
       at 2048.
 - [x] `bench 000002 --backend gpu`: render 116.3 ms, total 161.2 ms.
@@ -417,8 +417,8 @@ and renders them incrementally without a full mesh.
 
 **Verification:**
 
-- [x] `cargo test -p litematic-render --features gpu --test gpu gpu_streaming_session_matches_full_mesh`
-- [x] `cargo check -p litematic-render --features gpu`
+- [x] `cargo test -p blockscope-render --features gpu --test gpu gpu_streaming_session_matches_full_mesh`
+- [x] `cargo check -p blockscope-render --features gpu`
 - [x] The streaming-vs-full test compares RGBA, triangle, and layer counters
       page-by-page across the whole mesh.
 
@@ -478,9 +478,9 @@ back before producing output; explicit `gpu` returns the documented error.
 
 **Verification:**
 
-- [x] `cargo test -p litematic-render --features gpu --test gpu explicit_gpu_rejects_an_unsafe_camera_span`
+- [x] `cargo test -p blockscope-render --features gpu --test gpu explicit_gpu_rejects_an_unsafe_camera_span`
 - [x] `cargo test -p blockscope-cli --test cli render_allows_streaming_with_a_gpu_backend`
-- [x] `cargo test -p litematic-render --features gpu --test gpu gpu_streaming_session_matches_full_mesh`
+- [x] `cargo test -p blockscope-render --features gpu --test gpu gpu_streaming_session_matches_full_mesh`
 - [x] Code review of setup/upload/draw/readback error checks and cache
       invalidation. VRAM exhaustion and device loss are not fault-injected
       because wgpu does not expose a portable injection point.
@@ -517,7 +517,7 @@ session. One chunk upload feeds all active views.
 
 **Verification:**
 
-- [x] `cargo test -p litematic-render --features gpu --test gpu gpu_multiview_matches_single_views`
+- [x] `cargo test -p blockscope-render --features gpu --test gpu gpu_multiview_matches_single_views`
 - [x] Two-view equality test compares each output and per-view triangle counts
       against independent single-view renders.
 
@@ -588,8 +588,8 @@ calculation, sub-batch splitting, and cleanup.
 
 **Verification:**
 
-- [x] `cargo test -p litematic-render --features gpu --lib rasterizer::gpu::translucent`
-- [x] `cargo test -p litematic-render --features gpu --lib rasterizer::project::tests`
+- [x] `cargo test -p blockscope-render --features gpu --lib rasterizer::gpu::translucent`
+- [x] `cargo test -p blockscope-render --features gpu --lib rasterizer::project::tests`
 - [x] `000001` color GPU streaming: 499 MB, 11.35 s, render 5.16 s, identical
       PNG SHA-256 to the pre-bucket run.
 
@@ -619,8 +619,8 @@ states, depth test without depth write, and the WGSL shader.
 
 **Verification:**
 
-- [x] `cargo test -p litematic-render --features gpu --test gpu gpu_wboit_is_order_independent`
-- [x] `cargo test -p litematic-render --features gpu --test gpu gpu_matches_cpu_for_opaque_cutout_and_translucent_geometry`
+- [x] `cargo test -p blockscope-render --features gpu --test gpu gpu_wboit_is_order_independent`
+- [x] `cargo test -p blockscope-render --features gpu --test gpu gpu_matches_cpu_for_opaque_cutout_and_translucent_geometry`
       (max delta 1; blended-pixel tolerance remains Task 17 calibration)
 - [x] `000001` GPU streaming: 538 MB, 12.20 s, render 5.34 s.
 
@@ -655,11 +655,11 @@ fallback for unsupported adapters.
 
 **Verification:**
 
-- [x] `cargo test -p litematic-render --features gpu --test gpu gpu_wboit_is_order_independent`
-- [x] `cargo test -p litematic-render --features gpu --test gpu gpu_matches_cpu_for_opaque_cutout_and_translucent_geometry`
-- [x] `cargo test -p litematic-render --features gpu --test gpu gpu_textured_matches_cpu`
+- [x] `cargo test -p blockscope-render --features gpu --test gpu gpu_wboit_is_order_independent`
+- [x] `cargo test -p blockscope-render --features gpu --test gpu gpu_matches_cpu_for_opaque_cutout_and_translucent_geometry`
+- [x] `cargo test -p blockscope-render --features gpu --test gpu gpu_textured_matches_cpu`
 - [x] `000001 --client-jar`: 656 MB, 22.64 s, render 12.21 s, mesh 6.32 s.
-- [x] `cargo test -p litematic-render --test golden` on the CPU.
+- [x] `cargo test -p blockscope-render --test golden` on the CPU.
 
 **Dependencies:** Task 16
 **Files likely touched:** `crates/render/src/rasterizer/gpu/translucent.rs`,
@@ -699,7 +699,7 @@ exactness, memory, and streaming mode.
 
 **Verification:**
 
-- [x] `cargo test -p litematic-render --features gpu`
+- [x] `cargo test -p blockscope-render --features gpu`
 - [x] `cargo test -p blockscope-cli --features gpu`
 - [ ] Bench matrix on R1/R2/R3/R5; record `backendUsed`. R1/R2 recorded;
       R3/R5 remain for the hardware matrix.

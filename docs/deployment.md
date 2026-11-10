@@ -107,7 +107,7 @@ Expected output: `cores: 1`, `cpuQuotaMilli: 1000`, `memoryLimitBytes: 107374182
 - `installer` on `windows-latest`: builds the GPU-enabled static binary and MSI, runs the install/uninstall lifecycle test, and uploads the artifacts.
 
 Hardware parity and performance tests are not part of the default hosted-runner
-gate because those runners have no GPU. Run `cargo test -p litematic-render
+gate because those runners have no GPU. Run `cargo test -p blockscope-render
 --features gpu --test gpu` on a machine with an adapter; the tests print
 `BACKEND_UNAVAILABLE` and skip when none exists. Use a self-hosted GPU runner
 for release validation.
@@ -126,7 +126,18 @@ for release validation.
 
 The publish script, `.github/scripts/publish-crates.sh`, then publishes the crates in dependency order with `cargo publish --locked`. It skips versions that are already on crates.io, so a partial or failed run can be re-run safely. It also checks that every publishable workspace member is in its explicit allowlist, which prevents a newly added crate from being published accidentally. A workspace member that is not ready for crates.io must set `publish = false` or stay out of the release tag; otherwise the allowlist check stops the workflow.
 
-For the first publish of each crate name, create a crates.io API token with the `publish-new` and `publish-update` scopes and store it as the `CARGO_REGISTRY_TOKEN` secret on the `crates-io` GitHub environment. The environment can require reviewers so the token is only used after approval. crates.io allows a burst of five brand-new crate names and then one every ten minutes; the script sleeps through a rate-limit response and the job has a 180-minute budget. The existing `v0.5.0` tag predates this workflow's publish metadata, so cut a new patch tag before the first crates.io release.
+For the first publish of each crate name, create a crates.io API token with the `publish-new` and `publish-update` scopes and store it as the `CARGO_REGISTRY_TOKEN` secret on the `crates-io` GitHub environment. The environment can require reviewers so the token is only used after approval. crates.io allows a burst of five brand-new crate names and then one every ten minutes; the script sleeps through a rate-limit response and the job has a 180-minute budget.
+
+`0.5.1` was the first crates.io release and used the old `litematic-*` library crate names. `0.6.0` publishes the same libraries as `blockscope-*`. After the `0.6.0` publish succeeds, yank the old versions so new dependency resolution uses the new namespace:
+
+```bash
+for crate in litematic-nbt litematic-scene litematic-core litematic-mesh \
+  litematic-material litematic-render litematic-video; do
+  cargo yank --version 0.5.1 "$crate"
+done
+```
+
+`blockscope-cli` `0.5.1` is already in the new namespace; do not yank it.
 
 After every crate has its first version, the long-lived token can be replaced with [Trusted Publishing](https://crates.io/docs/trusted-publishing/): configure the repository, the `publish-crates.yml` workflow, and the `crates-io` environment on crates.io, then exchange an OIDC token with `rust-lang/crates-io-auth-action`. Trusted publishing cannot create a brand-new crate, which is why the token is still needed for the bootstrap.
 

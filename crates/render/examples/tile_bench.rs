@@ -1,12 +1,12 @@
 //! Compare single-threaded and parallel tile rasterization on a synthetic scene.
 //!
-//! Usage: `cargo run --release -p litematic-render --example tile_bench`
+//! Usage: `cargo run --release -p blockscope-render --example tile_bench`
 //! Options: `--width N`, `--height N`, `--supersample N`, `--iterations N`,
 //! `--backend cpu|gpu` (GPU requires `--features gpu`).
 
-use litematic_mesh::{ColorBlockCatalog, MeshLimits, build_mesh};
-use litematic_render::{RenderBackend, RenderOptions, render_mesh};
-use litematic_scene::{BlockStateKey, PackedIndices, Region, Scene, SceneMetadata};
+use blockscope_mesh::{ColorBlockCatalog, MeshLimits, build_mesh};
+use blockscope_render::{RenderBackend, RenderOptions, render_mesh};
+use blockscope_scene::{BlockStateKey, PackedIndices, Region, Scene, SceneMetadata};
 use std::time::Instant;
 
 fn main() {

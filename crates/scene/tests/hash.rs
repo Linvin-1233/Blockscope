@@ -1,5 +1,5 @@
-use litematic_nbt::{NbtCompound, NbtValue};
-use litematic_scene::{
+use blockscope_nbt::{NbtCompound, NbtValue};
+use blockscope_scene::{
     BlockEntity, BlockStateKey, PackedIndices, Region, Scene, SceneMetadata, sha256,
 };
 

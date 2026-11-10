@@ -1,8 +1,8 @@
 use crate::capacity::Capacity;
 use crate::serve::PROTOCOL_VERSION;
 use crate::{AssetArgs, CliError, MeshOptionArgs};
+use blockscope_video::Ffmpeg;
 use clap::Args;
-use litematic_video::Ffmpeg;
 use serde_json::{Value, json};
 use std::collections::{HashMap, VecDeque};
 use std::ffi::OsString;
@@ -818,7 +818,7 @@ fn route_key(line: &str) -> String {
             )
             .ok()
         })
-        .map(|bytes| litematic_scene::sha256(&bytes).to_hex())
+        .map(|bytes| blockscope_scene::sha256(&bytes).to_hex())
         .unwrap_or_default()
 }
 

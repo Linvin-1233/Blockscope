@@ -1,4 +1,4 @@
-use litematic_nbt::{
+use blockscope_nbt::{
     DecodeLimits, NbtCompound, NbtError, NbtErrorCode, NbtList, NbtTagType, NbtValue,
 };
 

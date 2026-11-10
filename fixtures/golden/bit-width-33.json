@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "parser": {
-    "version": "0.5.1",
+    "version": "0.6.0",
     "litematicVersion": 7,
     "minecraftDataVersion": 3700
   },
   "inputHash": "8a46c4999b74513ff26dce4c3094ce0fe7f0029db1e2fd6da168259c9c08e6fc",
-  "sceneHash": "88f540c961cbeaafc05b058fd102d1d32f9df94f997e737595ac75af780a02b3",
+  "sceneHash": "58acdf164ba4739157c5ea600868ded0c17f37dc70d9c7da78d0a2eac59cea65",
   "metadata": {
     "name": "bit-width-33",
     "author": null,

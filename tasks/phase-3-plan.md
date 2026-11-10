@@ -91,7 +91,7 @@ assets.
 
 ## Phase 3A Scope
 
-- `litematic-render` crate.
+- `blockscope-render` crate.
 - `RenderOptions`, `Background`, `LightingProfile`, `RenderError`.
 - Orthographic `Camera` with fit and padding.
 - Tile rasterizer with depth test, backface culling, cutout, translucent sort.

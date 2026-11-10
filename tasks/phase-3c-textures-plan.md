@@ -1,4 +1,4 @@
-﻿# Implementation Plan: Phase 3C 鈥?Resource-Pack Materials
+# Implementation Plan: Phase 3C 鈥?Resource-Pack Materials
 
 **Status:** Implemented and checked; human review pending.  
 **Spec:** `tasks/phase-3c-textures-spec.md`  
@@ -30,7 +30,7 @@ Scene block state
 
 ### Slice 1: Asset source and serialization
 
-- New crate `litematic-material`.
+- New crate `blockscope-material`.
 - `Source` trait for client jar, extracted assets, and resource-pack overlay.
 - Normalized asset paths and zip path safety.
 - JSON structs for blockstates and models.

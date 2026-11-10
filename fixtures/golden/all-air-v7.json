@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "parser": {
-    "version": "0.5.1",
+    "version": "0.6.0",
     "litematicVersion": 7,
     "minecraftDataVersion": 3700
   },
   "inputHash": "f861da599e1d3f4be08d2c191c88251fff77569346fa0bee117c8d703c77c48a",
-  "sceneHash": "1c2ccf8eff80cad00fbb89abc6201eb47485de592a369947a368f7185c0ced03",
+  "sceneHash": "35b8c7944ef6d21effc1275eba415759e30737513db2da78cb6eae7753f9ef91",
   "metadata": {
     "name": "all-air",
     "author": null,

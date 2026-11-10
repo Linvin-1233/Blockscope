@@ -2,7 +2,7 @@ use crate::color::Rgba;
 use crate::model::{BlockModel, FaceDirection, ModelBox, ModelQuad, NO_TEXTURE, face_uv};
 use crate::util::strip_namespace;
 use crate::voxel::build_model;
-use litematic_scene::BlockStateKey;
+use blockscope_scene::BlockStateKey;
 
 /// The two fluids the mesh builder shapes from neighbouring blocks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

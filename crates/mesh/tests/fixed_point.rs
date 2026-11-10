@@ -1,4 +1,4 @@
-use litematic_mesh::{AO_LEVELS, Quad, Vertex, ambient_occlusion_level, decode_uv, encode_uv};
+use blockscope_mesh::{AO_LEVELS, Quad, Vertex, ambient_occlusion_level, decode_uv, encode_uv};
 use std::mem::size_of;
 
 #[test]

@@ -2,13 +2,13 @@
 
 mod support;
 
-use litematic_material::{AssetSource, MaterialSet, TextureFilter};
-use litematic_mesh::{ColorBlockCatalog, Mesh, MeshLimits, Rgba, build_mesh};
-use litematic_render::{
+use blockscope_material::{AssetSource, MaterialSet, TextureFilter};
+use blockscope_mesh::{ColorBlockCatalog, Mesh, MeshLimits, Rgba, build_mesh};
+use blockscope_render::{
     Background, GpuFrameSession, GpuRenderSession, RenderBackend, RenderErrorCode, RenderOptions,
     RenderOutput, render_mesh, render_mesh_with_textures,
 };
-use litematic_scene::Scene;
+use blockscope_scene::Scene;
 use support::*;
 
 fn build(scene: &Scene) -> Mesh {

@@ -193,7 +193,7 @@ fn serve_cache_hit_with_hash_does_not_read_the_file() {
     let dir = tempfile::tempdir().unwrap();
     let input = fixture(dir.path());
     let out_dir = dir.path().join("out");
-    let hash = litematic_scene::sha256(&std::fs::read(&input).unwrap()).to_hex();
+    let hash = blockscope_scene::sha256(&std::fs::read(&input).unwrap()).to_hex();
 
     let (mut child, mut stdin, mut lines) = start();
     let _hello = read_json(&mut lines);

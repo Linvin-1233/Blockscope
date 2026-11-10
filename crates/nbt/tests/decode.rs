@@ -1,8 +1,8 @@
-use flate2::Compression;
-use flate2::write::{GzEncoder, ZlibEncoder};
-use litematic_nbt::{
+use blockscope_nbt::{
     DecodeLimits, NbtCompound, NbtErrorCode, NbtTagType, NbtValue, decode, detect_compression,
 };
+use flate2::Compression;
+use flate2::write::{GzEncoder, ZlibEncoder};
 use std::io::Write;
 
 fn named(tag: u8, name: &str, payload: &[u8]) -> Vec<u8> {
@@ -198,15 +198,15 @@ fn decodes_arrays_lists_and_nested_compounds() {
 fn detects_compression_from_magic_bytes() {
     assert_eq!(
         detect_compression(&[0x1f, 0x8b, 0x08, 0x00]),
-        litematic_nbt::Compression::Gzip
+        blockscope_nbt::Compression::Gzip
     );
     assert_eq!(
         detect_compression(&zlib(b"hello")),
-        litematic_nbt::Compression::Zlib
+        blockscope_nbt::Compression::Zlib
     );
     assert_eq!(
         detect_compression(&[10, 0, 0]),
-        litematic_nbt::Compression::Uncompressed
+        blockscope_nbt::Compression::Uncompressed
     );
 }
 

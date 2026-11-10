@@ -1,11 +1,11 @@
 mod support;
 
-use litematic_mesh::{
+use blockscope_mesh::{
     BlockCatalog, ColorBlockCatalog, Mesh, MeshBuildOptions, MeshLimits, RenderLayer, Rgba,
     build_mesh, build_mesh_parallel, build_mesh_streaming, build_mesh_with_options,
     count_mesh_quads, redstone_color,
 };
-use litematic_scene::{BlockStateKey, Scene};
+use blockscope_scene::{BlockStateKey, Scene};
 use std::collections::BTreeMap;
 use support::{region_states, scene as make_scene};
 
@@ -35,14 +35,17 @@ fn water_row(levels: &[u8]) -> Scene {
     )])
 }
 
-fn quads(mesh: &Mesh) -> Vec<(&litematic_mesh::MeshPage, &litematic_mesh::Quad)> {
+fn quads(mesh: &Mesh) -> Vec<(&blockscope_mesh::MeshPage, &blockscope_mesh::Quad)> {
     mesh.pages
         .iter()
         .flat_map(|page| page.quads.iter().map(move |quad| (page, quad)))
         .collect()
 }
 
-fn top_quad_at_x(mesh: &Mesh, block_x: f32) -> (&litematic_mesh::MeshPage, &litematic_mesh::Quad) {
+fn top_quad_at_x(
+    mesh: &Mesh,
+    block_x: f32,
+) -> (&blockscope_mesh::MeshPage, &blockscope_mesh::Quad) {
     quads(mesh)
         .into_iter()
         .filter(|(page, quad)| page.quad_normal(quad) == [0.0, 1.0, 0.0])

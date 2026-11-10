@@ -3,10 +3,10 @@
 //! Usage: `cargo run --release -p blockscope-cli --example precision_bench -- \
 //!   fixtures/private/000001.litematic fixtures/private/texture/26.2-Fabric.jar`
 
-use litematic_core::{DecodeLimits, LitematicFile, LitematicLimits};
-use litematic_material::{AssetSource, MaterialSet};
-use litematic_mesh::{MeshBuildOptions, MeshLimits, build_mesh_parallel_with_options};
-use litematic_render::{RenderBackend, RenderOptions, RenderPrecision, render_mesh_with_textures};
+use blockscope_core::{DecodeLimits, LitematicFile, LitematicLimits};
+use blockscope_material::{AssetSource, MaterialSet};
+use blockscope_mesh::{MeshBuildOptions, MeshLimits, build_mesh_parallel_with_options};
+use blockscope_render::{RenderBackend, RenderOptions, RenderPrecision, render_mesh_with_textures};
 use std::path::PathBuf;
 use std::time::Instant;
 

@@ -1,6 +1,6 @@
-use litematic_material::{AssetSource, MaterialKind, MaterialSet};
-use litematic_mesh::{BlockCatalog, NO_TEXTURE};
-use litematic_scene::BlockStateKey;
+use blockscope_material::{AssetSource, MaterialKind, MaterialSet};
+use blockscope_mesh::{BlockCatalog, NO_TEXTURE};
+use blockscope_scene::BlockStateKey;
 use std::path::Path;
 
 fn materials() -> Option<MaterialSet> {

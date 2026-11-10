@@ -8,6 +8,12 @@ User-facing changes are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-10
+
+### Changed
+
+- Rename the library crates to the `blockscope-*` namespace.
+
 ## [0.5.1] - 2026-11-09
 
 ### Changed

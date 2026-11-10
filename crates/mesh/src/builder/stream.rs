@@ -6,7 +6,7 @@ use crate::catalog::BlockCatalog;
 use crate::page::PaletteTables;
 use crate::view::SceneBlockView;
 use crate::{MeshBuildOptions, MeshError, MeshLimits, MeshPage, MeshStatistics};
-use litematic_scene::Scene;
+use blockscope_scene::Scene;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::thread;

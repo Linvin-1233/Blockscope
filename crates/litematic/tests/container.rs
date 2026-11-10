@@ -1,10 +1,10 @@
 mod support;
 
-use litematic_core::{LitematicErrorCode, LitematicFile, LitematicLimits};
-use litematic_nbt::DecodeLimits;
+use blockscope_core::{LitematicErrorCode, LitematicFile, LitematicLimits};
+use blockscope_nbt::DecodeLimits;
 use support::*;
 
-fn parse(bytes: &[u8]) -> Result<LitematicFile, litematic_core::LitematicError> {
+fn parse(bytes: &[u8]) -> Result<LitematicFile, blockscope_core::LitematicError> {
     LitematicFile::parse_bytes(bytes, &DecodeLimits::default(), &LitematicLimits::default())
 }
 

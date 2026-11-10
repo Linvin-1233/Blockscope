@@ -1,12 +1,12 @@
 mod support;
 
-use litematic_mesh::{
+use blockscope_mesh::{
     ColorBlockCatalog, ColorSnapshot, MeshBuildOptions, MeshLimits, build_mesh,
     build_mesh_parallel_with_options, build_mesh_streaming_with_options, build_mesh_with_options,
 };
 use support::{region as make_region, scene as make_scene};
 
-fn flat_scene() -> litematic_scene::Scene {
+fn flat_scene() -> blockscope_scene::Scene {
     let values = vec![1u32; 16 * 16];
     let region = make_region(
         "main",

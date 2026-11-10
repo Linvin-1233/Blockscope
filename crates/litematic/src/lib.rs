@@ -6,10 +6,10 @@ mod error;
 mod limits;
 mod scene_builder;
 
+pub use blockscope_nbt::DecodeLimits;
 pub use container::{LitematicFile, LitematicMetadata, RawRegion};
 pub use data::RegionData;
 pub use error::{LitematicError, LitematicErrorCode};
 pub use limits::LitematicLimits;
-pub use litematic_nbt::DecodeLimits;
 
-pub const CRATE_NAME: &str = "litematic-core";
+pub const CRATE_NAME: &str = "blockscope-core";

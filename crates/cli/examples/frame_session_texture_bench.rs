@@ -8,10 +8,10 @@
 
 #[cfg(feature = "gpu")]
 fn main() -> Result<(), String> {
-    use litematic_core::{DecodeLimits, LitematicFile, LitematicLimits};
-    use litematic_material::{AssetSource, MaterialSet};
-    use litematic_mesh::{MeshLimits, build_mesh_parallel};
-    use litematic_render::{GpuFrameSession, RenderBackend, RenderOptions, write_png};
+    use blockscope_core::{DecodeLimits, LitematicFile, LitematicLimits};
+    use blockscope_material::{AssetSource, MaterialSet};
+    use blockscope_mesh::{MeshLimits, build_mesh_parallel};
+    use blockscope_render::{GpuFrameSession, RenderBackend, RenderOptions, write_png};
     use std::time::Instant;
 
     const USAGE: &str = "usage: frame_session_texture_bench <file> <jar> <width> <height>";

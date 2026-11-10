@@ -1,12 +1,12 @@
 use crate::CliError;
-use litematic_material::MaterialSnapshot;
-use litematic_mesh::Mesh;
-use litematic_render::{
+use blockscope_material::MaterialSnapshot;
+use blockscope_mesh::Mesh;
+use blockscope_render::{
     GpuStageTimings, RenderBackend, RenderOptions, RenderOutput, RenderStatistics, render_mesh,
     render_mesh_with_textures,
 };
-use litematic_scene::Scene;
-use litematic_video::{Ffmpeg, FramePlan, VideoEncoder, VideoError, VideoSettings};
+use blockscope_scene::Scene;
+use blockscope_video::{Ffmpeg, FramePlan, VideoEncoder, VideoError, VideoSettings};
 use std::path::Path;
 use std::time::Instant;
 
@@ -50,7 +50,7 @@ pub(crate) fn render_video(
     #[cfg(feature = "gpu")]
     let textures = job.snapshot.map(|snapshot| snapshot.textures());
     #[cfg(feature = "gpu")]
-    let mut gpu_session: Option<litematic_render::GpuFrameSession<'_>> = None;
+    let mut gpu_session: Option<blockscope_render::GpuFrameSession<'_>> = None;
     #[cfg(feature = "gpu")]
     let mut actual_backend = RenderBackend::Cpu;
     #[cfg(not(feature = "gpu"))]
@@ -62,7 +62,7 @@ pub(crate) fn render_video(
             #[cfg(feature = "gpu")]
             {
                 let first = frame_options(&job.options, job.plan, 0, RenderBackend::Gpu);
-                match litematic_render::GpuFrameSession::new(job.scene, job.mesh, &first, textures)
+                match blockscope_render::GpuFrameSession::new(job.scene, job.mesh, &first, textures)
                 {
                     Ok(session) => {
                         gpu_session = Some(session);
@@ -188,8 +188,8 @@ pub(crate) fn hello_object(ffmpeg: Option<&Ffmpeg>, error: Option<&str>) -> serd
             "formats": ["mp4", "gif"],
             "encoders": ffmpeg.video_encoders(),
             "ffmpegVersion": ffmpeg.version_string(),
-            "maxFrames": litematic_video::MAX_FRAMES,
-            "maxDurationSeconds": litematic_video::MAX_DURATION_SECONDS,
+            "maxFrames": blockscope_video::MAX_FRAMES,
+            "maxDurationSeconds": blockscope_video::MAX_DURATION_SECONDS,
             "hardwareProbe": "lazy",
         }),
         None => serde_json::json!({
@@ -198,8 +198,8 @@ pub(crate) fn hello_object(ffmpeg: Option<&Ffmpeg>, error: Option<&str>) -> serd
             "formats": [],
             "encoders": [],
             "ffmpegVersion": null,
-            "maxFrames": litematic_video::MAX_FRAMES,
-            "maxDurationSeconds": litematic_video::MAX_DURATION_SECONDS,
+            "maxFrames": blockscope_video::MAX_FRAMES,
+            "maxDurationSeconds": blockscope_video::MAX_DURATION_SECONDS,
             "hardwareProbe": "lazy",
         }),
     }

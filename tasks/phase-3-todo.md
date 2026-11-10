@@ -1,4 +1,4 @@
-﻿# Phase 3 Task List 鈥?CPU PNG Renderer
+# Phase 3 Task List 鈥?CPU PNG Renderer
 
 **Status:** Phase 3A/3B complete; Phase 3C deferred.  
 **Plan:** `tasks/phase-3-plan.md`
@@ -19,7 +19,7 @@
 
 - [x] A stacked-cube fixture produces at least one vertex with `ao < 0.99`.
 - [x] Isolated cubes keep `ao = 1.0`.
-- [x] `cargo test -p litematic-mesh` passes.
+- [x] `cargo test -p blockscope-mesh` passes.
 
 **Dependencies:** Phase 2  
 **Estimated scope:** Medium

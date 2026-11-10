@@ -1,5 +1,5 @@
 [package]
-name = "litematic-mesh"
+name = "blockscope-mesh"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -12,6 +12,6 @@ keywords = ["minecraft", "litematic", "mesh", "graphics"]
 categories = ["games", "graphics"]
 
 [dependencies]
-litematic-scene = { path = "../scene", version = "0.5.1" }
+blockscope-scene = { path = "../scene", version = "0.6.0" }
 serde.workspace = true
 serde_json.workspace = true

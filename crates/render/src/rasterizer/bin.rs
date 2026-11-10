@@ -1,6 +1,6 @@
 use super::geometry::{bounds, quad_bounds};
 use super::project::{QuadPoint, QuadRender, QuadTable, Triangle};
-pub(super) use litematic_scene::worker_count;
+pub(super) use blockscope_scene::worker_count;
 
 #[derive(Clone, Copy, Debug)]
 pub(super) struct TileJob {

@@ -1,5 +1,5 @@
 use crate::{RenderBackend, RenderOptions};
-use litematic_scene::Scene;
+use blockscope_scene::Scene;
 
 /// Whether a hardware adapter can be used for GPU rendering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -367,7 +367,7 @@ mod tests {
     fn explicit_backends_are_not_policy_inputs() {
         let scene = Scene {
             metadata: Default::default(),
-            bounds: litematic_scene::Bounds {
+            bounds: blockscope_scene::Bounds {
                 min: [0, 0, 0],
                 max_exclusive: [1, 1, 1],
             },

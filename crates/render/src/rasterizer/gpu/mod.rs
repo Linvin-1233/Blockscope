@@ -1,7 +1,7 @@
 use crate::{RenderError, RenderOptions, RenderOutput};
-use litematic_material::TextureSet;
-use litematic_mesh::Mesh;
-use litematic_scene::Scene;
+use blockscope_material::TextureSet;
+use blockscope_mesh::Mesh;
+use blockscope_scene::Scene;
 
 #[cfg(feature = "gpu")]
 mod atlas;
@@ -99,7 +99,7 @@ pub(super) fn depth_range(scene: &Scene, camera: &crate::Camera) -> (f64, f64) {
 
 #[cfg(feature = "gpu")]
 pub(super) fn depth_range_bounds(
-    bounds: &litematic_scene::Bounds,
+    bounds: &blockscope_scene::Bounds,
     camera: &crate::Camera,
 ) -> (f64, f64) {
     let min = bounds.min;
@@ -128,7 +128,7 @@ pub(super) fn camera_uniform(
 
 #[cfg(feature = "gpu")]
 pub(super) fn camera_uniform_for_bounds(
-    bounds: &litematic_scene::Bounds,
+    bounds: &blockscope_scene::Bounds,
     camera: &crate::Camera,
 ) -> Result<(crate::camera::GpuCamera, [i32; 3]), RenderError> {
     let (near, far) = depth_range_bounds(bounds, camera);

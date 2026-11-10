@@ -1,11 +1,11 @@
 mod support;
 
-use litematic_mesh::{ColorBlockCatalog, Mesh, MeshLimits, Rgba, build_mesh};
-use litematic_render::{
+use blockscope_mesh::{ColorBlockCatalog, Mesh, MeshLimits, Rgba, build_mesh};
+use blockscope_render::{
     Background, LightingProfile, RenderErrorCode, RenderOptions, RenderOutput, RenderPrecision,
     StreamingRenderer, render_mesh, write_png,
 };
-use litematic_scene::{BlockStateKey, Scene};
+use blockscope_scene::{BlockStateKey, Scene};
 use std::collections::BTreeMap;
 use support::*;
 
@@ -594,7 +594,7 @@ fn rejects_invalid_options() {
 
 #[test]
 fn progress_reports_every_rasterizer_tile() {
-    use litematic_render::{render_mesh_with_progress, will_stream};
+    use blockscope_render::{render_mesh_with_progress, will_stream};
     use std::sync::atomic::{AtomicU64, Ordering};
 
     let scene = stone_scene();
@@ -620,7 +620,7 @@ fn progress_reports_every_rasterizer_tile() {
 
 #[test]
 fn progress_is_silent_when_the_rasterizer_streams() {
-    use litematic_render::{render_mesh_with_progress, will_stream};
+    use blockscope_render::{render_mesh_with_progress, will_stream};
     use std::sync::atomic::{AtomicU64, Ordering};
 
     let scene = stone_scene();

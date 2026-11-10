@@ -4,7 +4,7 @@
 **Date:** 2026-11-04
 **Last updated:** 2026-11-05
 **Owner:** Rendering / GPU
-**Depends on:** `litematic-render` feature `gpu` (wgpu 30), CPU streaming chunk policy
+**Depends on:** `blockscope-render` feature `gpu` (wgpu 30), CPU streaming chunk policy
 **Related:** `tasks/gpu-feasibility.md`, `tasks/video-export-spec.md`, `docs/performance.md`
 
 ## Decisions incorporated (2026-11-05)
@@ -218,10 +218,10 @@ parallel with G0/G2. G5 can start after G3. G6 is last.
 ## Tech Stack
 
 - Rust 2024, `wgpu` 30, WGSL, `bytemuck`, `pollster`.
-- `litematic-render` feature `gpu`, enabled by the CLI feature `gpu`.
-- Existing `litematic-mesh` structures, with `repr(C)` and `bytemuck` support
+- `blockscope-render` feature `gpu`, enabled by the CLI feature `gpu`.
+- Existing `blockscope-mesh` structures, with `repr(C)` and `bytemuck` support
   where needed.
-- Existing `litematic-material::TextureSet` and `MaterialSnapshot`.
+- Existing `blockscope-material::TextureSet` and `MaterialSnapshot`.
 - WBOIT uses `Rgba16Float` accumulation and revealage targets with a full-screen
   composite pass before readback. Revealage stays RGBA so
   `OneMinusSrcAlpha` has a portable per-fragment source alpha.
@@ -234,18 +234,18 @@ parallel with G0/G2. G5 can start after G3. G6 is last.
 # Build and focused tests
 cargo build --workspace
 cargo build -p blockscope-cli --features gpu
-cargo test -p litematic-render
-cargo test -p litematic-render --features gpu
+cargo test -p blockscope-render
+cargo test -p blockscope-render --features gpu
 cargo test -p blockscope-cli --features gpu
 
 # GPU parity and smoke tests
-cargo test -p litematic-render --features gpu --test gpu
+cargo test -p blockscope-render --features gpu --test gpu
 cargo test -p blockscope-cli --features gpu --test cli
 
 # Rasterizer and end-to-end benchmarks
-cargo run --release -p litematic-render --features gpu --example tile_bench -- \
+cargo run --release -p blockscope-render --features gpu --example tile_bench -- \
   --backend cpu --iterations 5
-cargo run --release -p litematic-render --features gpu --example tile_bench -- \
+cargo run --release -p blockscope-render --features gpu --example tile_bench -- \
   --backend gpu --iterations 5
 cargo run --release -p blockscope-cli --features gpu -- bench \
   fixtures/private/000002.litematic \

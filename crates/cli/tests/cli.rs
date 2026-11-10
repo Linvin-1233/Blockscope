@@ -1,8 +1,8 @@
 mod support;
 
-use litematic_mesh::MeshStatistics;
-use litematic_render::RenderStatistics;
-use litematic_scene::ManifestStatistics;
+use blockscope_mesh::MeshStatistics;
+use blockscope_render::RenderStatistics;
+use blockscope_scene::ManifestStatistics;
 use std::fs;
 use support::*;
 #[test]
@@ -550,7 +550,7 @@ fn render_json_parses() {
     assert!(stats.triangles > 0);
     assert_eq!(
         stats.backend_used,
-        litematic_render::RenderBackend::Cpu,
+        blockscope_render::RenderBackend::Cpu,
         "auto must keep a small reference scene on the CPU"
     );
 }
