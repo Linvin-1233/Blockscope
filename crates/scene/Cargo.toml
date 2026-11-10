@@ -2,9 +2,17 @@
 name = "litematic-scene"
 version.workspace = true
 edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+description = "Canonical, deterministic scene representation shared by the Blockscope parser and renderer."
+keywords = ["minecraft", "litematic", "scene", "serialization"]
+categories = ["games", "data-structures"]
 
 [dependencies]
-litematic-nbt = { path = "../nbt" }
+litematic-nbt = { path = "../nbt", version = "0.5.1" }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

@@ -1,0 +1,112 @@
+name: publish-crates
+
+# Publish the workspace crates only from an immutable release tag that is on
+# origin/main. A tag push and a manual dispatch use the same guards, so a
+# local working tree never reaches crates.io.
+on:
+  push:
+    tags:
+      - "v[0-9]+.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to publish (for example v0.5.1)"
+        required: true
+        type: string
+      dry_run:
+        description: "Package and validate without uploading"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-crates
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # A fork cannot publish, and the environment is the approval gate for the
+    # crates.io token.
+    if: github.repository == 'Linvin-1233/Blockscope'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    environment: crates-io
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+      DRY_RUN: ${{ inputs.dry_run || false }}
+      MAX_RATE_LIMIT_SLEEP: "900"
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Verify tag is a clean commit on origin/main
+        run: |
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "::error::TAG must look like v1.2.3, got '$TAG'"
+            exit 1
+          fi
+
+          git fetch --force --no-tags origin main:refs/remotes/origin/main
+
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::working tree is not clean"
+            git status --short
+            exit 1
+          fi
+
+          if ! git merge-base --is-ancestor HEAD refs/remotes/origin/main; then
+            echo "::error::$TAG is not on origin/main"
+            exit 1
+          fi
+
+          if ! git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null; then
+            echo "::error::$TAG does not exist on origin"
+            exit 1
+          fi
+
+          remote_tag="$(git ls-remote --tags origin "refs/tags/$TAG^{}" | awk '{print $1}')"
+          if [ -z "$remote_tag" ]; then
+            remote_tag="$(git ls-remote --tags origin "refs/tags/$TAG" | awk '{print $1}')"
+          fi
+          if [ "$remote_tag" != "$(git rev-parse HEAD)" ]; then
+            echo "::error::origin tag $TAG points to $remote_tag, not $(git rev-parse HEAD)"
+            exit 1
+          fi
+
+          cargo xtask verify-tag "$TAG"
+
+      - name: Require crates.io token
+        if: ${{ !inputs.dry_run }}
+        env:
+          TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          if [ -z "${TOKEN:-}" ]; then
+            echo "::error::CARGO_REGISTRY_TOKEN is not set. Add a crates.io API token with publish-new and publish-update scopes as a secret on the crates-io environment."
+            exit 1
+          fi
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+
+      - name: Run the release quality gate
+        run: just check
+
+      - name: Publish crates
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: bash .github/scripts/publish-crates.sh

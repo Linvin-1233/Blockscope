@@ -2,6 +2,14 @@
 name = "litematic-nbt"
 version.workspace = true
 edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+description = "NBT decoding with explicit resource limits for Minecraft litematic files."
+keywords = ["minecraft", "nbt", "litematic", "parser"]
+categories = ["parser-implementations", "games"]
 
 [dependencies]
 flate2.workspace = true

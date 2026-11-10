@@ -228,6 +228,15 @@ bump level="patch":
 
     sed -i.bak -E "s/^version = \"$old_escaped\"$/version = \"$next\"/" Cargo.toml
     rm -f Cargo.toml.bak
+
+    # Published crates name their internal path dependencies with the
+    # workspace version so cargo publish can resolve them from crates.io.
+    # Keep those requirements in lockstep with the version being released.
+    while IFS= read -r manifest; do
+      sed -i.bak -E "s/(\{ path = \"[^\"]+\", version = \")$old_escaped(\" \})/\1$new_escaped\2/g" "$manifest"
+      rm -f "$manifest.bak"
+    done < <(find crates -name Cargo.toml -type f)
+
     for doc in "${docs[@]}"; do
       sed -i.bak "s/$old_escaped/$new_escaped/g" "$doc"
       rm -f "$doc.bak"
@@ -262,9 +271,11 @@ bump level="patch":
       exit 1
     fi
 
-    # The tree was clean on entry, so only the version and changelog files may
-    # differ. Stop before the commit if anything else changed.
-    expected=$(printf '%s\n' Cargo.toml Cargo.lock "${docs[@]}" CHANGELOG.md CHANGELOG.en.md | LC_ALL=C sort)
+    # The tree was clean on entry, so only the version, crate manifests, and
+    # changelog files may differ. Stop before the commit if anything else
+    # changed.
+    changed_manifests=$(git diff --name-only -- 'crates/*/Cargo.toml')
+    expected=$(printf '%s\n' Cargo.toml Cargo.lock "${docs[@]}" CHANGELOG.md CHANGELOG.en.md $changed_manifests | LC_ALL=C sort)
     changed=$(git diff --name-only | LC_ALL=C sort)
     if [[ "$changed" != "$expected" ]]; then
       echo "bump: refusing to commit changes beyond the version bump:" >&2
@@ -273,6 +284,9 @@ bump level="patch":
     fi
 
     git add Cargo.toml Cargo.lock "${docs[@]}" CHANGELOG.md CHANGELOG.en.md
+    if [[ -n "$changed_manifests" ]]; then
+      git add $changed_manifests
+    fi
     git commit -m "chore: bump to v$next"
     git tag -a "v$next" -m "v$next"
 
