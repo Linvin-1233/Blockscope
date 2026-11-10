@@ -7,9 +7,9 @@
 
 #[cfg(feature = "gpu")]
 fn main() -> Result<(), String> {
-    use litematic_core::{DecodeLimits, LitematicFile, LitematicLimits};
-    use litematic_mesh::{ColorBlockCatalog, MeshLimits, build_mesh_parallel};
-    use litematic_render::{GpuFrameSession, RenderBackend, RenderOptions, render_mesh};
+    use blockscope_core::{DecodeLimits, LitematicFile, LitematicLimits};
+    use blockscope_mesh::{ColorBlockCatalog, MeshLimits, build_mesh_parallel};
+    use blockscope_render::{GpuFrameSession, RenderBackend, RenderOptions, render_mesh};
     use std::hint::black_box;
     use std::time::Instant;
 

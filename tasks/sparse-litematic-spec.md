@@ -70,21 +70,21 @@ coverage. Do not start it without a new implementation plan.
 
 ## Tech Stack
 
-- Rust 2024, `litematic-core`, `litematic-nbt`, `litematic-scene`, `litematic-mesh`.
-- `flate2` is already used by `litematic-nbt`; prefer extending that crate's
-  reader API over adding a second decompressor to `litematic-core`.
+- Rust 2024, `blockscope-core`, `blockscope-nbt`, `blockscope-scene`, `blockscope-mesh`.
+- `flate2` is already used by `blockscope-nbt`; prefer extending that crate's
+  reader API over adding a second decompressor to `blockscope-core`.
 - No GPU, no new format support, no external service.
 
 ## Commands
 
 ```bash
 # Focused parser/scene tests
-cargo test -p litematic-core
-cargo test -p litematic-scene
-cargo test -p litematic-mesh
+cargo test -p blockscope-core
+cargo test -p blockscope-scene
+cargo test -p blockscope-mesh
 
 # Memory oracle from memory-baseline
-cargo test -p litematic-core --test memory -- --nocapture
+cargo test -p blockscope-core --test memory -- --nocapture
 
 # Output parity and performance
 cargo test -p blockscope-cli --test golden
@@ -100,7 +100,7 @@ cargo test --workspace
 
 ```text
 crates/litematic/src/            # streaming reader, compact construction
-crates/litematic-nbt/src/        # bounded streaming NBT reader (if needed)
+crates/blockscope-nbt/src/        # bounded streaming NBT reader (if needed)
 crates/scene/src/region.rs       # RegionStates
 crates/scene/src/sparse.rs       # SparseIndices
 crates/scene/src/hash.rs         # canonical packed-word hashing
@@ -151,7 +151,7 @@ dense files keep `PackedIndices` and the current fast path.
 
 ### 2. Two-pass reader
 
-Add a bounded streaming reader, preferably in `litematic-nbt`:
+Add a bounded streaming reader, preferably in `blockscope-nbt`:
 
 - Pass 1 decompresses and scans the NBT structure. It records metadata, region
   names/positions/sizes/palettes, block entity list offsets, and the byte offset

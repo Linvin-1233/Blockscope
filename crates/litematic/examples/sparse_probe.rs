@@ -6,10 +6,10 @@
 //! without retaining the decompressed document or the long array.
 //!
 //! Run with:
-//! `cargo run --release -p litematic-core --example sparse_probe -- <file> [--dense]`
+//! `cargo run --release -p blockscope-core --example sparse_probe -- <file> [--dense]`
 
+use blockscope_core::{DecodeLimits, LitematicFile, LitematicLimits};
 use flate2::read::GzDecoder;
-use litematic_core::{DecodeLimits, LitematicFile, LitematicLimits};
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::env;
 use std::fs;

@@ -2,13 +2,13 @@ use crate::capacity::Capacity;
 use crate::{
     AssetArgs, CliError, MeshOptionArgs, load_materials, parse_background, parse_texture_filter,
 };
+use blockscope_core::LitematicFile;
+use blockscope_material::{MaterialSet, MaterialSnapshot};
+use blockscope_mesh::{Mesh, MeshLimits, MeshPage};
+use blockscope_render::{LightingProfile, RenderBackend, RenderOptions, write_png};
+use blockscope_scene::{Scene, sha256};
+use blockscope_video::{Ffmpeg, VideoFormat};
 use clap::Args;
-use litematic_core::LitematicFile;
-use litematic_material::{MaterialSet, MaterialSnapshot};
-use litematic_mesh::{Mesh, MeshLimits, MeshPage};
-use litematic_render::{LightingProfile, RenderBackend, RenderOptions, write_png};
-use litematic_scene::{Scene, sha256};
-use litematic_video::{Ffmpeg, VideoFormat};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::fs::{self, File};
@@ -81,7 +81,7 @@ struct ServeContext<'a> {
     ignore_block_entity_nbt: bool,
     cache_limit: usize,
     cache_bytes: u64,
-    mesh_options: litematic_mesh::MeshBuildOptions,
+    mesh_options: blockscope_mesh::MeshBuildOptions,
     mesh_limits: MeshLimits,
     ffmpeg: Option<Ffmpeg>,
     ffmpeg_error: Option<String>,

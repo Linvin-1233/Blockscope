@@ -6,11 +6,11 @@ use crate::{
     PreparedScene, apply_render_limits, load_materials, load_scene, mesh_limits, parse_background,
     parse_texture_filter, prepare_scene, warn_forced,
 };
-use clap::Args;
-use litematic_render::{Background, LightingProfile, RenderBackend, RenderOptions};
-use litematic_video::{
+use blockscope_render::{Background, LightingProfile, RenderBackend, RenderOptions};
+use blockscope_video::{
     Animation, Easing, Encoder, Ffmpeg, Keyframe, Quality, VideoFormat, VideoSettings,
 };
+use clap::Args;
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -120,17 +120,17 @@ pub(crate) fn run(args: AnimateArgs) -> Result<(), CliError> {
         .map_err(video_error)?;
     let plan = animation.frame_plan();
     if !args.limits.force_limits {
-        if animation.duration() > litematic_video::MAX_DURATION_SECONDS {
+        if animation.duration() > blockscope_video::MAX_DURATION_SECONDS {
             return Err(CliError::input(format!(
                 "ANIMATION_INVALID: duration must be at most {} seconds; use --force-limits",
-                litematic_video::MAX_DURATION_SECONDS
+                blockscope_video::MAX_DURATION_SECONDS
             )));
         }
-        if plan.len() > litematic_video::MAX_FRAMES {
+        if plan.len() > blockscope_video::MAX_FRAMES {
             return Err(CliError::input(format!(
                 "ANIMATION_INVALID: {} frames exceed the {}-frame limit; use --force-limits",
                 plan.len(),
-                litematic_video::MAX_FRAMES
+                blockscope_video::MAX_FRAMES
             )));
         }
     }

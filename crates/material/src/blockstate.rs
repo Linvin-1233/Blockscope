@@ -1,5 +1,5 @@
 use crate::json::{BlockstateFile, Condition, Variant};
-use litematic_scene::BlockStateKey;
+use blockscope_scene::BlockStateKey;
 
 /// Select the deterministic model variants for a block state.
 ///

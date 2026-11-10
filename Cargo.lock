@@ -165,19 +165,19 @@ dependencies = [
 
 [[package]]
 name = "blockscope-cli"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "anstream",
  "anstyle",
+ "blockscope-core",
+ "blockscope-material",
+ "blockscope-mesh",
+ "blockscope-render",
+ "blockscope-scene",
+ "blockscope-video",
  "clap",
  "console",
  "indicatif",
- "litematic-core",
- "litematic-material",
- "litematic-mesh",
- "litematic-render",
- "litematic-scene",
- "litematic-video",
  "png",
  "serde",
  "serde_json",
@@ -186,15 +186,88 @@ dependencies = [
 ]
 
 [[package]]
-name = "blockscope-worker"
-version = "0.5.1"
+name = "blockscope-core"
+version = "0.5.2"
 dependencies = [
+ "blockscope-nbt",
+ "blockscope-scene",
+ "flate2",
+]
+
+[[package]]
+name = "blockscope-material"
+version = "0.5.2"
+dependencies = [
+ "blockscope-mesh",
+ "blockscope-scene",
+ "png",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "zip",
+]
+
+[[package]]
+name = "blockscope-mesh"
+version = "0.5.2"
+dependencies = [
+ "blockscope-scene",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "blockscope-nbt"
+version = "0.5.2"
+dependencies = [
+ "flate2",
+ "proptest",
+]
+
+[[package]]
+name = "blockscope-render"
+version = "0.5.2"
+dependencies = [
+ "blockscope-material",
+ "blockscope-mesh",
+ "blockscope-scene",
+ "bytemuck",
+ "png",
+ "pollster",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "wgpu",
+]
+
+[[package]]
+name = "blockscope-scene"
+version = "0.5.2"
+dependencies = [
+ "blockscope-nbt",
+ "proptest",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
+name = "blockscope-video"
+version = "0.5.2"
+dependencies = [
+ "tempfile",
+]
+
+[[package]]
+name = "blockscope-worker"
+version = "0.5.2"
+dependencies = [
+ "blockscope-core",
+ "blockscope-material",
+ "blockscope-mesh",
+ "blockscope-render",
+ "blockscope-scene",
  "futures-util",
- "litematic-core",
- "litematic-material",
- "litematic-mesh",
- "litematic-render",
- "litematic-scene",
  "png",
  "serde",
  "serde_json",
@@ -862,79 +935,6 @@ name = "litemap"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
-
-[[package]]
-name = "litematic-core"
-version = "0.5.1"
-dependencies = [
- "flate2",
- "litematic-nbt",
- "litematic-scene",
-]
-
-[[package]]
-name = "litematic-material"
-version = "0.5.1"
-dependencies = [
- "litematic-mesh",
- "litematic-scene",
- "png",
- "serde",
- "serde_json",
- "tempfile",
- "zip",
-]
-
-[[package]]
-name = "litematic-mesh"
-version = "0.5.1"
-dependencies = [
- "litematic-scene",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "litematic-nbt"
-version = "0.5.1"
-dependencies = [
- "flate2",
- "proptest",
-]
-
-[[package]]
-name = "litematic-render"
-version = "0.5.1"
-dependencies = [
- "bytemuck",
- "litematic-material",
- "litematic-mesh",
- "litematic-scene",
- "png",
- "pollster",
- "serde",
- "serde_json",
- "tempfile",
- "wgpu",
-]
-
-[[package]]
-name = "litematic-scene"
-version = "0.5.1"
-dependencies = [
- "litematic-nbt",
- "proptest",
- "serde",
- "serde_json",
- "sha2",
-]
-
-[[package]]
-name = "litematic-video"
-version = "0.5.1"
-dependencies = [
- "tempfile",
-]
 
 [[package]]
 name = "litrs"
@@ -2217,7 +2217,7 @@ checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
 
 [[package]]
 name = "xtask"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "serde_json",
  "sha2",

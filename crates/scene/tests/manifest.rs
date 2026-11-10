@@ -1,4 +1,4 @@
-use litematic_scene::{
+use blockscope_scene::{
     BlockStateKey, Manifest, PackedIndices, Region, Scene, SceneMetadata, sha256,
 };
 

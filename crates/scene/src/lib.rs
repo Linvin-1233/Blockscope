@@ -31,4 +31,4 @@ pub use scene::Scene;
 pub use statistics::BlockStatistics;
 pub use threads::{MAX_WORKERS, worker_count};
 
-pub const CRATE_NAME: &str = "litematic-scene";
+pub const CRATE_NAME: &str = "blockscope-scene";

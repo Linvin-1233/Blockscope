@@ -190,7 +190,7 @@ Fluids use a separate rule: any face shared with the same fluid is hidden, even 
 
 ## Resource Packs
 
-The `BlockCatalog` trait is implemented by both the original color catalog and the resource-pack catalog (`litematic-material`). Pack models replace the built-in shape when their blockstate/model resolves to elements; otherwise the Phase 2 shape, the model `particle` texture, or the color palette is used.
+The `BlockCatalog` trait is implemented by both the original color catalog and the resource-pack catalog (`blockscope-material`). Pack models replace the built-in shape when their blockstate/model resolves to elements; otherwise the Phase 2 shape, the model `particle` texture, or the color palette is used.
 
 Pack quads carry explicit UVs, a texture id, a tint, an optional per-quad layer, and a shade flag. Texture coordinates follow Minecraft's face convention; chest entity textures use the standard box unwrap. See `docs/textures.md` for the full asset and fallback contract.
 

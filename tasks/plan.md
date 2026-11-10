@@ -141,7 +141,7 @@ Detailed acceptance criteria and verification steps live in
 
 ### Checkpoint 1: NBT layer
 
-- [ ] `cargo test -p litematic-nbt` passes.
+- [ ] `cargo test -p blockscope-nbt` passes.
 - [ ] Truncated, oversized, and deeply nested inputs fail without panic.
 - [ ] Compression detection is covered by tests.
 

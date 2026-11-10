@@ -1,5 +1,5 @@
 [package]
-name = "litematic-scene"
+name = "blockscope-scene"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -12,7 +12,7 @@ keywords = ["minecraft", "litematic", "scene", "serialization"]
 categories = ["games", "data-structures"]
 
 [dependencies]
-litematic-nbt = { path = "../nbt", version = "0.5.1" }
+blockscope-nbt = { path = "../nbt", version = "0.5.2" }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

@@ -1,5 +1,5 @@
 use crate::RenderOptions;
-use litematic_mesh::{MeshPage, Quad};
+use blockscope_mesh::{MeshPage, Quad};
 
 /// One quad uploaded as instance data. The shader expands it into two
 /// triangles, so the CPU never builds the six expanded vertices.
@@ -75,7 +75,7 @@ pub(super) fn encode_page(
     let mut culled = 0u64;
 
     for quad in &page.quads {
-        if quad.layer == litematic_mesh::RenderLayer::Translucent {
+        if quad.layer == blockscope_mesh::RenderLayer::Translucent {
             continue;
         }
         let normal = page.quad_normal(quad);
@@ -157,7 +157,7 @@ fn page_offset(page_origin: [i32; 3], frame_origin: [i32; 3]) -> [f32; 3] {
 mod tests {
     use super::{GpuQuad, encode_page, is_backface};
     use crate::{LightingProfile, RenderOptions};
-    use litematic_mesh::{MeshPage, Quad, RenderLayer, Vertex};
+    use blockscope_mesh::{MeshPage, Quad, RenderLayer, Vertex};
 
     fn page(origin: [i32; 3], normals: &[[f32; 3]]) -> MeshPage {
         let mut float_positions = Vec::new();

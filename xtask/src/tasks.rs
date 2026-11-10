@@ -66,7 +66,7 @@ pub fn golden_update() -> Result<()> {
         .args(["test", "-p", "blockscope-cli", "--test", "golden"])
         .env("UPDATE_GOLDEN", "1"))?;
     run(cargo()
-        .args(["test", "-p", "litematic-render", "--test", "golden_png"])
+        .args(["test", "-p", "blockscope-render", "--test", "golden_png"])
         .env("UPDATE_GOLDEN", "1"))
 }
 
@@ -74,13 +74,13 @@ pub fn test_real(kind: &str, path: Option<&str>, extra: &[String]) -> Result<()>
     let (env_var, tests): (&str, &[(&str, &str)]) = match kind {
         "litematic" => (
             "LITEMATIC_FIXTURES_DIR",
-            &[("litematic-core", "real_files")],
+            &[("blockscope-core", "real_files")],
         ),
         "jar" => (
             "MINECRAFT_CLIENT_JAR",
             &[
-                ("litematic-material", "real_jar"),
-                ("litematic-render", "real_materials"),
+                ("blockscope-material", "real_jar"),
+                ("blockscope-render", "real_materials"),
             ],
         ),
         other => return Err(Error::message(format!("Unknown real test type: {other}"))),

@@ -2,7 +2,9 @@ use super::RenderStatistics;
 use super::geometry::{bounds, dot3};
 use crate::camera::Camera;
 use crate::{LightingProfile, RenderOptions, RenderPrecision};
-use litematic_mesh::{Mesh, MeshPage, NO_TEXTURE, RenderLayer, ambient_occlusion_level, decode_uv};
+use blockscope_mesh::{
+    Mesh, MeshPage, NO_TEXTURE, RenderLayer, ambient_occlusion_level, decode_uv,
+};
 
 pub(super) fn project_mesh_pages(
     mesh: &Mesh,

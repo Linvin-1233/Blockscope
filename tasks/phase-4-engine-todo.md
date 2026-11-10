@@ -14,7 +14,7 @@ the block states used by a scene.
 - [x] `MaterialSet::snapshot` resolves every distinct non-air state once.
 - [x] `MaterialSnapshot::resolve` performs no writes and needs no lock.
 - [x] Snapshot results match `MaterialSet::resolve` for every fixture state.
-- [x] `cargo test -p litematic-material` passes.
+- [x] `cargo test -p blockscope-material` passes.
 
 **Verification:**
 
@@ -34,12 +34,12 @@ the block states used by a scene.
 
 - [x] `MaterialSnapshot` implements `BlockCatalog`.
 - [x] `build_mesh` produces identical quads for snapshot and live set.
-- [x] No change to `litematic-mesh` public signatures.
+- [x] No change to `blockscope-mesh` public signatures.
 - [x] Mesh tests and golden manifests pass.
 
 **Verification:**
 
-- [x] `cargo test -p litematic-mesh -p litematic-core`
+- [x] `cargo test -p blockscope-mesh -p blockscope-core`
 - [x] Snapshot and live catalogs build an identical `Mesh` for the same scene.
 
 **Dependencies:** M1
@@ -61,7 +61,7 @@ render from it.
 **Verification:**
 
 - [x] `cargo test -p blockscope-cli`
-- [x] `cargo test -p litematic-render --test golden_png --test golden_textures`
+- [x] `cargo test -p blockscope-render --test golden_png --test golden_textures`
 - [x] `git diff --stat fixtures/golden` is empty after the run.
 - [x] Real fixture render is byte-identical before and after (SHA256 match).
 

@@ -1,7 +1,8 @@
 # crates.io publishing
 
-Status: implementation complete on `chore/crates-io-publish`; waiting for merge,
-the first tag, and the crates.io token.
+Status: `0.5.1` is published under the old `litematic-*` library names.
+`0.5.2` renames those crates to `blockscope-*` and is waiting for merge, a tag,
+and the first publish under the new namespace.
 
 ## Design
 
@@ -15,6 +16,8 @@ the first tag, and the crates.io token.
   re-run safely after a partial failure.
 - Keep every internal path dependency pinned to the workspace version, and make
   `just bump` update those pins.
+- Publish the `blockscope-*` names from `0.5.2`; yank the old `litematic-*`
+  `0.5.1` versions after the new publish succeeds.
 
 ## Checklist
 
@@ -25,10 +28,12 @@ the first tag, and the crates.io token.
 - [x] Add `.github/scripts/publish-crates.sh`.
 - [x] Update `just bump` to keep path dependency versions in lockstep.
 - [x] Document the bootstrap, rate limit, and trusted publishing migration.
-- [x] Add the crates.io note under `[Unreleased]` in both changelogs.
-- [ ] Add `CARGO_REGISTRY_TOKEN` to the `crates-io` GitHub environment.
-- [ ] Merge this branch to `main`.
-- [ ] Cut a new patch tag; `v0.5.0` predates the publish metadata.
-- [ ] Confirm all eight crates appear on crates.io.
+- [x] Publish `0.5.1` to crates.io under the `litematic-*` names.
+- [x] Add `CARGO_REGISTRY_TOKEN` to the repository secrets.
+- [x] Rename the library crates to `blockscope-*` for `0.5.2`.
+- [ ] Merge the rename branch to `main`.
+- [ ] Cut and push the `v0.5.2` tag.
+- [ ] Confirm all eight `blockscope-*` crates appear on crates.io.
+- [ ] Yank the `litematic-*` `0.5.1` versions.
 - [ ] Configure trusted publishing for each crate and remove the long-lived
   token.

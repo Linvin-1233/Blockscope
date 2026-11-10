@@ -1,13 +1,13 @@
-﻿mod support;
+mod support;
 
-use litematic_mesh::{
+use blockscope_mesh::{
     ColorBlockCatalog, ColorSnapshot, MeshBuildOptions, MeshLimits,
     build_mesh_parallel_with_options_and_progress, build_mesh_streaming_with_options_and_progress,
 };
 use std::sync::atomic::{AtomicU64, Ordering};
 use support::{region as make_region, scene as make_scene};
 
-fn page_scene() -> litematic_scene::Scene {
+fn page_scene() -> blockscope_scene::Scene {
     let values = vec![1u32; 16 * 16];
     let region = make_region(
         "main",
@@ -19,7 +19,7 @@ fn page_scene() -> litematic_scene::Scene {
     make_scene(vec![region])
 }
 
-fn snapshot(scene: &litematic_scene::Scene) -> (ColorBlockCatalog, ColorSnapshot) {
+fn snapshot(scene: &blockscope_scene::Scene) -> (ColorBlockCatalog, ColorSnapshot) {
     let catalog = ColorBlockCatalog::default();
     let states = scene
         .regions

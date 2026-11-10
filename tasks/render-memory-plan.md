@@ -50,7 +50,7 @@ Default `render` without a flag now takes the streamed path. The
 
 ## Verification
 
-- `cargo test -p litematic-render` (unit, golden PNG, golden textures, render)
+- `cargo test -p blockscope-render` (unit, golden PNG, golden textures, render)
 - `cargo test -p blockscope-cli --test cli` (streamed vs full, default auto vs
   full)
 - `cargo fmt --all --check`

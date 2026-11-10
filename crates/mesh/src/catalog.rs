@@ -2,7 +2,7 @@ use crate::color::{RenderLayer, Rgba, redstone_color};
 use crate::model::{BlockModel, empty_model, full_cube_model};
 use crate::shape;
 use crate::util::strip_namespace;
-use litematic_scene::BlockStateKey;
+use blockscope_scene::BlockStateKey;
 use serde::Deserialize;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};

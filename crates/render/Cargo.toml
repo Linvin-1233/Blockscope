@@ -1,5 +1,5 @@
 [package]
-name = "litematic-render"
+name = "blockscope-render"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -19,9 +19,9 @@ gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck"]
 
 [dependencies]
 bytemuck = { workspace = true, optional = true }
-litematic-material = { path = "../material", version = "0.5.1" }
-litematic-mesh = { path = "../mesh", version = "0.5.1" }
-litematic-scene = { path = "../scene", version = "0.5.1" }
+blockscope-material = { path = "../material", version = "0.5.2" }
+blockscope-mesh = { path = "../mesh", version = "0.5.2" }
+blockscope-scene = { path = "../scene", version = "0.5.2" }
 png.workspace = true
 pollster = { workspace = true, optional = true }
 serde.workspace = true

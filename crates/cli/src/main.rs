@@ -1,8 +1,8 @@
+use blockscope_core::LitematicError;
+use blockscope_mesh::{MeshBuildOptions, MeshError};
+use blockscope_render::RenderError;
+use blockscope_scene::{Manifest, SceneError, sha256};
 use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand};
-use litematic_core::LitematicError;
-use litematic_mesh::{MeshBuildOptions, MeshError};
-use litematic_render::RenderError;
-use litematic_scene::{Manifest, SceneError, sha256};
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -427,8 +427,8 @@ impl From<RenderError> for CliError {
     }
 }
 
-impl From<litematic_material::MaterialError> for CliError {
-    fn from(error: litematic_material::MaterialError) -> Self {
+impl From<blockscope_material::MaterialError> for CliError {
+    fn from(error: blockscope_material::MaterialError) -> Self {
         Self::input(error.to_string())
     }
 }
@@ -442,9 +442,9 @@ impl From<SceneError> for CliError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use litematic_mesh::MeshLimits;
-    use litematic_render::RenderOptions;
-    use litematic_scene::{BlockStateKey, PackedIndices, Region, Scene, SceneMetadata};
+    use blockscope_mesh::MeshLimits;
+    use blockscope_render::RenderOptions;
+    use blockscope_scene::{BlockStateKey, PackedIndices, Region, Scene, SceneMetadata};
 
     fn one_block_scene() -> Scene {
         let states = PackedIndices::from_values(2, &[0]).unwrap();

@@ -1,9 +1,9 @@
 mod support;
 
-use litematic_mesh::{ColorBlockCatalog, MeshLimits, build_mesh, write_obj, write_ply};
+use blockscope_mesh::{ColorBlockCatalog, MeshLimits, build_mesh, write_obj, write_ply};
 use support::{region as make_region, scene as make_scene};
 
-fn mesh(scene: &litematic_scene::Scene) -> litematic_mesh::Mesh {
+fn mesh(scene: &blockscope_scene::Scene) -> blockscope_mesh::Mesh {
     build_mesh(scene, &ColorBlockCatalog::default(), &MeshLimits::default()).unwrap()
 }
 

@@ -1,6 +1,6 @@
 use crate::util::strip_namespace;
-use litematic_mesh::{Rgba, redstone_color};
-use litematic_scene::BlockStateKey;
+use blockscope_mesh::{Rgba, redstone_color};
+use blockscope_scene::BlockStateKey;
 
 const GRASS: Rgba = Rgba::rgb(0x91, 0xBD, 0x59);
 const FOLIAGE: Rgba = Rgba::rgb(0x77, 0xAB, 0x2F);

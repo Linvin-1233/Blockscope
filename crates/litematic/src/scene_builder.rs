@@ -1,6 +1,6 @@
 use crate::container::LitematicFile;
 use crate::error::{LitematicError, LitematicErrorCode};
-use litematic_scene::{
+use blockscope_scene::{
     Diagnostic, DiagnosticCode, DiagnosticSeverity, Region, Scene, SceneError, SceneErrorCode,
     SceneMetadata,
 };

@@ -3,8 +3,8 @@ use crate::json::{Element, ElementRotation, Face, ModelFile, TextureRef};
 use crate::source::AssetSource;
 use crate::texture::TextureSet;
 use crate::tint::tint_for;
-use litematic_mesh::{BlockModel, FaceDirection, ModelQuad, NO_TEXTURE, RenderLayer, face_uv};
-use litematic_scene::BlockStateKey;
+use blockscope_mesh::{BlockModel, FaceDirection, ModelQuad, NO_TEXTURE, RenderLayer, face_uv};
+use blockscope_scene::BlockStateKey;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
@@ -310,7 +310,7 @@ pub(crate) fn box_quads(
             cullface: None,
             uv,
             texture,
-            tint: litematic_mesh::Rgba::WHITE,
+            tint: blockscope_mesh::Rgba::WHITE,
             layer: None,
             shade: true,
         });

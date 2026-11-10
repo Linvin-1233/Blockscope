@@ -19,7 +19,7 @@ path = "src/main.rs"
 default = []
 # Opt-in offscreen wgpu rasterizer (`--backend gpu`). Binaries built with this
 # feature still default to the CPU backend.
-gpu = ["litematic-render/gpu"]
+gpu = ["blockscope-render/gpu"]
 
 [dependencies]
 anstream.workspace = true
@@ -27,12 +27,12 @@ anstyle.workspace = true
 clap.workspace = true
 console.workspace = true
 indicatif.workspace = true
-litematic-core = { path = "../litematic", version = "0.5.1" }
-litematic-material = { path = "../material", version = "0.5.1" }
-litematic-mesh = { path = "../mesh", version = "0.5.1" }
-litematic-render = { path = "../render", version = "0.5.1" }
-litematic-scene = { path = "../scene", version = "0.5.1" }
-litematic-video = { path = "../video", version = "0.5.1" }
+blockscope-core = { path = "../litematic", version = "0.5.2" }
+blockscope-material = { path = "../material", version = "0.5.2" }
+blockscope-mesh = { path = "../mesh", version = "0.5.2" }
+blockscope-render = { path = "../render", version = "0.5.2" }
+blockscope-scene = { path = "../scene", version = "0.5.2" }
+blockscope-video = { path = "../video", version = "0.5.2" }
 serde_json.workspace = true
 serde.workspace = true
 

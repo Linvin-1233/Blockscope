@@ -39,4 +39,4 @@ pub use model::{
 };
 pub use view::{ResolvedBlockRef, SceneBlockView};
 
-pub const CRATE_NAME: &str = "litematic-mesh";
+pub const CRATE_NAME: &str = "blockscope-mesh";

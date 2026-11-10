@@ -1,10 +1,10 @@
 mod support;
 
-use litematic_core::{
+use blockscope_core::{
     LitematicError, LitematicErrorCode, LitematicFile, LitematicLimits, RegionData,
 };
-use litematic_nbt::{DecodeLimits, NbtValue};
-use litematic_scene::DiagnosticCode;
+use blockscope_nbt::{DecodeLimits, NbtValue};
+use blockscope_scene::DiagnosticCode;
 use support::*;
 
 fn parse_region(

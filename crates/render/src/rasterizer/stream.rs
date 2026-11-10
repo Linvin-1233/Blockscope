@@ -8,9 +8,9 @@ use super::spill::{
 };
 use super::tile::{TileBuffer, TileCounters};
 use crate::{Background, Camera, RenderError, RenderOptions, RenderOutput, RenderPrecision};
-use litematic_material::TextureSet;
-use litematic_mesh::{MeshPage, NO_TEXTURE, RenderLayer};
-use litematic_scene::Scene;
+use blockscope_material::TextureSet;
+use blockscope_mesh::{MeshPage, NO_TEXTURE, RenderLayer};
+use blockscope_scene::Scene;
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};

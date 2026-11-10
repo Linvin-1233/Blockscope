@@ -1,4 +1,4 @@
-use litematic_core::{DecodeLimits, LitematicFile, LitematicLimits};
+use blockscope_core::{DecodeLimits, LitematicFile, LitematicLimits};
 use std::ffi::OsStr;
 use std::fs;
 use std::path::PathBuf;

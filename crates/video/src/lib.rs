@@ -18,4 +18,4 @@ pub use timeline::{Animation, Easing, FramePlan, Keyframe};
 pub const MAX_FRAMES: u32 = 1800;
 pub const MAX_DURATION_SECONDS: f64 = 60.0;
 
-pub const CRATE_NAME: &str = "litematic-video";
+pub const CRATE_NAME: &str = "blockscope-video";

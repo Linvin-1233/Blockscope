@@ -1,8 +1,8 @@
 mod support;
 
-use litematic_core::{LitematicFile, LitematicLimits};
-use litematic_nbt::DecodeLimits;
-use litematic_scene::DiagnosticCode;
+use blockscope_core::{LitematicFile, LitematicLimits};
+use blockscope_nbt::DecodeLimits;
+use blockscope_scene::DiagnosticCode;
 use support::*;
 
 fn metadata(enclosing_size: [i32; 3], total_blocks: i64) -> Vec<u8> {
@@ -20,7 +20,7 @@ fn metadata(enclosing_size: [i32; 3], total_blocks: i64) -> Vec<u8> {
     children
 }
 
-fn parse(bytes: &[u8]) -> litematic_scene::Scene {
+fn parse(bytes: &[u8]) -> blockscope_scene::Scene {
     LitematicFile::parse_bytes(bytes, &DecodeLimits::default(), &LitematicLimits::default())
         .unwrap()
         .into_scene()
@@ -61,7 +61,7 @@ fn builds_scene_statistics_and_bounds() {
         scene
             .statistics
             .blocks
-            .get(&litematic_scene::BlockStateKey::simple("minecraft:stone")),
+            .get(&blockscope_scene::BlockStateKey::simple("minecraft:stone")),
         Some(&1)
     );
     assert!(

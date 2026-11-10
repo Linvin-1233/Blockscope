@@ -1,4 +1,4 @@
-use litematic_video::{
+use blockscope_video::{
     Encoder, Ffmpeg, Quality, VideoEncoder, VideoErrorCode, VideoFormat, VideoSettings,
 };
 use std::path::{Path, PathBuf};

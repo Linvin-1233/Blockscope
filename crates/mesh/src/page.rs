@@ -11,7 +11,7 @@ use crate::encode_uv;
 use crate::model::FaceDirection;
 use crate::shape::{self, FluidState};
 use crate::view::{SceneBlockView, region_palette_id};
-use litematic_scene::{BlockStateKey, Scene};
+use blockscope_scene::{BlockStateKey, Scene};
 use std::collections::HashMap;
 
 const PAGE: usize = 16;

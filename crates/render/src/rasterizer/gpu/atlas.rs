@@ -1,5 +1,5 @@
 use crate::RenderError;
-use litematic_material::{TextureFilter, TextureSet};
+use blockscope_material::{TextureFilter, TextureSet};
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock, Weak};
 use wgpu::util::DeviceExt;

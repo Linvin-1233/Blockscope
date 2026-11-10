@@ -19,7 +19,7 @@ clippy:
 
 # Compile and lint the optional GPU feature on every supported platform
 check-gpu:
-    cargo clippy --workspace --all-targets --features litematic-render/gpu,blockscope-cli/gpu -- -D warnings
+    cargo clippy --workspace --all-targets --features blockscope-render/gpu,blockscope-cli/gpu -- -D warnings
 
 # Check the Worker crate for the wasm runtime target
 check-wasm:
@@ -94,7 +94,7 @@ bench *args:
 
 # Run the render tile benchmark example
 bench-tile *args:
-    cargo run --release -p litematic-render --example tile_bench {{ args }}
+    cargo run --release -p blockscope-render --example tile_bench {{ args }}
 
 # Regenerate golden test manifests and reference PNGs
 golden-update:

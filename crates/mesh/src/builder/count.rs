@@ -3,7 +3,7 @@ use crate::catalog::BlockCatalog;
 use crate::page::PaletteTables;
 use crate::view::SceneBlockView;
 use crate::{MeshBuildOptions, MeshError, MeshLimits};
-use litematic_scene::Scene;
+use blockscope_scene::Scene;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::thread;
 /// Count the quads a mesh would contain without allocating geometry.

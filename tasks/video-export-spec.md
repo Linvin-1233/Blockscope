@@ -100,7 +100,7 @@ Resolved by the user:
 # Build and focused tests
 cargo build --workspace
 cargo build -p blockscope-cli --features gpu
-cargo test -p litematic-video
+cargo test -p blockscope-video
 cargo test -p blockscope-cli --test cli_animate
 cargo test -p blockscope-cli --test serve_video
 
@@ -127,7 +127,7 @@ Hardware checks are manual on machines with the relevant adapter; CI skips them.
 ## Project Structure
 
 ```text
-crates/video/                         # new `litematic-video` crate
+crates/video/                         # new `blockscope-video` crate
   src/lib.rs                          # Keyframe, Animation, FramePlan, Easing
   src/error.rs                        # VideoError and stable codes
   src/ffmpeg.rs                       # discovery, version, encoder list/probe
@@ -151,7 +151,7 @@ CHANGELOG.md, CHANGELOG.en.md
 tasks/todo.md
 ```
 
-`litematic-video` must not depend on `litematic-render` or the scene/mesh
+`blockscope-video` must not depend on `blockscope-render` or the scene/mesh
 crates. It accepts raw frames as `{width, height, rgba: &[u8]}` so it can be
 unit-tested without a renderer and reused by the service.
 
@@ -353,7 +353,7 @@ Request additions:
 
 ## Testing Strategy
 
-Unit tests in `litematic-video`:
+Unit tests in `blockscope-video`:
 
 - keyframe validation: duplicate times, decreasing times, out-of-range
   elevation, duration shorter than the last keyframe, keyframe count limits;
@@ -428,7 +428,7 @@ Always:
 
 Ask first:
 
-- adding the `litematic-video` workspace crate and its production dependencies;
+- adding the `blockscope-video` workspace crate and its production dependencies;
 - bumping the engine protocol from v3 to v4;
 - changing the default image to include ffmpeg, or adding a video-specific image;
 - enabling hardware encoding by default (`--encoder auto` becomes the default);

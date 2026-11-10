@@ -19,4 +19,4 @@ pub use error::{MaterialError, MaterialErrorCode};
 pub use source::{AssetSource, asset_path};
 pub use texture::{Texture, TextureFilter, TextureSet};
 
-pub const CRATE_NAME: &str = "litematic-material";
+pub const CRATE_NAME: &str = "blockscope-material";

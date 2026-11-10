@@ -1,9 +1,9 @@
-use litematic_material::{AssetSource, MaterialSet};
-use litematic_mesh::{MeshLimits, build_mesh};
-use litematic_render::{
+use blockscope_material::{AssetSource, MaterialSet};
+use blockscope_mesh::{MeshLimits, build_mesh};
+use blockscope_render::{
     Background, LightingProfile, RenderOptions, render_mesh_with_textures, write_png,
 };
-use litematic_scene::{BlockStateKey, PackedIndices, Region, Scene, SceneMetadata};
+use blockscope_scene::{BlockStateKey, PackedIndices, Region, Scene, SceneMetadata};
 use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::BufWriter;

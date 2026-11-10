@@ -1,6 +1,6 @@
-use litematic_material::{AssetSource, MaterialSet, MaterialSnapshot};
-use litematic_mesh::{BlockCatalog, MeshLimits, NO_TEXTURE, RenderLayer, build_mesh};
-use litematic_scene::{BlockStateKey, PackedIndices, Region, Scene, SceneMetadata};
+use blockscope_material::{AssetSource, MaterialSet, MaterialSnapshot};
+use blockscope_mesh::{BlockCatalog, MeshLimits, NO_TEXTURE, RenderLayer, build_mesh};
+use blockscope_scene::{BlockStateKey, PackedIndices, Region, Scene, SceneMetadata};
 use std::fs::{self, File};
 use std::io::BufWriter;
 use std::path::Path;

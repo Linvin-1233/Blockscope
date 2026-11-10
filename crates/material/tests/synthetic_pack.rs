@@ -1,6 +1,6 @@
-use litematic_material::{AssetSource, MaterialKind, MaterialSet, TextureFilter};
-use litematic_mesh::{BlockCatalog, FaceDirection, NO_TEXTURE};
-use litematic_scene::BlockStateKey;
+use blockscope_material::{AssetSource, MaterialKind, MaterialSet, TextureFilter};
+use blockscope_mesh::{BlockCatalog, FaceDirection, NO_TEXTURE};
+use blockscope_scene::BlockStateKey;
 use std::fs::{self, File};
 use std::io::BufWriter;
 use std::path::Path;
@@ -194,7 +194,10 @@ fn chest_state(kind: &str) -> BlockStateKey {
     state
 }
 
-fn lid_quad(model: &litematic_mesh::BlockModel, face: FaceDirection) -> &litematic_mesh::ModelQuad {
+fn lid_quad(
+    model: &blockscope_mesh::BlockModel,
+    face: FaceDirection,
+) -> &blockscope_mesh::ModelQuad {
     model
         .quads
         .iter()
@@ -206,7 +209,7 @@ fn lid_quad(model: &litematic_mesh::BlockModel, face: FaceDirection) -> &litemat
         .unwrap()
 }
 
-fn uv_at_x(quad: &litematic_mesh::ModelQuad, x: f32) -> [f32; 2] {
+fn uv_at_x(quad: &blockscope_mesh::ModelQuad, x: f32) -> [f32; 2] {
     quad.vertices
         .iter()
         .zip(quad.uv.iter())
@@ -215,7 +218,7 @@ fn uv_at_x(quad: &litematic_mesh::ModelQuad, x: f32) -> [f32; 2] {
         .unwrap()
 }
 
-fn uv_at_z(quad: &litematic_mesh::ModelQuad, z: f32) -> [f32; 2] {
+fn uv_at_z(quad: &blockscope_mesh::ModelQuad, z: f32) -> [f32; 2] {
     quad.vertices
         .iter()
         .zip(quad.uv.iter())

@@ -3,8 +3,8 @@ use super::{
     RenderRequest, ServeContext, load_scene_for_request,
 };
 use crate::video::{VideoRender, render_video, video_error};
-use litematic_render::{Background, LightingProfile, RenderBackend, RenderOptions};
-use litematic_video::{
+use blockscope_render::{Background, LightingProfile, RenderBackend, RenderOptions};
+use blockscope_video::{
     Animation, Easing, Encoder, Keyframe, MAX_DURATION_SECONDS, MAX_FRAMES, Quality, VideoFormat,
     VideoSettings,
 };

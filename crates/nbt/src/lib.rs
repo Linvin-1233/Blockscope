@@ -10,4 +10,4 @@ pub use error::{NbtError, NbtErrorCode};
 pub use limits::DecodeLimits;
 pub use value::{NbtCompound, NbtList, NbtRoot, NbtTagType, NbtValue};
 
-pub const CRATE_NAME: &str = "litematic-nbt";
+pub const CRATE_NAME: &str = "blockscope-nbt";

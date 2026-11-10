@@ -1,4 +1,4 @@
-use litematic_nbt::{DecodeLimits, decode};
+use blockscope_nbt::{DecodeLimits, decode};
 use proptest::prelude::*;
 
 proptest! {

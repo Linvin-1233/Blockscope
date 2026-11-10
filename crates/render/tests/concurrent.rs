@@ -1,9 +1,9 @@
 mod support;
 
-use litematic_material::{AssetSource, MaterialSet, MaterialSnapshot};
-use litematic_mesh::{Mesh, MeshLimits, build_mesh};
-use litematic_render::{RenderOptions, render_mesh_with_textures, write_png};
-use litematic_scene::Scene;
+use blockscope_material::{AssetSource, MaterialSet, MaterialSnapshot};
+use blockscope_mesh::{Mesh, MeshLimits, build_mesh};
+use blockscope_render::{RenderOptions, render_mesh_with_textures, write_png};
+use blockscope_scene::Scene;
 use std::sync::Arc;
 use support::{pack, region, scene};
 

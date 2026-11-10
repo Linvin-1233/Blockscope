@@ -1,7 +1,7 @@
 mod support;
 
-use litematic_core::{DecodeLimits, LitematicFile, LitematicLimits};
-use litematic_scene::{Manifest, sha256};
+use blockscope_core::{DecodeLimits, LitematicFile, LitematicLimits};
+use blockscope_scene::{Manifest, sha256};
 use std::fs;
 use std::path::PathBuf;
 use support::*;

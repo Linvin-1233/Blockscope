@@ -162,7 +162,7 @@ mod tests {
     fn default_limit_matches_the_parser() {
         assert_eq!(
             DEFAULT_INPUT_LIMIT,
-            litematic_core::DecodeLimits::default().max_input_bytes
+            blockscope_core::DecodeLimits::default().max_input_bytes
         );
     }
 

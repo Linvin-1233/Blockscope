@@ -1,9 +1,9 @@
-use litematic_render::terminal::{
+use blockscope_render::terminal::{
     TerminalOptions, TerminalProtocol, detect_terminal_protocol, detect_terminal_size,
     enable_windows_virtual_terminal, encode_halfblocks, encode_iterm2, encode_kitty,
     encode_kitty_png, encode_sixel, encode_terminal, render_to_terminal,
 };
-use litematic_render::{RenderOutput, RenderStatistics};
+use blockscope_render::{RenderOutput, RenderStatistics};
 
 fn test_image(width: u32, height: u32) -> RenderOutput {
     let mut rgba = Vec::with_capacity((width * height * 4) as usize);

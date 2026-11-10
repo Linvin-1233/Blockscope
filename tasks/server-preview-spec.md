@@ -360,8 +360,8 @@ results are in `docs/performance-preview.md`.
 
 ## Tech Stack
 
-- Rust 2024, existing workspace crates: `litematic-core`, `litematic-scene`,
-  `litematic-mesh`, `litematic-render`, `litematic-video`, `blockscope-cli`.
+- Rust 2024, existing workspace crates: `blockscope-core`, `blockscope-scene`,
+  `blockscope-mesh`, `blockscope-render`, `blockscope-video`, `blockscope-cli`.
 - `serde` / `serde_json` for the request and preset contracts; already present.
 - No new runtime dependency. No `winit`, `egui`, HTTP server, WebSocket, or
   async runtime.

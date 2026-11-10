@@ -4,7 +4,7 @@
 //! test binary and runs sequentially. Fixtures are compressed before the
 //! measured window; the numbers below are peaks above the live baseline.
 
-use litematic_core::{DecodeLimits, LitematicFile, LitematicLimits};
+use blockscope_core::{DecodeLimits, LitematicFile, LitematicLimits};
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
 

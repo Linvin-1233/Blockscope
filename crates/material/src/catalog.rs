@@ -6,11 +6,11 @@ use crate::texture::TextureSet;
 use crate::tint::tint_for;
 use crate::util::strip_namespace;
 use crate::{MaterialError, MaterialErrorCode};
-use litematic_mesh::{
+use blockscope_mesh::{
     BlockCatalog, BlockModel, ColorBlockCatalog, FaceDirection, NO_TEXTURE, RenderLayer,
     ResolvedBlock, Rgba, needs_water_style,
 };
-use litematic_scene::{BlockStateKey, Scene};
+use blockscope_scene::{BlockStateKey, Scene};
 use serde::Serialize;
 use std::cell::RefCell;
 use std::collections::HashMap;

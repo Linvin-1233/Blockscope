@@ -2,8 +2,8 @@ use crate::model::{box_quads, rotate_block, rotate_normal};
 use crate::source::AssetSource;
 use crate::texture::TextureSet;
 use crate::util::strip_namespace;
-use litematic_mesh::{BlockModel, ModelQuad};
-use litematic_scene::BlockStateKey;
+use blockscope_mesh::{BlockModel, ModelQuad};
+use blockscope_scene::BlockStateKey;
 
 /// Build the closed chest body/lid/lock model from entity textures.
 pub fn build_chest_model(

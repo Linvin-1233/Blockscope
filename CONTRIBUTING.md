@@ -115,12 +115,12 @@ cargo test --workspace
 只跑某个 crate：
 
 ```bash
-cargo test -p litematic-nbt
-cargo test -p litematic-scene
-cargo test -p litematic-core
-cargo test -p litematic-material
-cargo test -p litematic-mesh
-cargo test -p litematic-render
+cargo test -p blockscope-nbt
+cargo test -p blockscope-scene
+cargo test -p blockscope-core
+cargo test -p blockscope-material
+cargo test -p blockscope-mesh
+cargo test -p blockscope-render
 cargo test -p blockscope-cli
 ```
 
@@ -134,15 +134,15 @@ cargo test -p blockscope-cli
 ```bash
 # 解析真实 .litematic
 LITEMATIC_FIXTURES_DIR=/path/to/fixtures \
-  cargo test -p litematic-core --test real_files -- --ignored
+  cargo test -p blockscope-core --test real_files -- --ignored
 
 # 真实 Minecraft 客户端 jar
 MINECRAFT_CLIENT_JAR=/path/to/client.jar \
-  cargo test -p litematic-material --test real_jar -- --ignored
+  cargo test -p blockscope-material --test real_jar -- --ignored
 
 # 真实材质渲染
 MINECRAFT_CLIENT_JAR=/path/to/client.jar \
-  cargo test -p litematic-render --test real_materials -- --ignored
+  cargo test -p blockscope-render --test real_materials -- --ignored
 ```
 
 Windows 上环境变量语法不同，可以直接传入路径（`just test-real-litematic D:\path\to\fixtures`）：
@@ -163,7 +163,7 @@ cargo xtask test-real jar --path /path/to/client.jar
 ```bash
 # Linux/macOS
 UPDATE_GOLDEN=1 cargo test -p blockscope-cli --test golden
-UPDATE_GOLDEN=1 cargo test -p litematic-render --test golden_png
+UPDATE_GOLDEN=1 cargo test -p blockscope-render --test golden_png
 
 # 或使用 xtask（所有平台）
 cargo xtask golden-update

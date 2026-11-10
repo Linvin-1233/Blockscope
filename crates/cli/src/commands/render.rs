@@ -5,14 +5,14 @@ use crate::{
     PreparedScene, STREAM_RENDER_QUADS, StreamTarget, apply_render_limits, load_materials,
     load_scene, mesh_limits, parse_background, parse_texture_filter, stream_target, warn_forced,
 };
-use clap::Args;
-use litematic_mesh::MeshPage;
-use litematic_render::terminal::enable_windows_virtual_terminal;
-use litematic_render::{
+use blockscope_mesh::MeshPage;
+use blockscope_render::terminal::enable_windows_virtual_terminal;
+use blockscope_render::{
     Background, LightingProfile, RenderBackend, RenderOptions, RenderOutput, RenderPrecision,
     RenderStatistics, StreamingRenderer, TerminalOptions, TerminalProtocol, detect_terminal_pixels,
     detect_terminal_protocol, detect_terminal_size, encode_terminal, fit_terminal_cells, write_png,
 };
+use clap::Args;
 use std::env;
 use std::fs::File;
 use std::io::{BufWriter, IsTerminal, Write};
@@ -316,7 +316,7 @@ pub(crate) fn run(args: RenderArgs) -> Result<(), CliError> {
     if let Some(mesh) = &mesh {
         let single_tile_progress = view_count == 1
             && view_options[0].backend == RenderBackend::Cpu
-            && !litematic_render::will_stream(mesh, &view_options[0]);
+            && !blockscope_render::will_stream(mesh, &view_options[0]);
         let tile_bar = single_tile_progress.then(|| progress.bar("Rendering"));
         let tile_update = |done, total| {
             if let Some(bar) = &tile_bar {

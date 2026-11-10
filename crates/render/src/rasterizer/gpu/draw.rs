@@ -5,7 +5,7 @@ use super::backend;
 use super::targets::WboitTargets;
 use super::translucent::TranslucentParts;
 use super::vertex::{self, GpuVertex, Viewport};
-use litematic_material::TextureFilter;
+use blockscope_material::TextureFilter;
 
 /// Draw one translucent store's contents. Retained memory parts are already
 /// sorted far-to-near; spilled sub-batches are sorted as they are read.

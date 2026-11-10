@@ -1,5 +1,5 @@
 use crate::{RenderError, RenderOptions};
-use litematic_scene::Bounds;
+use blockscope_scene::Bounds;
 
 /// Orthographic camera derived from scene bounds and a yaw/elevation preset.
 #[derive(Debug, Clone)]

@@ -1,4 +1,4 @@
-﻿# Phase 3C Task List 鈥?Resource-Pack Materials
+# Phase 3C Task List 鈥?Resource-Pack Materials
 
 **Status:** Implementation and checks complete; human review pending.  
 **Plan:** `tasks/phase-3c-textures-plan.md`  
@@ -6,7 +6,7 @@
 
 ## Task M1: Asset sources and JSON structs
 
-**Description:** Add the `litematic-material` crate and read assets from a client
+**Description:** Add the `blockscope-material` crate and read assets from a client
 jar, an extracted directory, or a resource-pack overlay.
 
 **Acceptance criteria:**
@@ -17,7 +17,7 @@ jar, an extracted directory, or a resource-pack overlay.
 - [x] Zip entries are read without extracting the whole jar.
 - [x] JSON structs cover variants, multipart, models, elements, and faces.
 - [x] Stable error codes for unreadable assets and invalid JSON.
-- [x] `cargo test -p litematic-material` passes.
+- [x] `cargo test -p blockscope-material` passes.
 
 **Verification:**
 
@@ -163,9 +163,9 @@ chests with body/lid/lock and entity textures.
 
 **Verification:**
 
-- [x] `cargo test -p litematic-material`
-- [x] `cargo test -p litematic-render`
-- [x] `$env:MINECRAFT_CLIENT_JAR=...; cargo test -p litematic-material --test real_jar -- --ignored --nocapture`
+- [x] `cargo test -p blockscope-material`
+- [x] `cargo test -p blockscope-render`
+- [x] `$env:MINECRAFT_CLIENT_JAR=...; cargo test -p blockscope-material --test real_jar -- --ignored --nocapture`
 - [x] Render the local fixture and inspect the PNG.
 
 **Dependencies:** M6  
@@ -224,8 +224,8 @@ orientation.
 
 **Verification:**
 
-- [x] `cargo test -p litematic-material`
-- [x] `cargo test -p litematic-render --test golden_textures`
+- [x] `cargo test -p blockscope-material`
+- [x] `cargo test -p blockscope-render --test golden_textures`
 - [x] `powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/check.ps1`
 
 ## Follow-up: Chest lock and piston face UVs (2026-10-24)
@@ -240,6 +240,6 @@ used by piston models.
 
 **Verification:**
 
-- [x] `cargo test -p litematic-material`
-- [x] `cargo test -p litematic-render --test golden_textures`
+- [x] `cargo test -p blockscope-material`
+- [x] `cargo test -p blockscope-render --test golden_textures`
 - [x] `powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/check.ps1`

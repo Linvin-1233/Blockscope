@@ -1,4 +1,4 @@
-use litematic_nbt::NbtError;
+use blockscope_nbt::NbtError;
 use std::fmt;
 
 /// Stable error codes for litematic parsing failures.

@@ -1,4 +1,4 @@
-use litematic_nbt::NbtCompound;
+use blockscope_nbt::NbtCompound;
 
 /// A block entity stored in region-local coordinates.
 #[derive(Debug, Clone, PartialEq)]

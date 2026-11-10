@@ -1,7 +1,7 @@
 use crate::container::{RawRegion, number_to_i64};
 use crate::error::{LitematicError, LitematicErrorCode};
-use litematic_nbt::{NbtCompound, NbtList, NbtValue};
-use litematic_scene::{
+use blockscope_nbt::{NbtCompound, NbtList, NbtValue};
+use blockscope_scene::{
     BlockEntity, BlockStateKey, Diagnostic, DiagnosticCode, DiagnosticSeverity, PackedIndices,
 };
 use std::collections::BTreeMap;

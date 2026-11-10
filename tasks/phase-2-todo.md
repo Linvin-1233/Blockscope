@@ -1,4 +1,4 @@
-﻿# Phase 2 Task List 鈥?Color-Block Geometry
+# Phase 2 Task List 鈥?Color-Block Geometry
 
 **Status:** Active  
 **Plan:** `tasks/phase-2-plan.md`
@@ -20,7 +20,7 @@ geometry.
 
 **Verification:**
 
-- [x] `cargo test -p litematic-mesh` passes.
+- [x] `cargo test -p blockscope-mesh` passes.
 - [x] Size/ordering tests cover page and quad contracts.
 
 **Dependencies:** None  

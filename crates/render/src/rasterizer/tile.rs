@@ -3,8 +3,8 @@ use super::bin::{BinSet, TileJob};
 use super::geometry::{bounds, edge, to_u8};
 use super::project::{QuadPoint, QuadRender, QuadTable, Triangle, vertex_color};
 use crate::{Background, RenderOptions};
-use litematic_material::{TextureFilter, TextureSet};
-use litematic_mesh::{NO_TEXTURE, RenderLayer, decode_uv};
+use blockscope_material::{TextureFilter, TextureSet};
+use blockscope_mesh::{NO_TEXTURE, RenderLayer, decode_uv};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Shared tile counter handed to rasterizer workers.

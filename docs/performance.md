@@ -7,7 +7,7 @@ This page records measured memory and timing baselines. The allocation test is t
 `crates/litematic/tests/memory.rs` measures peak heap allocation for `LitematicFile::parse_bytes` and `parse_bytes + into_scene`. It uses a process-global `GlobalAlloc` meter, so all scenarios live in one binary and run sequentially.
 
 ```bash
-cargo test -p litematic-core --test memory -- --nocapture
+cargo test -p blockscope-core --test memory -- --nocapture
 ```
 
 The fixtures are synthetic and compressed before the measured window. The `512^3` sparse fixture uses custom volume limits because the default 100M per-region limit rejects it. This is intentional: it measures the representation cost, not the admission policy.
@@ -402,7 +402,7 @@ Use `bench` with the same file and without `--stream-mesh` to record the full-me
 The prototype is `crates/litematic/examples/sparse_probe.rs`. It scans the gzip stream twice: the first pass records region headers and `BlockStates` offsets, and the second pass decodes the packed words without retaining the decompressed document or the long array. It counts non-zero palette values; it does not build a scene or validate palette indices yet.
 
 ```bash
-cargo run --release -p litematic-core --example sparse_probe -- path\to\file.litematic --dense
+cargo run --release -p blockscope-core --example sparse_probe -- path\to\file.litematic --dense
 ```
 
 Measured on 2026-10-28 with the release example:

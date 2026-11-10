@@ -1,8 +1,8 @@
-use litematic_mesh::{BlockCatalog, CatalogErrorCode, ColorBlockCatalog, RenderLayer, Rgba};
-use litematic_scene::BlockStateKey;
+use blockscope_mesh::{BlockCatalog, CatalogErrorCode, ColorBlockCatalog, RenderLayer, Rgba};
+use blockscope_scene::BlockStateKey;
 use std::collections::BTreeMap;
 
-fn resolve(catalog: &ColorBlockCatalog, name: &str) -> litematic_mesh::ResolvedBlock {
+fn resolve(catalog: &ColorBlockCatalog, name: &str) -> blockscope_mesh::ResolvedBlock {
     catalog.resolve(&BlockStateKey::simple(name))
 }
 

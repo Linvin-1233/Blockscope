@@ -361,9 +361,9 @@ Allocation-peak baselines and the streamed-versus-full-mesh diagnostic live in [
 For rasterizer-only scaling, use the synthetic example:
 
 ```powershell
-cargo run --release -p litematic-render --example tile_bench -- --iterations 5
-cargo run --release -p litematic-render --example tile_bench -- --width 2048 --height 2048 --supersample 1
-cargo run --release -p litematic-render --features gpu --example tile_bench -- --backend gpu --iterations 5
+cargo run --release -p blockscope-render --example tile_bench -- --iterations 5
+cargo run --release -p blockscope-render --example tile_bench -- --width 2048 --height 2048 --supersample 1
+cargo run --release -p blockscope-render --features gpu --example tile_bench -- --backend gpu --iterations 5
 ```
 
 It prints single-thread, two-thread, and auto-thread timings. With

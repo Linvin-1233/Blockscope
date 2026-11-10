@@ -1,4 +1,4 @@
-use litematic_scene::PackedIndices;
+use blockscope_scene::PackedIndices;
 use proptest::prelude::*;
 
 proptest! {

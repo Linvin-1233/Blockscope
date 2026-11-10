@@ -1,12 +1,12 @@
 mod support;
 
-use litematic_mesh::{
+use blockscope_mesh::{
     ColorBlockCatalog, MeshBuildOptions, MeshErrorCode, MeshLimits, build_mesh, count_mesh_quads,
     estimate_mesh_quads,
 };
 use support::{region as make_region, scene as make_scene};
 
-fn build(scene: &litematic_scene::Scene, limits: &MeshLimits) -> litematic_mesh::Mesh {
+fn build(scene: &blockscope_scene::Scene, limits: &MeshLimits) -> blockscope_mesh::Mesh {
     let catalog = ColorBlockCatalog::default();
     build_mesh(scene, &catalog, limits).unwrap()
 }
@@ -394,7 +394,7 @@ fn adjacent_partial_blocks_cull_shared_boundaries() {
 
 #[test]
 fn parallel_mesh_matches_serial_across_pages_and_regions() {
-    use litematic_mesh::{ColorSnapshot, build_mesh_parallel};
+    use blockscope_mesh::{ColorSnapshot, build_mesh_parallel};
 
     let west_values: Vec<u32> = (0..40 * 10 * 40).map(|index| (index % 3) as u32).collect();
     let west = make_region(
@@ -436,7 +436,7 @@ fn parallel_mesh_matches_serial_across_pages_and_regions() {
 
 #[test]
 fn streaming_builder_matches_the_full_mesh() {
-    use litematic_mesh::{ColorSnapshot, build_mesh_streaming};
+    use blockscope_mesh::{ColorSnapshot, build_mesh_streaming};
 
     let values: Vec<u32> = (0..128 * 10 * 128)
         .map(|index| (index % 3) as u32)
@@ -469,7 +469,7 @@ fn streaming_builder_matches_the_full_mesh() {
 
 #[test]
 fn owned_streaming_builder_matches_the_borrowed_builder() {
-    use litematic_mesh::{ColorSnapshot, build_mesh_streaming, build_mesh_streaming_owned};
+    use blockscope_mesh::{ColorSnapshot, build_mesh_streaming, build_mesh_streaming_owned};
 
     let values: Vec<u32> = (0..32 * 4 * 32).map(|index| (index % 3) as u32).collect();
     let region = make_region(
@@ -507,7 +507,7 @@ fn owned_streaming_builder_matches_the_borrowed_builder() {
 
 #[test]
 fn streaming_builder_enforces_limits() {
-    use litematic_mesh::{ColorSnapshot, build_mesh_streaming};
+    use blockscope_mesh::{ColorSnapshot, build_mesh_streaming};
 
     let region = make_region(
         "main",

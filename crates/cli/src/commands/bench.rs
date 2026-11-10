@@ -5,12 +5,12 @@ use crate::{
     PreparedScene, apply_render_limits, load_materials, load_scene, mesh_limits,
     parse_texture_filter, warn_forced,
 };
-use clap::Args;
-use litematic_render::{
+use blockscope_render::{
     Background, LightingProfile, RenderBackend, RenderOptions, RenderPrecision, render_mesh,
     render_mesh_with_progress, render_mesh_with_textures, render_mesh_with_textures_and_progress,
     will_stream, write_png,
 };
+use clap::Args;
 use std::path::PathBuf;
 use std::time::Instant;
 

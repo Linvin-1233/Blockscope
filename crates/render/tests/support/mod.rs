@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use litematic_scene::{BlockStateKey, PackedIndices, Region, Scene, SceneMetadata};
+use blockscope_scene::{BlockStateKey, PackedIndices, Region, Scene, SceneMetadata};
 use std::fs::{self, File};
 use std::io::BufWriter;
 use std::path::Path;

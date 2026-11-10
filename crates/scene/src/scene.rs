@@ -3,7 +3,7 @@ use crate::{
     BlockEntity, BlockStateKey, BlockStatistics, Bounds, Diagnostic, DiagnosticCode,
     DiagnosticSeverity, Region, SceneMetadata,
 };
-use litematic_nbt::{NbtCompound, NbtValue};
+use blockscope_nbt::{NbtCompound, NbtValue};
 
 const MAX_OVERLAP_DIAGNOSTICS: usize = 64;
 /// Approximate per-entry overhead of the `BTreeMap` backing a compound.

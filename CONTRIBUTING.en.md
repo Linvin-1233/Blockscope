@@ -117,12 +117,12 @@ cargo test --workspace
 Run one crate:
 
 ```bash
-cargo test -p litematic-nbt
-cargo test -p litematic-scene
-cargo test -p litematic-core
-cargo test -p litematic-material
-cargo test -p litematic-mesh
-cargo test -p litematic-render
+cargo test -p blockscope-nbt
+cargo test -p blockscope-scene
+cargo test -p blockscope-core
+cargo test -p blockscope-material
+cargo test -p blockscope-mesh
+cargo test -p blockscope-render
 cargo test -p blockscope-cli
 ```
 
@@ -136,15 +136,15 @@ Real-file tests are ignored by default and need local environment variables:
 ```bash
 # Real .litematic parsing
 LITEMATIC_FIXTURES_DIR=/path/to/fixtures \
-  cargo test -p litematic-core --test real_files -- --ignored
+  cargo test -p blockscope-core --test real_files -- --ignored
 
 # Real Minecraft client jar
 MINECRAFT_CLIENT_JAR=/path/to/client.jar \
-  cargo test -p litematic-material --test real_jar -- --ignored
+  cargo test -p blockscope-material --test real_jar -- --ignored
 
 # Real material rendering
 MINECRAFT_CLIENT_JAR=/path/to/client.jar \
-  cargo test -p litematic-render --test real_materials -- --ignored
+  cargo test -p blockscope-render --test real_materials -- --ignored
 ```
 
 Windows uses different environment-variable syntax; pass the path as an
@@ -166,7 +166,7 @@ a rendering/format change is intentional:
 ```bash
 # Linux/macOS
 UPDATE_GOLDEN=1 cargo test -p blockscope-cli --test golden
-UPDATE_GOLDEN=1 cargo test -p litematic-render --test golden_png
+UPDATE_GOLDEN=1 cargo test -p blockscope-render --test golden_png
 
 # Or xtask, on any platform
 cargo xtask golden-update

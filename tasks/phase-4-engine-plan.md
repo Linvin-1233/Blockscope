@@ -45,7 +45,7 @@ is needed later.
 - **Snapshot over lock swap.** The render and mesh hot paths stay lock-free;
   `RefCell` remains acceptable inside the single-threaded builder.
 - **`BlockCatalog` stays the mesh interface.** `MaterialSnapshot` implements the
-  existing trait, so `litematic-mesh` needs no API change.
+  existing trait, so `blockscope-mesh` needs no API change.
 - **Textures are owned by the snapshot.** `render_mesh_with_textures` keeps
   taking `&TextureSet`, sourced from the snapshot, so rendering stays read-only.
 - **Process pool size is bounded by cores.** One job already uses every core by
@@ -73,7 +73,7 @@ so these numbers must be re-measured before they are used as a regression gate.
 
 ### Slice 1: Material snapshot
 
-- New `MaterialSnapshot` type in `litematic-material`.
+- New `MaterialSnapshot` type in `blockscope-material`.
 - `MaterialSet::snapshot(states)` pre-resolves a set of block states.
 - Snapshot implements `BlockCatalog`; resolution is a hash lookup.
 - Snapshot owns the `TextureSet` and diagnostics.

@@ -1,6 +1,6 @@
 mod support;
 
-use litematic_mesh::{MeshErrorCode, MeshLimits, SceneBlockView};
+use blockscope_mesh::{MeshErrorCode, MeshLimits, SceneBlockView};
 use support::{region as make_region, scene as make_scene};
 
 #[test]
