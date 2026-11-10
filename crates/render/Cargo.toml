@@ -19,9 +19,9 @@ gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck"]
 
 [dependencies]
 bytemuck = { workspace = true, optional = true }
-blockscope-material = { path = "../material", version = "0.6.0" }
-blockscope-mesh = { path = "../mesh", version = "0.6.0" }
-blockscope-scene = { path = "../scene", version = "0.6.0" }
+blockscope-material = { path = "../material", version = "0.5.2" }
+blockscope-mesh = { path = "../mesh", version = "0.5.2" }
+blockscope-scene = { path = "../scene", version = "0.5.2" }
 png.workspace = true
 pollster = { workspace = true, optional = true }
 serde.workspace = true

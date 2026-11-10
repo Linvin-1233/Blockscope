@@ -12,8 +12,8 @@ keywords = ["minecraft", "litematic", "parser", "renderer"]
 categories = ["parser-implementations", "games"]
 
 [dependencies]
-blockscope-nbt = { path = "../nbt", version = "0.6.0" }
-blockscope-scene = { path = "../scene", version = "0.6.0" }
+blockscope-nbt = { path = "../nbt", version = "0.5.2" }
+blockscope-scene = { path = "../scene", version = "0.5.2" }
 
 [dev-dependencies]
 flate2.workspace = true

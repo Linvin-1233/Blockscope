@@ -12,6 +12,6 @@ keywords = ["minecraft", "litematic", "mesh", "graphics"]
 categories = ["games", "graphics"]
 
 [dependencies]
-blockscope-scene = { path = "../scene", version = "0.6.0" }
+blockscope-scene = { path = "../scene", version = "0.5.2" }
 serde.workspace = true
 serde_json.workspace = true

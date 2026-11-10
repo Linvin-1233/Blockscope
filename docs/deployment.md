@@ -128,7 +128,7 @@ The publish script, `.github/scripts/publish-crates.sh`, then publishes the crat
 
 For the first publish of each crate name, create a crates.io API token with the `publish-new` and `publish-update` scopes and store it as the `CARGO_REGISTRY_TOKEN` secret on the `crates-io` GitHub environment. The environment can require reviewers so the token is only used after approval. crates.io allows a burst of five brand-new crate names and then one every ten minutes; the script sleeps through a rate-limit response and the job has a 180-minute budget.
 
-`0.5.1` was the first crates.io release and used the old `litematic-*` library crate names. `0.6.0` publishes the same libraries as `blockscope-*`. After the `0.6.0` publish succeeds, yank the old versions so new dependency resolution uses the new namespace:
+`0.5.1` was the first crates.io release and used the old `litematic-*` library crate names. `0.5.2` publishes the same libraries as `blockscope-*`. After the `0.5.2` publish succeeds, yank the old versions so new dependency resolution uses the new namespace:
 
 ```bash
 for crate in litematic-nbt litematic-scene litematic-core litematic-mesh \

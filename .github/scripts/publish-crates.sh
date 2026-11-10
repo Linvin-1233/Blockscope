@@ -62,7 +62,7 @@ package_version() {
 
 # --- Preflight ---------------------------------------------------------------
 
-[ -n "$TAG" ] || die "TAG is required (for example v0.6.0)"
+[ -n "$TAG" ] || die "TAG is required (for example v0.5.2)"
 [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]] || die "TAG must look like v1.2.3, got '$TAG'"
 [[ "$MAX_RATE_LIMIT_SLEEP" =~ ^[0-9]+$ ]] || die "MAX_RATE_LIMIT_SLEEP must be a number"
 case "$DRY_RUN" in

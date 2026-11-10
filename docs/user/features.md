@@ -4,7 +4,7 @@ title: "Features and Limitations"
 
 Blockscope is a headless Rust image-rendering engine that turns Minecraft `.litematic` projections into PNG images, MP4 clips, and GIF animations. It is designed for general backend services, batch tools, and automation pipelines.
 
-The current workspace version is `0.6.0` and supports Windows, Linux, and macOS. The repository contains parsing, materials, meshing, CPU rasterization (plus an optional GPU backend), external-ffmpeg video encoding, a CLI, and a stdio service. It does not contain a chat-platform or bot adapter.
+The current workspace version is `0.5.2` and supports Windows, Linux, and macOS. The repository contains parsing, materials, meshing, CPU rasterization (plus an optional GPU backend), external-ffmpeg video encoding, a CLI, and a stdio service. It does not contain a chat-platform or bot adapter.
 
 ## Features
 

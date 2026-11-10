@@ -165,7 +165,7 @@ dependencies = [
 
 [[package]]
 name = "blockscope-cli"
-version = "0.6.0"
+version = "0.5.2"
 dependencies = [
  "anstream",
  "anstyle",
@@ -187,7 +187,7 @@ dependencies = [
 
 [[package]]
 name = "blockscope-core"
-version = "0.6.0"
+version = "0.5.2"
 dependencies = [
  "blockscope-nbt",
  "blockscope-scene",
@@ -196,7 +196,7 @@ dependencies = [
 
 [[package]]
 name = "blockscope-material"
-version = "0.6.0"
+version = "0.5.2"
 dependencies = [
  "blockscope-mesh",
  "blockscope-scene",
@@ -209,7 +209,7 @@ dependencies = [
 
 [[package]]
 name = "blockscope-mesh"
-version = "0.6.0"
+version = "0.5.2"
 dependencies = [
  "blockscope-scene",
  "serde",
@@ -218,7 +218,7 @@ dependencies = [
 
 [[package]]
 name = "blockscope-nbt"
-version = "0.6.0"
+version = "0.5.2"
 dependencies = [
  "flate2",
  "proptest",
@@ -226,7 +226,7 @@ dependencies = [
 
 [[package]]
 name = "blockscope-render"
-version = "0.6.0"
+version = "0.5.2"
 dependencies = [
  "blockscope-material",
  "blockscope-mesh",
@@ -242,7 +242,7 @@ dependencies = [
 
 [[package]]
 name = "blockscope-scene"
-version = "0.6.0"
+version = "0.5.2"
 dependencies = [
  "blockscope-nbt",
  "proptest",
@@ -253,14 +253,14 @@ dependencies = [
 
 [[package]]
 name = "blockscope-video"
-version = "0.6.0"
+version = "0.5.2"
 dependencies = [
  "tempfile",
 ]
 
 [[package]]
 name = "blockscope-worker"
-version = "0.6.0"
+version = "0.5.2"
 dependencies = [
  "blockscope-core",
  "blockscope-material",
@@ -2217,7 +2217,7 @@ checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
 
 [[package]]
 name = "xtask"
-version = "0.6.0"
+version = "0.5.2"
 dependencies = [
  "serde_json",
  "sha2",

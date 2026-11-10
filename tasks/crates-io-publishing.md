@@ -1,7 +1,7 @@
 # crates.io publishing
 
 Status: `0.5.1` is published under the old `litematic-*` library names.
-`0.6.0` renames those crates to `blockscope-*` and is waiting for merge, a tag,
+`0.5.2` renames those crates to `blockscope-*` and is waiting for merge, a tag,
 and the first publish under the new namespace.
 
 ## Design
@@ -16,7 +16,7 @@ and the first publish under the new namespace.
   re-run safely after a partial failure.
 - Keep every internal path dependency pinned to the workspace version, and make
   `just bump` update those pins.
-- Publish the `blockscope-*` names from `0.6.0`; yank the old `litematic-*`
+- Publish the `blockscope-*` names from `0.5.2`; yank the old `litematic-*`
   `0.5.1` versions after the new publish succeeds.
 
 ## Checklist
@@ -30,9 +30,9 @@ and the first publish under the new namespace.
 - [x] Document the bootstrap, rate limit, and trusted publishing migration.
 - [x] Publish `0.5.1` to crates.io under the `litematic-*` names.
 - [x] Add `CARGO_REGISTRY_TOKEN` to the repository secrets.
-- [x] Rename the library crates to `blockscope-*` for `0.6.0`.
+- [x] Rename the library crates to `blockscope-*` for `0.5.2`.
 - [ ] Merge the rename branch to `main`.
-- [ ] Cut and push the `v0.6.0` tag.
+- [ ] Cut and push the `v0.5.2` tag.
 - [ ] Confirm all eight `blockscope-*` crates appear on crates.io.
 - [ ] Yank the `litematic-*` `0.5.1` versions.
 - [ ] Configure trusted publishing for each crate and remove the long-lived

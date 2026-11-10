@@ -9,11 +9,11 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 futures-util = { workspace = true }
-blockscope-core = { path = "../litematic", version = "0.6.0" }
-blockscope-material = { path = "../material", version = "0.6.0" }
-blockscope-mesh = { path = "../mesh", version = "0.6.0" }
-blockscope-render = { path = "../render", version = "0.6.0" }
-blockscope-scene = { path = "../scene", version = "0.6.0" }
+blockscope-core = { path = "../litematic", version = "0.5.2" }
+blockscope-material = { path = "../material", version = "0.5.2" }
+blockscope-mesh = { path = "../mesh", version = "0.5.2" }
+blockscope-render = { path = "../render", version = "0.5.2" }
+blockscope-scene = { path = "../scene", version = "0.5.2" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 worker = { workspace = true }
