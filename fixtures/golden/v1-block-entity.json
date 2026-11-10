@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "parser": {
-    "version": "0.5.0",
+    "version": "0.5.1",
     "litematicVersion": 1,
     "minecraftDataVersion": 3700
   },
