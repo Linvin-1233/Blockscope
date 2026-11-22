@@ -41,7 +41,7 @@ sha2 = "0.11"
 tempfile = "3"
 wgpu = { version = "30", default-features = false, features = ["std", "wgsl", "metal", "vulkan", "dx12"] }
 zip = { version = "9", default-features = false, features = ["deflate"] }
-worker = "0.8.7"
+worker = "0.9.0"
 
 [profile.dev]
 # Disables debuginfo to improve dev and test compile and link times.
