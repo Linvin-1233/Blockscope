@@ -16,6 +16,7 @@ members = [
 [workspace.package]
 version = "0.5.2"
 edition = "2024"
+rust-version = "1.100"
 authors = ["Linvin_"]
 license = "MIT"
 repository = "https://github.com/Linvin-1233/Blockscope"
