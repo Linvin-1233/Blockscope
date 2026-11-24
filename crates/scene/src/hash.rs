@@ -60,8 +60,8 @@ impl Scene {
 
             hash_u64(&mut hasher, region.block_entities.len() as u64);
             for entity in &region.block_entities {
-                for axis in 0..3 {
-                    hash_u32(&mut hasher, entity.local_pos[axis]);
+                for &position in &entity.local_pos {
+                    hash_u32(&mut hasher, position);
                 }
                 hash_string(&mut hasher, &entity.id);
                 hash_nbt_compound(&mut hasher, &entity.data);
